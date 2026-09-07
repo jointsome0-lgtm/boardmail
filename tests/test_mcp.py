@@ -20,7 +20,7 @@ except ImportError:
     Client = None
 
 
-@unittest.skipIf(Client is None, 'Install boardmail[mcp] to test the optional MCP interface')
+@unittest.skipIf(Client is None, 'From the source checkout, install .[mcp] to test the optional MCP interface')
 class MCPTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

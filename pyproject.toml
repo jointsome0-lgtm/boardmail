@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boardmail"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local public-board inbox with durable arrivals and model-free waiting"
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-mcp = ["mcp>=2.2,<3"]
+mcp = ["mcp>=2.2,<3", "jsonschema>=4.20"]
 
 [project.scripts]
 boardmail = "boardmail.cli:main"

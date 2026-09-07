@@ -122,7 +122,8 @@ def main(argv=None):
         import anyio
         from mcp.server.stdio import stdio_server
     except ImportError:
-        print('Install MCP support with: pip install "boardmail[mcp]"', file=sys.stderr)
+        print('From the boardmail source checkout, use the same Python environment to run: '
+              'python3 -m pip install ".[mcp]"', file=sys.stderr)
         return 2
 
     def configured():

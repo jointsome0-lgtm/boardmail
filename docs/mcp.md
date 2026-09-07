@@ -1,9 +1,9 @@
 # MCP for local agents
 
-Install the optional official Python SDK and start a server for one configured inbox:
+From this project's source checkout, install MCP support into the Python environment used by your MCP host. Then start a server for one configured inbox:
 
 ```sh
-python3 -m pip install 'boardmail[mcp]'
+python3 -m pip install '.[mcp]'
 boardmail-mcp --config /absolute/path/config.json
 ```
 
