@@ -71,7 +71,7 @@ def create_server(store, sources=None):
                                         open_world_hint=command in ("collect", "check")),
         )
     # Adapter output redirection is process-wide. Do not overlap collectors.
-    collection_lock = anyio.Lock()
+    collection_lock = threading.Lock()
 
     async def list_tools(ctx, params):
         return ListToolsResult(tools=list(catalog.values()))
@@ -86,14 +86,16 @@ def create_server(store, sources=None):
             if command == "wait":
                 arguments = {"timeout": 30, **arguments}
             cancelled = threading.Event()
-            operation = partial(commands.outcome, partial(commands.execute, store, command,
-                                sources=sources, cancelled=cancelled, **arguments))
-            try:
+            invoke = partial(commands.outcome, partial(commands.execute, store, command,
+                             sources=sources, cancelled=cancelled, **arguments))
+            def operation():
                 if command in ("collect", "check"):
-                    async with collection_lock:
-                        result, code = await anyio.to_thread.run_sync(operation)
-                else:
-                    result, code = await anyio.to_thread.run_sync(operation, abandon_on_cancel=command == "wait")
+                    # Hold this in the worker even if the caller disconnects.
+                    with collection_lock:
+                        return invoke()
+                return invoke()
+            try:
+                result, code = await anyio.to_thread.run_sync(operation, abandon_on_cancel=command == "wait")
             finally:
                 cancelled.set()
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=True))],

@@ -139,6 +139,35 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len((await c.list_tools()).tools),8)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
+    async def test_cancelled_collection_finishes_before_next_collection(self):
+        from boardmail import providers
+        self.store.initialize()
+        started, release, second = threading.Event(), threading.Event(), threading.Event()
+        calls = []
+        def collect(*args):
+            calls.append(1)
+            if len(calls) == 1:
+                started.set()
+                release.wait(5)
+            else:
+                second.set()
+            return {'event':'collected','added':0,'failed':False,'errors':[]}
+        with patch.object(providers, 'collect_all', collect):
+            async with Client(create_server(self.store, {}), mode='2026-07-28', raise_exceptions=True) as c:
+                first = asyncio.create_task(c.call_tool('boardmail_collect'))
+                self.assertTrue(await asyncio.to_thread(started.wait, 2))
+                first.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await first
+                other = asyncio.create_task(c.call_tool('boardmail_check'))
+                try:
+                    await self.call(c, 'status')
+                    self.assertFalse(await asyncio.to_thread(second.wait, 0.1))
+                finally:
+                    release.set()
+                    await other
+                self.assertTrue(second.is_set())
+
     async def test_modern_http_without_initialization_or_session(self):
         self.store.initialize()
         app = create_server(self.store).streamable_http_app(json_response=True, stateless_http=True)
