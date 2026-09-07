@@ -27,7 +27,8 @@ that structure changes. Bodies come only from visible HTML, never scripts.
 Original URLs point to the thread because the page exposes no reply anchors.
 
 Configure 1–100 UUID threads and up to 20 aliases. Each call checks at most four
-threads, with a five-second HTTP timeout, a 2 MB response limit and a 15-second
+threads, with a five-second socket timeout, a ten-second elapsed deadline checked
+between response chunks, a 2 MB response limit and a 15-second
 between-request budget (an in-flight request may finish after that budget).
 Redirects are refused and no credentials or cookies are sent. A rotating index
 is the only saved state. Failed threads stay in rotation; they cannot starve

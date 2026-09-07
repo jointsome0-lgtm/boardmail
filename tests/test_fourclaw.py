@@ -1,7 +1,7 @@
 import unittest
 import json
-from hashlib import sha256
-from unittest.mock import patch
+from http.client import IncompleteRead
+from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 from boardmail import adapter_fourclaw as adapter
 from boardmail.adapters import validate
@@ -16,12 +16,11 @@ def post(author, body, op=False):
             f'<div class="claw-post-body">{body}</div></div>')
 
 
-def page(owner="Other", replies=None):
+def page(owner="Other", replies=None, ids=None):
     replies = replies or []
     keys = []
-    for reply in replies:
-        digest = sha256(reply.encode()).hexdigest()[:32]
-        key = f'{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}'
+    ids = ids or [f'10000000-0000-4000-8000-{n:012d}' for n in range(len(replies))]
+    for key in ids:
         keys.append('["$","div",' + json.dumps(key) + ',{"className":"claw-post reply"}]')
     script = '<script>self.__next_f.push(' + json.dumps([1, ''.join(keys)]) + ')</script>'
     return '<div class="claw-section-title">A title</div>' + post(owner, "Opening", True) + ''.join(replies) + script
@@ -47,9 +46,10 @@ class FourclawTests(unittest.TestCase):
     def test_owned_op_and_idempotence_after_reordering(self):
         first = post('Other', 'First reply')
         second = post('Another', 'Second reply')
-        initial = self.collect(page('Reader', [first, second]))
+        ids = ['10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002']
+        initial = self.collect(page('Reader', [first, second], ids))
         self.assertEqual([m['kind'] for m in initial.messages], ['reply_to_post'] * 2)
-        replay = self.collect(page('Reader', [second, first]), known={m['id'] for m in initial.messages})
+        replay = self.collect(page('Reader', [second, post('Other', 'Edited first reply')], ids[::-1]), known={m['id'] for m in initial.messages})
         self.assertEqual(replay.messages, [])
 
     def test_unavailable_stays_eligible_and_does_not_starve(self):
@@ -76,6 +76,27 @@ class FourclawTests(unittest.TestCase):
         self.assertEqual(batch.messages, [])
         recovered = self.collect(page(replies=[post('Other', '@Reader recovered')]), batch.state)
         self.assertEqual(len(recovered.messages), 1)
+
+    def test_broken_response_preserves_confirmed_mail(self):
+        settings = dict(account_id='Reader', watched_threads=[THREAD, '00000000-0000-4000-8000-000000000002'])
+        with patch.object(adapter, '_fetch', side_effect=[page(replies=[post('Other', '@Reader hi')]), IncompleteRead(b'partial')]):
+            batch = adapter.collect(settings, {}, set())
+        self.assertEqual(len(batch.messages), 1)
+        self.assertEqual(batch.error, 'fourclaw_network_error')
+        self.assertEqual(batch.unavailable, 1)
+        validate(batch)
+
+    def test_trickling_response_hits_elapsed_deadline(self):
+        response = MagicMock()
+        response.headers.get_content_type.return_value = 'text/html'
+        response.read1.return_value = b'x'
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value = response
+        with patch.object(adapter, 'build_opener', return_value=opener), patch.object(adapter.time, 'monotonic', side_effect=[0, 1, 6, 7, 11]):
+            with self.assertRaises(TimeoutError):
+                adapter._fetch(THREAD)
+        self.assertEqual(response.read1.call_count, 2)
+        opener.open.return_value.__exit__.assert_called_once()
 
     def test_missing_public_reply_ids_fails_closed(self):
         html = page(replies=[post('Other', '@Reader hi')])
