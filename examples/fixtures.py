@@ -84,6 +84,11 @@ class FixtureClient:
             selected = deepcopy(self.events[start:end])
             return selected if colony else {"notifications":selected,"has_more":end<len(self.events),"next_cursor":str(end)}
         assert not authenticated, "External public originals must be anonymous"
+        if colony and path.startswith("/comments/"):
+            comment = next((c for c in self.comments if c['id']==path.rsplit('/',1)[-1]), None)
+            if comment is None:
+                raise HTTPError("https://example.invalid",404,"absent",{},io.BytesIO())
+            return deepcopy(comment)
         if path.endswith("/comments"):
             start = params.get("offset",0) if colony else int(params.get("cursor","0"))
             end = start+params['limit']

@@ -1,8 +1,10 @@
 # boardmail
 
-A local inbox for an agent participating on Postingboard, The Colony and Moltbook. A collector reads public replies and mentions into SQLite. `wait` watches committed local arrivals with ordinary Python code, without network requests or model calls.
+A local inbox for agents on Postingboard, The Colony, Moltbook, and explicitly configured custom boards. A collector reads public replies and mentions into SQLite. `wait` watches committed local arrivals with ordinary Python code, without network requests or model calls.
 
-Python 3.11 or newer. No runtime dependencies. This is an initial package for a new installation, with one consumer per database. It does not send messages, mark remote notifications read, vote, launch agents, or provide a UI/MCP server. Released under the [MIT License](LICENSE).
+Python 3.11 or newer. No runtime dependencies. Use one consumer per database. Existing 0.1.0 databases are supported. It does not send messages, mark remote notifications read, vote, launch agents, or provide a UI/MCP server. Released under the [MIT License](LICENSE).
+
+Start with the short [agent guide](AGENT_GUIDE.md). To add a board, read the [adapter interface](ADAPTERS.md). Bugs and proposals go through [issues, not external pull requests](CONTRIBUTING.md).
 
 ## Try it offline
 
@@ -33,7 +35,7 @@ boardmail collect
 boardmail list --after 0 --limit 100
 ```
 
-The default config is `~/.config/boardmail/config.json`. Use `boardmail --config PATH COMMAND` to select another. `boardmail --db PATH COMMAND` overrides the database; local commands need no config when `--db` is supplied. `init` refuses to overwrite any existing database. An interrupted initialization may leave an incomplete file that requires manual inspection and removal before retrying `init`.
+The default config is `~/.config/boardmail/config.json`. Use `boardmail --config PATH COMMAND` to select another. `boardmail --db PATH COMMAND` overrides the database; local commands need no config when `--db` is supplied. `init` refuses to overwrite any existing database. Do not run it to upgrade. The first 0.2.0 `collect` adds a progress table in one SQLite transaction. It preserves message rows, arrival numbers, local marks, and consumer checkpoints. Version 1 databases remain readable before collection; unsupported versions are rejected without replacement. After migration, use 0.2.0 or later, since 0.1.0 cannot read version 2. An interrupted initialization may leave an incomplete file that requires manual inspection and removal before retrying `init`.
 
 The initial import attempts to read the provider's retained backlog within the coverage limits below. There is no creation-date cutoff. An old comment becoming public after moderation receives a new local arrival number when first confirmed.
 
@@ -85,35 +87,58 @@ while true; do
 done
 ```
 
-Collection never invokes a model. Sources are independent. A completed pass stores its messages and updates `last_ok` in one transaction. If a later request fails, already confirmed public records survive with an error status; `last_ok` does not advance. The next pass deduplicates those records and retries outstanding originals. Already saved notification originals can be skipped on later passes, allowing progress in some cases. Replaying list pages still costs requests, so repeated passes do not guarantee global backlog progress. A broken SQLite transaction cannot expose half of its inserted records.
+Collection never invokes a model. Sources are independent. Each source commits confirmed messages, source health, and adapter progress together. A failed request preserves confirmed messages and resumable progress. Replaying pages preserves local marks and arrival numbers. Concurrent collectors may duplicate requests, but a stale collector cannot overwrite newer progress. Its idempotent messages are still saved and the result reports `collection_conflict`.
 
-No remote cursor survives a pass. The adapters replay retained pages and do not filter by remote read state. This keeps late-public messages and messages read through another client eligible for discovery within the coverage limits below. A notification without a public original is retried rather than stored as public mail. Authenticated notification bodies are never used as message bodies.
+`last_ok` is the last collection pass without an adapter error. `backlog_pending: true` means scanning still has work; it can accompany an `ok` source. Planned budget exhaustion is partial progress. Transport, malformed-response, and request-timeout failures are errors. Neither `ok`, `last_ok`, nor `backlog_pending: false` proves complete remote history. Results always carry `history_complete: false`.
+
+Every pass checks the newest page and reserves separate time for older work. Postingboard keeps a descending backfill cursor per configured root. Notification adapters retain deeper discovery positions and unresolved original IDs. Unresolved originals rotate between attempts, so one failed lookup cannot permanently hold later originals behind it. Their metadata remains eligible for retry even if the notification expires. Only confirmed public bodies enter the inbox; authenticated notification prose is never a message body or saved progress.
 
 | Source | Actual discovery scope | Original links |
 | --- | --- | --- |
-| Postingboard | Explicit configured root thread UUIDs only. All other authors' replies to your root posts, plus exact configured mention aliases in selected threads. Reply pagination within each thread budget, including hydration of summary-only replies. | Authenticated `/v1/posts/UUID` API URLs. The board has no public browser message view. |
-| The Colony | Retained `comment_on_post`, `reply_to_comment` and `mention` notifications. Public originals are checked anonymously. Non-post mentions are skipped. | Post URL with a comment anchor when applicable. |
+| Postingboard | Explicit configured root thread UUIDs only. All other authors' replies to your root posts, plus exact configured mention aliases in selected threads. Newest page each pass plus resumable, cyclic reply pagination and summary hydration. | Authenticated `/v1/posts/UUID` API URLs. The board has no public browser message view. |
+| The Colony | Retained `comment_on_post`, `reply_to_comment` and `mention` notifications. Anonymous direct post/comment lookup. Non-post mentions are skipped. | Post URL with a comment anchor when applicable. |
 | Moltbook | Retained `post_comment`, `comment_reply` and `mention` notifications with anonymous original checks. The post-comment shape has live verification; reply/mention variants remain provisional. | Thread URL. An exact comment jump is not verified. |
 
 Postingboard has no separate parent-comment signal in its named-thread response. A reply directed at your comment without an alias cannot be distinguished from other thread replies. Alias matching is case-insensitive with word/hyphen boundaries; configure the exact forms you want, usually `@handle`. The adapter does not scan the whole feed or infer subscriptions.
 
-Upstream retention is not guaranteed, and server page limits bound coverage. The Colony notification adapter treats fewer than 100 items as the end of its list; a lower server-imposed page size can silently truncate that discovery. Deleted or expired notifications and removed threads may be unrecoverable. Every status reports `history_complete: false`, even after a successful pass. `last_ok` means the configured available pages were checked, not that a complete remote history was recovered. An `ok` status becomes `stale` after nine minutes without a successful pass. Missing originals are counted in `unavailable`; previously saved bodies are snapshots and are not refreshed for later edits or deletions.
+Upstream retention, pagination stability and server limits bound coverage. Colony discovery continues until an empty notification page, including when the server returns fewer items than requested. Moltbook uses its returned cursors, counts top-level comment roots, and includes their nested replies. A rejected saved cursor resets to the head for retry. Missing originals are counted in `unavailable`; absence today is not permanent deletion. Previously saved bodies remain snapshots and are not refreshed for edits or deletions.
 
-Requests use fixed HTTPS hosts and refuse redirects, so credentials cannot follow a redirect. The Colony token exchange is the only POST. Its token lives only in process memory. Moltbook authentication uses exactly `www.moltbook.com`. Postingboard uses its documented agent headers. A 429 ends the current Postingboard thread or the entire Colony/Moltbook pass; this tool does not implement a persistent Retry-After scheduler.
+Postingboard checks the newest 30 replies each pass. Bursts beyond that page and newly public older messages are found by cyclic backfill; their latency grows with the unfinished sweep. Finite retained backlogs progress when requests succeed and the budget permits useful work. There is no completion guarantee under continual upstream changes, repeated rate limits, or permanently broken pages.
 
-Each list is limited to 100 pages. A response is limited to 16 MiB. Each configured Postingboard root gets a separate 45-second budget, with request pacing preserved across thread boundaries. Thread errors leave the source in error with its previous `last_ok`, preserve confirmed messages, and allow later configured roots to run. A single thread that repeatedly exceeds its budget can have a permanently unreachable tail under these limits; there is no persisted pagination cursor or rotation. Colony and Moltbook each have a 45-second source budget. An error while fetching an original or its comments can block all later originals in that source, including on repeated passes. Budgets are checked between requests and response chunks, with socket waits capped at 10 seconds. These are not strict wall-clock deadlines. Limit, timeout, transport and malformed-response failures appear as fixed error codes, without provider prose or credential paths. No watchdog or retry queue is installed.
+Requests use fixed HTTPS hosts and refuse redirects. The Colony token exchange is the only POST, and the token stays in process memory. Moltbook authentication uses exactly `www.moltbook.com`. Postingboard uses its documented agent headers. A 429 stops that configured source's pass without skipping an unfinished item. Follow the provider's retry guidance before collecting again; boardmail has no persistent Retry-After scheduler.
+
+The budget is 45 seconds per Postingboard root and 45 seconds per Colony/Moltbook source. At most one third is spent on fresh discovery; the remainder is reserved for backfill or original resolution. A notification pass reads its head plus at most one deeper page and attempts at most 100 unresolved originals. A Moltbook original advances one comment page per attempt. A Postingboard backfill advances at most 100 pages per pass. Budgets are checked between requests and response chunks; socket waits are capped at 10 seconds and responses at 16 MiB. These are not strict wall-clock deadlines. Unresolved metadata can grow as inaccessible originals accumulate, which increases retry latency.
+
+Custom adapter code controls its transport, scope, budgets and retry rules. The core validates its result and preserves the same local delivery contract. It cannot verify an adapter's public-original checks or stop a hung Python function. Only configure local code you trust. No adapter code is loaded by `list`, `show`, `wait`, `status`, or `mark`.
+
+## Try a custom adapter offline
+
+After installing boardmail, from this source directory:
+
+```sh
+boardmail_example=$(mktemp -d)
+cp examples/custom_board.py examples/custom_feed.json examples/custom_config.json "$boardmail_example/"
+boardmail --config "$boardmail_example/custom_config.json" init
+boardmail --config "$boardmail_example/custom_config.json" collect
+boardmail --config "$boardmail_example/custom_config.json" collect
+python3 examples/agent_loop.py --db "$boardmail_example/custom.sqlite3" --checkpoint "$boardmail_example/after.txt" --once
+```
+
+This separately supplied adapter converts numeric IDs from invented public data to string IDs. The consumer prints both messages and saves its checkpoint. Running the final command again prints no duplicate messages. The example's handling step is printing; replace `deliver()` with completed agent work before advancing the checkpoint. It does not collect, mark read, reply, or acquire reply ownership. Remove `--once` to wait continuously while a separate process collects.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Successful command, or `wait` returned messages |
-| 1 | Collection completed with at least one source failure; confirmed messages may have been saved |
+| 1 | Collection reported an error or stale collector state; confirmed messages may have been saved |
 | 2 | Invalid arguments/configuration, unsupported/corrupt local state, or invalid local operation |
 | 3 | Wait timeout, including an immediate empty check |
 | 4 | Wait cancelled |
 | 5 | Missing database or config |
 
 The offline tests cover bounded arrival pages, the list-to-wait race, duplicate and concurrent collection, independent marks, partial transaction rollback, confirmed progress across repeated 429 limits, late visibility, source and Postingboard thread isolation, Unicode JSON under latin-1 stdout, anonymous original checks, account separation, missing state and cancellation without a database write.
+
+These are offline contract checks, not a measured weak-model usability study.
 
 API references checked 7 September 2026: [Postingboard direct API](https://getpostingboard.dev/skill.md), [named-thread semantics](https://getpostingboard.dev/mcp.md), [The Colony](https://thecolony.ai/), [Moltbook API guide](https://www.moltbook.com/skill.md). Fixture payloads are synthetic and preserve only the relevant response shapes.

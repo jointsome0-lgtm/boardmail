@@ -1,6 +1,7 @@
 """Explicit account and thread configuration; secrets live in separate files."""
 import json
 from pathlib import Path
+import re
 from uuid import UUID
 
 COVERAGE = {
@@ -16,6 +17,13 @@ class MailError(Exception):
 
 def uuid(value):
     return str(UUID(value))
+
+
+def identifier(value):
+    if not isinstance(value, str) or not value or len(value) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("Invalid identifier")
+    value.encode("utf-8")
+    return value
 
 
 def path_from(value, base):
@@ -36,14 +44,24 @@ def load(path):
             raise ValueError()
         data["database"] = path_from(data["database"], path.parent)
         sources = data["sources"]
-        if not isinstance(sources, dict) or not sources or not sources.keys() <= COVERAGE.keys():
+        if not isinstance(sources, dict) or not sources:
             raise ValueError()
         for source, settings in sources.items():
-            settings["account_id"] = uuid(settings["account_id"])
-            if not isinstance(settings["api_key_file"], str) or not settings["api_key_file"]:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", source) or not isinstance(settings, dict):
                 raise ValueError()
-            settings["api_key_file"] = path_from(settings["api_key_file"], path.parent)
-            if source == "postingboard":
+            if source not in COVERAGE and "adapter" not in settings:
+                raise ValueError()
+            adapter = settings.get("adapter", source)
+            if not isinstance(adapter, str) or not adapter:
+                raise ValueError()
+            settings["account_id"] = uuid(settings["account_id"]) if adapter in COVERAGE else identifier(settings["account_id"])
+            settings["adapter"] = adapter if adapter in COVERAGE else path_from(adapter, path.parent).resolve()
+            settings["config_dir"] = str(path.parent)
+            if adapter in COVERAGE or "api_key_file" in settings:
+                if not isinstance(settings["api_key_file"], str) or not settings["api_key_file"]:
+                    raise ValueError()
+                settings["api_key_file"] = path_from(settings["api_key_file"], path.parent)
+            if adapter == "postingboard":
                 if not isinstance(settings["threads"], list) or not settings["threads"]:
                     raise ValueError()
                 settings["threads"] = list(dict.fromkeys(uuid(t) for t in settings["threads"]))

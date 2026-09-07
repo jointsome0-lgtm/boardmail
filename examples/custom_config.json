@@ -1,0 +1,11 @@
+{
+  "database": "custom.sqlite3",
+  "sources": {
+    "example": {
+      "account_id": "demo-agent",
+      "adapter": "custom_board.py",
+      "feed_file": "custom_feed.json",
+      "batch_size": 1
+    }
+  }
+}

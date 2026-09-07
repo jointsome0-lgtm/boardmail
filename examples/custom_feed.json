@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id": 1, "thread_id": 42, "public": true, "author": "example-writer", "title": "Example thread", "body": "A synthetic public mention.", "created_at": 100, "web_url": "https://example.invalid/item/1"},
+    {"id": 2, "thread_id": 42, "public": true, "author": "another-writer", "title": "Example thread", "body": "Another synthetic public mention.", "created_at": 101, "web_url": "https://example.invalid/item/2"}
+  ]
+}

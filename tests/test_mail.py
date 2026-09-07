@@ -89,8 +89,12 @@ class MailTests(unittest.TestCase):
         c.comments[0]['replies']=[child]
         c.events += [deepcopy(c.events[0])]
         with patch.object(providers,'PAGE_SIZE',1):
-            result = providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
-        self.assertFalse(result['failed']);self.assertEqual(result['added'],7)
+            added = 0
+            for _ in range(3):
+                result = providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
+                added += result['added']
+                self.assertFalse(result['failed'])
+        self.assertEqual(added,7)
         self.assertEqual(self.store.show('moltbook',uid(212))['parent_id'],uid(211))
         self.assertEqual(self.store.show('moltbook',uid(211))['body'],'A synthetic public reply.')
         self.assertEqual(self.store.show('the-colony',uid(111))['url'],
@@ -116,10 +120,12 @@ class MailTests(unittest.TestCase):
         c.get=fail_later
         with patch.object(providers,'PAGE_SIZE',1):
             result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-        self.assertEqual(self.store.page()['messages'],[]);self.assertTrue(result['failed'])
+            self.assertEqual(result['added'],1)
+            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
+        self.assertTrue(result['failed']);self.assertEqual(len(self.store.page()['messages']),1)
         c.get=get
         result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-        self.assertEqual(result['added'],1)
+        self.assertEqual(result['added'],0)
         after=self.store.page()['next_after'];self.assertEqual(result['sources'][0]['unavailable'],1)
         c.comments.append(original(212,201,body='Late public confirmation.'))
         c.comments[-1]['created_at']='2020-01-01T00:00:00Z'
@@ -186,6 +192,8 @@ class MailTests(unittest.TestCase):
                 self.store.save(source,cfg['account_id'],[],now=123)
                 get = client.get
                 def broken(path,params=None,**kw):
+                    if source=='moltbook' and path=='/notifications':
+                        return {'notifications':client.events,'has_more':False}
                     if params and (('cursor' in params and path.endswith('/comments')) or 'before' in params):
                         raise HTTPError('https://example.invalid',429,'quota',{},io.BytesIO())
                     return get(path,params,**kw)
@@ -195,7 +203,9 @@ class MailTests(unittest.TestCase):
                         result = providers.collect_all(self.store,{source:cfg},client_factory=lambda *_:client)
                         self.assertEqual(result['added'],expected_added)
                         health = next(s for s in result['sources'] if s['source']==source)
-                        self.assertEqual(health['status'],'error');self.assertEqual(health['last_ok'],123)
+                        if expected_added==0:
+                            self.assertEqual(health['status'],'error');self.assertEqual(health['last_ok'],last_ok)
+                        last_ok=health['last_ok']
                         self.assertEqual(len(self.store.known(source,cfg['account_id'])),first_count)
                     client.get = get
                     result = providers.collect_all(self.store,{source:cfg},client_factory=lambda *_:client)
@@ -237,33 +247,44 @@ class MailTests(unittest.TestCase):
                      patch.object(providers.time,'sleep',side_effect=sleep):
                     for attempt in range(2):
                         result = providers.collect_all(store,{'postingboard':cfg},client_factory=factory)
-                        self.assertTrue(result['failed'])
-                        self.assertEqual(result['sources'][0]['error'],failure)
-                        self.assertEqual(result['sources'][0]['last_ok'],123)
                         self.assertEqual(store.show('postingboard',uid(314))['kind'],'mention')
                         count = store.status()['counts']['total']
-                        if failure=='source_timeout':self.assertTrue(1<count<1301)
-                        else:self.assertEqual(count,1)
-                        if attempt:self.assertEqual(result['added'],0)
-                        else:self.assertEqual(result['added'],count)
+                        if failure=='source_timeout':
+                            self.assertFalse(result['failed'])
+                            self.assertGreater(result['added'],0)
+                            if attempt:self.assertEqual(count,1301)
+                            else:
+                                self.assertTrue(1<count<1301)
+                                self.assertTrue(result['sources'][0]['backlog_pending'])
+                        else:
+                            self.assertTrue(result['failed'])
+                            self.assertEqual(result['sources'][0]['error'],failure)
+                            self.assertEqual(result['sources'][0]['last_ok'],123)
+                            self.assertEqual(count,1)
+                            if attempt:self.assertEqual(result['added'],0)
                 # Actual HTTP requests stay paced across both configured roots.
                 for previous,current in zip(calls,calls[1:]):
                     if current[0].endswith(uid(302)):
                         self.assertGreaterEqual(current[1]-previous[1],1.1-1e-8)
 
-    def test_page_limit_and_repeated_cursor_are_visible_errors(self):
+    def test_discovery_progress_and_repeated_cursor_recovery(self):
         c=FixtureClient('moltbook',settings()['moltbook'])
-        with patch.object(providers,'PAGE_SIZE',1),patch.object(providers,'MAX_PAGES',1):
-            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-        self.assertEqual(result['sources'][0]['error'],'page_limit');self.assertEqual(self.store.page()['messages'],[])
-        get=c.get
-        def repeat(path,params=None,**kw):
-            result=get(path,{**params,'cursor':'0'},**kw)
-            result.update(has_more=True,next_cursor='same');return result
-        c.get=repeat
         with patch.object(providers,'PAGE_SIZE',1):
             result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-        self.assertEqual(result['sources'][0]['error'],'pagination_no_progress')
+            self.assertFalse(result['failed']);self.assertTrue(result['sources'][0]['backlog_pending'])
+            self.assertEqual(result['added'],1)
+            get=c.get
+            def repeat(path,params=None,**kw):
+                result=get(path,{**(params or {}),'cursor':'0'},**kw)
+                if path=='/notifications':result.update(has_more=True,next_cursor='same')
+                return result
+            c.get=repeat
+            for _ in range(2):
+                result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
+            self.assertEqual(result['sources'][0]['error'],'pagination_no_progress')
+            c.get=get
+            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
+            self.assertFalse(result['failed']);self.assertEqual(self.store.status()['counts']['total'],1)
 
     def test_wait_timeout_cancellation_and_outage_never_write(self):
         self.save(10);self.store.failure('moltbook',uid(2),'http_503')
@@ -299,7 +320,7 @@ class CLITests(unittest.TestCase):
         return result.returncode,json.loads(result.stdout)
 
     def test_missing_state_config_bad_input_and_zero_timeout(self):
-        self.assertEqual(self.invoke('wait','--timeout','0'),(5,{'event':'error','error':'database_missing'}))
+        self.assertEqual(self.invoke('wait','--timeout','0'),(5,{'event':'error','error':'database_missing','next_action':'run_init','history_complete':False}))
         self.assertFalse(self.db.exists());self.assertEqual(self.invoke('init')[0],0)
         self.assertEqual(self.invoke('init')[1]['error'],'database_exists')
         self.assertEqual(self.invoke('wait','--timeout','0')[0],3)
@@ -307,10 +328,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.invoke('list','--limit','0')[1]['error'],'invalid_arguments')
         missing=Path(self.temp.name)/'private-name.json'
         result=subprocess.run([sys.executable,'-m','boardmail','--config',str(missing),'collect'],capture_output=True,text=True)
-        self.assertEqual(json.loads(result.stdout),{'event':'error','error':'config_missing'})
+        self.assertEqual(json.loads(result.stdout),{'event':'error','error':'config_missing','next_action':'check_config_and_credentials','history_complete':False})
         missing.write_text('{secret_token_goes_here')
         result=subprocess.run([sys.executable,'-m','boardmail','--config',str(missing),'status'],capture_output=True,text=True)
-        self.assertEqual(json.loads(result.stdout),{'event':'error','error':'invalid_config'});self.assertNotIn('secret',result.stdout)
+        self.assertEqual(json.loads(result.stdout),{'event':'error','error':'invalid_config','next_action':'check_config_and_credentials','history_complete':False});self.assertNotIn('secret',result.stdout)
 
     def test_latin1_stdout_preserves_unicode_messages_as_json(self):
         self.invoke('init')

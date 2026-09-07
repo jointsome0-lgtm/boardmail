@@ -1,5 +1,6 @@
 """SQLite state and a read-only wait predicate over committed arrival numbers."""
 from contextlib import contextmanager
+import json
 from pathlib import Path
 import sqlite3
 import threading
@@ -9,7 +10,11 @@ from urllib.parse import urlsplit
 from .config import COVERAGE, MailError
 
 STALE_AFTER = 540
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+PROGRESS_SCHEMA = """CREATE TABLE IF NOT EXISTS adapter_state (
+    source TEXT PRIMARY KEY, adapter TEXT NOT NULL, revision INTEGER NOT NULL,
+    state TEXT NOT NULL, backlog_pending INTEGER NOT NULL DEFAULT 0)"""
 
 
 class Store:
@@ -24,7 +29,7 @@ class Store:
         db = sqlite3.connect(str(self.path) if create else uri, uri=not create, timeout=5)
         db.row_factory = sqlite3.Row
         try:
-            if not create and db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+            if not create and db.execute("PRAGMA user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
                 raise MailError("unsupported_database")
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             with db:
@@ -52,14 +57,51 @@ class Store:
                 status TEXT NOT NULL DEFAULT 'unknown', last_checked INTEGER,
                 last_ok INTEGER, error TEXT, unavailable INTEGER NOT NULL DEFAULT 0)""")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            db.execute(PROGRESS_SCHEMA)
             for source, settings in (sources or {}).items():
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
+                db.execute("INSERT INTO adapter_state VALUES (?,?,0,'{}',0)",
+                           (source, str(settings.get("adapter", source))))
 
     def known(self, source, account_id):
         with self.connect() as db:
             self._check_account(db, source, account_id)
             return {r[0] for r in db.execute("SELECT id FROM messages WHERE source=?", (source,))}
+
+    def prepare_collection(self):
+        with self.connect(write=True) as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            db.execute(PROGRESS_SCHEMA)
+            if version == 1:
+                for source in COVERAGE:
+                    db.execute("""INSERT OR IGNORE INTO adapter_state
+                        SELECT source,source,0,'{}',0 FROM sources WHERE source=?""", (source,))
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    def collection_state(self, source, account_id, adapter):
+        with self.connect() as db:
+            self._check_account(db, source, account_id)
+            row = db.execute("SELECT * FROM adapter_state WHERE source=?", (source,)).fetchone()
+            if row and row["adapter"] != adapter:
+                raise MailError("adapter_mismatch")
+            known = {r[0] for r in db.execute("SELECT id FROM messages WHERE source=?", (source,))}
+            return known, json.loads(row["state"]) if row else {}, row["revision"] if row else 0
+
+    def save_collection(self, source, account_id, adapter, revision, batch):
+        with self.connect(write=True) as db:
+            self._check_account(db, source, account_id)
+            row = db.execute("SELECT adapter,revision FROM adapter_state WHERE source=?", (source,)).fetchone()
+            if row and row["adapter"] != adapter:
+                raise MailError("adapter_mismatch")
+            stale = (row["revision"] if row else 0) != revision
+            added = self._insert_messages(db, source, batch.messages, int(time.time()))
+            if not stale:
+                self._save_health(db, source, account_id, batch.unavailable, batch.error, int(time.time()))
+                db.execute("""INSERT INTO adapter_state VALUES (?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET
+                    revision=excluded.revision,state=excluded.state,backlog_pending=excluded.backlog_pending""",
+                    (source, adapter, revision+1, json.dumps(batch.state, allow_nan=False), not batch.complete))
+            return added, stale
 
     @staticmethod
     def _check_account(db, source, account_id):
@@ -71,23 +113,32 @@ class Store:
         stamp = int(time.time()) if now is None else now
         with self.connect(write=True) as db:
             self._check_account(db, source, account_id)
-            added = 0
-            for item in sorted(messages, key=lambda m: (m["created_at"], m.get("provider_seq") or 0, m["id"])):
-                if db.execute("SELECT 1 FROM messages WHERE source=? AND id=?", (source, item["id"])).fetchone():
-                    continue
-                db.execute("""INSERT INTO messages
-                    (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (source, item["id"], item["thread_id"],
-                    item.get("parent_id"), item.get("provider_seq"), item["kind"], item.get("author"),
-                    item["title"], item["body"], item["url"], item["created_at"], stamp))
-                added += 1
-            db.execute("""INSERT INTO sources (source,account_id,status,last_checked,last_ok,unavailable,error)
-                VALUES (?,?,?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET
-                status=excluded.status,last_checked=excluded.last_checked,
-                last_ok=COALESCE(excluded.last_ok,sources.last_ok),error=excluded.error,
-                unavailable=excluded.unavailable""",
-                (source,account_id,"error" if error else "ok",stamp,None if error else stamp,unavailable,error))
+            added = self._insert_messages(db, source, messages, stamp)
+            self._save_health(db, source, account_id, unavailable, error, stamp)
             return added
+
+    @staticmethod
+    def _insert_messages(db, source, messages, stamp):
+        added = 0
+        for item in sorted(messages, key=lambda m: (m["created_at"], m.get("provider_seq") or 0, m["id"])):
+            if db.execute("SELECT 1 FROM messages WHERE source=? AND id=?", (source, item["id"])).fetchone():
+                continue
+            db.execute("""INSERT INTO messages
+                (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (source, item["id"], item["thread_id"],
+                item.get("parent_id"), item.get("provider_seq"), item["kind"], item.get("author"),
+                item["title"], item["body"], item["url"], item["created_at"], stamp))
+            added += 1
+        return added
+
+    @staticmethod
+    def _save_health(db, source, account_id, unavailable, error, stamp):
+        db.execute("""INSERT INTO sources (source,account_id,status,last_checked,last_ok,unavailable,error)
+            VALUES (?,?,?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET
+            status=excluded.status,last_checked=excluded.last_checked,
+            last_ok=COALESCE(excluded.last_ok,sources.last_ok),error=excluded.error,
+            unavailable=excluded.unavailable""",
+            (source,account_id,"error" if error else "ok",stamp,None if error else stamp,unavailable,error))
 
     def failure(self, source, account_id, error, *, now=None):
         stamp = int(time.time()) if now is None else now
@@ -101,11 +152,18 @@ class Store:
     def _health(db):
         result = []
         now = time.time()
+        progress = {}
+        if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+            progress = {r[0]: (r[1], bool(r[2])) for r in db.execute("SELECT source,adapter,backlog_pending FROM adapter_state")}
+        from .adapters import next_action
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
             if value["status"] == "ok" and now - value["last_ok"] > STALE_AFTER:
                 value["status"] = "stale"
-            value.update(coverage=COVERAGE[value["source"]], history_complete=False)
+            adapter, pending = progress.get(value["source"], (value["source"], False))
+            value.update(coverage=COVERAGE.get(adapter, "Configured adapter scope; consult its instructions."), history_complete=False)
+            value.update(backlog_pending=pending,
+                         next_action=next_action(value["error"]) if value["error"] else "collect_periodically")
             result.append(value)
         return result
 

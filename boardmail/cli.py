@@ -9,6 +9,7 @@ import threading
 
 from . import config, providers
 from .config import MailError
+from .adapters import next_action
 from .store import Store
 
 
@@ -38,7 +39,7 @@ def parser():
         if command == "mark":
             s.add_argument("action",choices=("read","unread","needs-reply","clear-reply","replied"))
             s.add_argument("--ref")
-        s.add_argument("source",choices=tuple(config.COVERAGE))
+        s.add_argument("source",help="Source name returned in a message")
         s.add_argument("id")
     return p
 
@@ -73,7 +74,7 @@ def run(args):
                 signal.signal(sig,handler)
         return result,{"messages":0,"timeout":3,"cancelled":4}[result["event"]]
     try:
-        message_id = config.uuid(args.id)
+        message_id = config.identifier(args.id)
     except (ValueError,TypeError,AttributeError):
         raise MailError("invalid_message_id") from None
     if args.command == "mark":
@@ -92,5 +93,8 @@ def main(argv=None):
         result, code = {"event":"error","error":"local_state_error"},2
     except KeyboardInterrupt:
         result, code = {"event":"cancelled"},4
+    if result.get("event") == "error":
+        result["next_action"] = next_action(result["error"])
+    result.setdefault("history_complete", False)
     print(json.dumps(result,ensure_ascii=True))
     return code
