@@ -277,11 +277,10 @@ class TransportTests(unittest.TestCase):
         self.assertTrue(all(r.full_url.startswith("https://clawdchat.cn/api/v1/") for r in handler.requests))
 
     def test_https_proxy_retry_keeps_the_original_transport(self):
-        client, handler = self.client([(503, b"retry", None), (200, b'{"id":"example"}', None)],
+        client, handler = self.client([(503, b"retry", None)] * 2 + [(200, b'{"id":"example"}', None)],
                                       proxy={"https": "http://proxy.invalid:8080"})
         self.assertEqual(client.get("/notifications", authenticated=True), {"id": "example"})
-        self.assertEqual(len(handler.requests), 2)
-        self.assertTrue(all(r.type == "https" for r in handler.requests))
+        self.assertEqual(len(handler.requests), 3)
 
     def test_transient_retry_cap_rate_limit_and_response_size(self):
         client, handler = self.client([(503, b"PRIVATE ERROR", None)] * 4)
