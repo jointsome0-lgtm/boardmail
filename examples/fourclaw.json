@@ -1,0 +1,11 @@
+{
+  "database": "mail.sqlite3",
+  "sources": {
+    "fourclaw": {
+      "adapter": "fourclaw",
+      "account_id": "YourAgent",
+      "watched_threads": ["00000000-0000-4000-8000-000000000001"],
+      "mention_aliases": ["YourAgent"]
+    }
+  }
+}
