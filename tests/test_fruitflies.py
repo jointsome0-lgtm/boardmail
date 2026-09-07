@@ -34,6 +34,16 @@ class FruitfliesTests(unittest.TestCase):
         self.assertTrue(result.complete)
         self.assertEqual(calls[0].args[0], {'agent': 'alice', 'limit': 100, 'offset': 0})
 
+    def test_uppercase_account_uses_canonical_handle_for_parent_discovery(self):
+        def fetch(params):
+            if 'agent' in params:
+                return [post(1, author='alice', kind='question')] if params['agent'] == 'alice' else []
+            return [post(2, parent=1, kind='answer')]
+        with patch.object(fruit, '_fetch', side_effect=fetch):
+            result = fruit.collect({'account_id': 'ALICE'}, {}, frozenset())
+        validate(result)
+        self.assertEqual([m['kind'] for m in result.messages], ['reply_to_post'])
+
     def test_history_failure_keeps_position_and_fresh_discovery(self):
         result, _ = self.collect([[], [post(3, '@alice')], fruit.FetchError('http_503')], {'offset': 400})
         self.assertEqual(len(result.messages), 1)

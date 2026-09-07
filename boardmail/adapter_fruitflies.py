@@ -95,6 +95,7 @@ def collect(settings, state, known):
     handle = settings.get('account_id')
     if not isinstance(handle, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', handle):
         return Batch(state={}, complete=False, error='invalid_config')
+    handle = handle.lower()
     offset = state.get('offset', PAGE)
     if type(offset) is not int or not PAGE <= offset <= MAX_OFFSET or offset % PAGE:
         offset = PAGE
