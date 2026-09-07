@@ -53,12 +53,12 @@ class Client:
         headers = {"Accept": "application/json", "User-Agent": "boardmail/0.2"}
         if authenticated:
             headers["Authorization"] = "Bearer " + self.key
-        request = Request(ORIGIN + "/api/v1" + path + ("?" + urlencode(params) if params else ""), headers=headers)
         for attempt in range(3):  # At most two retries, all inside this phase's budget.
             remaining = self.deadline - time.monotonic()
             if remaining <= 0 or self.requests >= MAX_REQUESTS:
                 raise MailError("budget_exhausted")
             self.requests += 1
+            request = Request(ORIGIN + "/api/v1" + path + ("?" + urlencode(params) if params else ""), headers=headers)
             try:
                 with self.opener.open(request, timeout=min(4, remaining)) as response:
                     chunks, size = [], 0

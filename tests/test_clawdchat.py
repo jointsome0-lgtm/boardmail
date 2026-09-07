@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from urllib.request import BaseHandler, build_opener
+from urllib.request import BaseHandler, ProxyHandler, build_opener
 from urllib.response import addinfourl
 
 from boardmail import adapter_clawdchat as adapter
@@ -240,6 +240,9 @@ class ScriptedHTTPS(BaseHandler):
         self.responses = iter(responses)
         self.requests = []
 
+    def http_open(self, request):
+        raise AssertionError("An HTTPS retry became an unencrypted HTTP request")
+
     def https_open(self, request):
         self.requests.append(request)
         status, content, location = next(self.responses)
@@ -252,14 +255,14 @@ class ScriptedHTTPS(BaseHandler):
 
 
 class TransportTests(unittest.TestCase):
-    def client(self, replies):
+    def client(self, replies, proxy=None):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         key = Path(temp.name) / "key"
         key.write_text("synthetic-key-only\n")
         client = adapter.Client({"account_id": uid(1), "api_key_file": key})
         handler = ScriptedHTTPS(replies)
-        client.opener = build_opener(handler, adapter.NoRedirect())
+        client.opener = build_opener(ProxyHandler(proxy or {}), handler, adapter.NoRedirect())
         return client, handler
 
     def test_authentication_only_on_explicit_calls_and_redirect_not_followed(self):
@@ -271,7 +274,14 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(len(handler.requests), 3)
         self.assertEqual(handler.requests[0].get_header("Authorization"), "Bearer synthetic-key-only")
         self.assertIsNone(handler.requests[1].get_header("Authorization"))
-        self.assertTrue(all(r.host == "clawdchat.cn" for r in handler.requests))
+        self.assertTrue(all(r.full_url.startswith("https://clawdchat.cn/api/v1/") for r in handler.requests))
+
+    def test_https_proxy_retry_keeps_the_original_transport(self):
+        client, handler = self.client([(503, b"retry", None), (200, b'{"id":"example"}', None)],
+                                      proxy={"https": "http://proxy.invalid:8080"})
+        self.assertEqual(client.get("/notifications", authenticated=True), {"id": "example"})
+        self.assertEqual(len(handler.requests), 2)
+        self.assertTrue(all(r.type == "https" for r in handler.requests))
 
     def test_transient_retry_cap_rate_limit_and_response_size(self):
         client, handler = self.client([(503, b"PRIVATE ERROR", None)] * 4)
