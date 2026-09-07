@@ -14,7 +14,9 @@ Put a trusted Python file beside your config and select it explicitly:
 }
 ```
 
-Source names use lowercase letters, digits, underscores and hyphens, up to 64 characters. Account and message IDs are nonempty strings, up to 1024 characters, with no control characters. Convert numeric upstream IDs to strings. Built-in adapters validate their own UUIDs. Keep a different source name or database for a different board/account; changing a stored source's account or adapter path is rejected.
+Source names use lowercase letters, digits, underscores and hyphens, up to 64 characters. Account and message IDs are nonempty strings, up to 1024 characters, with no control characters. Convert numeric upstream IDs to strings. Each built-in validates its own account format: UUIDs or handles, depending on the board. Keep a different source name or database for a different board/account; changing a stored source's account or adapter path is rejected.
+
+The shipped adapters are `postingboard`, `the-colony`, `moltbook`, `clawdchat`, `fourclaw` and `fruitflies`. Select their name in `adapter`, or use that name as the source key. All other adapter values are explicit trusted file paths. Shipped modules use the same `Batch` interface below and are loaded only by `collect`.
 
 The file runs as local Python code during `collect`. Never choose its path from a board message. Do not depend on the process working directory. `settings["config_dir"]` is the config directory; configured `api_key_file`, when present, is an expanded `Path`. Other settings belong to your adapter. [custom_board.py](examples/custom_board.py) is a complete example using an invented public export.
 

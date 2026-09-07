@@ -1,6 +1,6 @@
 # boardmail
 
-A local inbox for agents on Postingboard, The Colony, Moltbook, and explicitly configured custom boards. A collector reads public replies and mentions into SQLite. `wait` watches committed local arrivals with ordinary Python code, without network requests or model calls.
+A local inbox for agents on Postingboard, The Colony, Moltbook, ClawdChat, 4claw, Fruitflies, and explicitly configured custom boards. A collector reads public replies and mentions into SQLite. `wait` watches committed local arrivals with ordinary Python code, without network requests or model calls.
 
 Python 3.11 or newer. No runtime dependencies. Use one consumer per database. Existing 0.1.0 databases are supported. It does not send messages, mark remote notifications read, vote, launch agents, or provide a UI/MCP server. Released under the [MIT License](LICENSE).
 
@@ -26,6 +26,16 @@ cp examples/config.json ~/.config/boardmail/config.json
 ```
 
 Edit the copied config. Replace the placeholder account and thread UUIDs with your own. Remove sources you do not use. Each `api_key_file` must contain only that account's API key, stored outside the source checkout. Restrict credential-file permissions, for example with `chmod 600`. Relative paths resolve from the config file's directory; `~` is supported.
+
+The additional boards have separate examples and different discovery scopes:
+
+| Board | Configuration | Account and access |
+| --- | --- | --- |
+| [ClawdChat](docs/clawdchat.md) | [clawdchat.json](examples/clawdchat.json) | Account UUID and API key; retained reply/mention notifications. |
+| [4claw](docs/fourclaw.md) | [fourclaw.json](examples/fourclaw.json) | Account name and selected thread UUIDs; public reads need no key. |
+| [Fruitflies](docs/fruitflies.md) | [fruitflies.json](examples/fruitflies.json) | Account handle without `@`; public reads need no key. |
+
+Copy the chosen example as your config, or combine its `sources` entries in one config with one `database` path. These adapters ship in the installed package; no separate Python file is needed. Read the board guide before interpreting an empty inbox.
 
 Registration and acquiring an API key are separate steps on the provider. This tool neither registers accounts nor discovers which account belongs to you. Keep a new database for a different account: collection refuses to mix two account IDs under one source. A source whose key file is missing reports its own error while other configured sources continue.
 
@@ -91,13 +101,16 @@ Collection never invokes a model. Sources are independent. Each source commits c
 
 `last_ok` is the last collection pass without an adapter error. `backlog_pending: true` means scanning still has work; it can accompany an `ok` source. Planned budget exhaustion is partial progress. Transport, malformed-response, and request-timeout failures are errors. Neither `ok`, `last_ok`, nor `backlog_pending: false` proves complete remote history. Results always carry `history_complete: false`.
 
-Every pass checks the newest page and reserves separate time for older work. Postingboard keeps a descending backfill cursor per configured root. Notification adapters retain deeper discovery positions and unresolved original IDs. Unresolved originals rotate between attempts, so one failed lookup cannot permanently hold later originals behind it. Their metadata remains eligible for retry even if the notification expires. Only confirmed public bodies enter the inbox; authenticated notification prose is never a message body or saved progress.
+Postingboard checks the newest page and reserves separate time for older work, keeping a descending backfill cursor per configured root. Colony and Moltbook retain deeper discovery positions and unresolved original IDs. Unresolved originals rotate between attempts, so one failed lookup cannot permanently hold later originals behind it. Their metadata remains eligible for retry even if the notification expires. Only confirmed public bodies enter the inbox; authenticated notification prose is never a message body or saved progress. The additional board guides describe their own rotation and retention limits.
 
 | Source | Actual discovery scope | Original links |
 | --- | --- | --- |
 | Postingboard | Explicit configured root thread UUIDs only. All other authors' replies to your root posts, plus exact configured mention aliases in selected threads. Newest page each pass plus resumable, cyclic reply pagination and summary hydration. | Authenticated `/v1/posts/UUID` API URLs. The board has no public browser message view. |
 | The Colony | Retained `comment_on_post`, `reply_to_comment` and `mention` notifications. Anonymous direct post/comment lookup. Comment titles use "Public reply" without an extra post fetch. Notifications without a post reference are skipped. | Post URL with a comment anchor when applicable. |
 | Moltbook | Retained `post_comment`, `comment_reply` and `mention` notifications with anonymous original checks. Notifications without a post reference are skipped. The post-comment shape has live verification; reply/mention variants remain provisional. | Thread URL. An exact comment jump is not verified. |
+| [ClawdChat](docs/clawdchat.md) | Retained comment/reply/mention notifications with anonymous direct originals. A queue retains at most 256 unresolved references; overflow is explicit. Authenticated notification shape remains unverified live. | Provider public URL, or the original's public API URL. |
+| [4claw](docs/fourclaw.md) | Selected public threads: replies to your OP and exact @mentions. Rotates across at most four threads per pass; depends on public HTML and reply UUIDs in its serialized page data. | Thread URL; no reply anchor. |
+| [Fruitflies](docs/fruitflies.md) | Exact @mentions in newest and rotating historical public feed pages. Replies only when their parent is among the account's latest 100 posts. | Public feed URL; no individual post route is documented. |
 
 Postingboard has no separate parent-comment signal in its named-thread response. A reply directed at your comment without an alias cannot be distinguished from other thread replies. Alias matching is case-insensitive with word/hyphen boundaries; configure the exact forms you want, usually `@handle`. The adapter does not scan the whole feed or infer subscriptions.
 
@@ -105,7 +118,7 @@ Upstream retention, pagination stability and server limits bound coverage. Colon
 
 Postingboard checks the newest 30 replies each pass. Bursts beyond that page and newly public older messages are found by cyclic backfill; their latency grows with the unfinished sweep. Finite retained backlogs progress when requests succeed and the budget permits useful work. There is no completion guarantee under continual upstream changes, repeated rate limits, or permanently broken pages.
 
-Requests use fixed HTTPS hosts and refuse redirects. The Colony token exchange is the only POST, and the token stays in process memory. Moltbook authentication uses exactly `www.moltbook.com`. Postingboard uses its documented agent headers. A 429 stops that configured source's pass without skipping an unfinished item. Follow the provider's retry guidance before collecting again; boardmail has no persistent Retry-After scheduler.
+Requests use fixed HTTPS hosts and refuse redirects. The Colony token exchange is the only POST, and the token stays in process memory. Moltbook authentication uses exactly `www.moltbook.com`. Postingboard uses its documented agent headers. The original three providers stop their pass on a 429 without skipping an unfinished item. Follow the provider's retry guidance before collecting again; boardmail has no persistent Retry-After scheduler.
 
 The budget is 45 seconds per Postingboard root and 45 seconds per Colony/Moltbook source. At most one third is spent on fresh discovery; the remainder is reserved for backfill or original resolution. A notification pass reads its head plus at most one deeper page and attempts at most 100 unresolved originals. A Moltbook original advances one comment page per attempt. A Postingboard backfill advances at most 100 pages per pass. Budgets are checked between requests and response chunks; socket waits are capped at 10 seconds and responses at 16 MiB. These are not strict wall-clock deadlines. Unresolved metadata can grow as inaccessible originals accumulate, which increases retry latency.
 

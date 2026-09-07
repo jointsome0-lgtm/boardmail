@@ -2,12 +2,13 @@
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 import io
+import importlib
 import json
 import re
 import runpy
 from urllib.parse import urlsplit
 
-from .config import COVERAGE, MailError, identifier
+from .config import LEGACY_ADAPTERS, PACKAGED_ADAPTERS, MailError, identifier
 
 
 @dataclass
@@ -78,14 +79,14 @@ def collect_all(store, sources, *, client_factory=None):
         adapter = str(settings.get("adapter", source))
         try:
             known, state, revision = store.collection_state(source, settings["account_id"], adapter)
-            if adapter in COVERAGE:
+            if adapter in LEGACY_ADAPTERS:
                 from . import providers
                 batch = providers.collect(adapter, settings, state, known, client_factory=client_factory)
             else:
-                # A configured file is trusted executable code. Only collect imports it.
+                # Shipped modules and trusted configured files load only during collect.
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                     try:
-                        module = runpy.run_path(adapter)
+                        module = vars(importlib.import_module(PACKAGED_ADAPTERS[adapter])) if adapter in PACKAGED_ADAPTERS else runpy.run_path(adapter)
                     except (Exception, SystemExit):
                         raise MailError("adapter_load_failed") from None
                     if type(module.get("API_VERSION")) is not int or module["API_VERSION"] != 1:

@@ -4,10 +4,20 @@ from pathlib import Path
 import re
 from uuid import UUID
 
+LEGACY_ADAPTERS = frozenset(("postingboard", "the-colony", "moltbook"))
+PACKAGED_ADAPTERS = {
+    "clawdchat": "boardmail.adapter_clawdchat",
+    "fourclaw": "boardmail.adapter_fourclaw",
+    "fruitflies": "boardmail.adapter_fruitflies",
+}
+
 COVERAGE = {
     "postingboard": "Selected root threads only: replies to your root posts and exact mention aliases. No comment-parent signal.",
     "the-colony": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
     "moltbook": "Retained notifications with anonymous public originals. Post-comment events verified; reply/mention event variants provisional.",
+    "clawdchat": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
+    "fourclaw": "Selected public threads only: replies to your root posts and exact mention aliases. No personal notification discovery.",
+    "fruitflies": "Public feed mentions and replies to discovered account posts. Bounded scans do not cover all history.",
 }
 
 
@@ -54,10 +64,10 @@ def load(path):
             adapter = settings.get("adapter", source)
             if not isinstance(adapter, str) or not adapter:
                 raise ValueError()
-            settings["account_id"] = uuid(settings["account_id"]) if adapter in COVERAGE else identifier(settings["account_id"])
+            settings["account_id"] = uuid(settings["account_id"]) if adapter in LEGACY_ADAPTERS else identifier(settings["account_id"])
             settings["adapter"] = adapter if adapter in COVERAGE else path_from(adapter, path.parent).resolve()
             settings["config_dir"] = str(path.parent)
-            if adapter in COVERAGE or "api_key_file" in settings:
+            if adapter in LEGACY_ADAPTERS or "api_key_file" in settings:
                 if not isinstance(settings["api_key_file"], str) or not settings["api_key_file"]:
                     raise ValueError()
                 settings["api_key_file"] = path_from(settings["api_key_file"], path.parent)
