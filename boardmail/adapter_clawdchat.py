@@ -30,13 +30,16 @@ class NoRedirect(HTTPRedirectHandler):
 
 class Client:
     def __init__(self, settings):
-        self.owner = uuid(settings["account_id"])
         try:
-            with Path(settings["api_key_file"]).open() as stream:
+            self.owner = uuid(settings["account_id"])
+        except (KeyError, ValueError, TypeError, AttributeError):
+            raise MailError("invalid_config") from None
+        try:
+            with Path(settings.get("api_key_file")).open() as stream:
                 self.key = stream.read(4097).strip()
             if not self.key or len(self.key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in self.key):
                 raise ValueError()
-        except (OSError, UnicodeError, ValueError):
+        except (OSError, UnicodeError, ValueError, TypeError):
             raise MailError("credentials_unavailable") from None
         self.end = time.monotonic() + SOURCE_SECONDS
         self.deadline = self.end
@@ -147,7 +150,7 @@ def _original(client, entry):
 
 def _error(batch, exc):
     code = str(exc) if isinstance(exc, MailError) else "invalid_response"
-    if batch.error is None or code == "http_429":
+    if code != "budget_exhausted" and (batch.error is None or code == "http_429"):
         batch.error = code
     batch.complete = False
     return code
@@ -252,5 +255,5 @@ def collect(settings, state, known):
         if batch.error != "http_429":
             resolve(fresh[:8], 15)
     batch.state["pending"] = list(pending.values())
-    batch.complete = batch.error is None and not pending and batch.state["offset"] == 0
+    batch.complete = batch.complete and not pending and batch.state["offset"] == 0
     return batch

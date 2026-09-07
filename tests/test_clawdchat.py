@@ -201,6 +201,23 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(added, 0)
         self.assertEqual([p for p, _, _ in self.client.calls], ["/agents/me"])
 
+    def test_local_setup_errors_keep_pending_state_and_planned_budget_is_partial(self):
+        state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),
+                                          "kind": "reply_to_post", "is_post": False}]}
+        for settings, code in [({"account_id": uid(1)}, "credentials_unavailable"),
+                               ({"account_id": "not-a-uuid"}, "invalid_config")]:
+            with self.subTest(code=code):
+                batch = adapter.collect(settings, state, frozenset())
+                self.assertEqual(batch.error, code)
+                self.assertEqual(batch.state, state)
+                self.assertFalse(batch.complete)
+        # Exhausting a planned discovery phase is partial progress, not an outage.
+        self.client.page_error[0] = "budget_exhausted"
+        batch, added = self.collect()
+        self.assertEqual(added, 0)
+        self.assertIsNone(batch.error)
+        self.assertFalse(batch.complete)
+
     def test_bad_reference_isolated_and_unsafe_canonical_links_use_public_api(self):
         self.client.events = [event(9), event(10)]
         del self.client.events[0]["comment_id"]
