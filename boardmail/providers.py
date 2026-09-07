@@ -164,7 +164,7 @@ def notification_mail(client, known, batch):
                 kind = kinds.get(event.get("notification_type" if colony else "type"))
                 if kind is None: continue
                 raw_post = event.get("post_id" if colony else "relatedPostId")
-                if raw_post is None and kind == "mention": continue
+                if raw_post is None: continue  # Outside addressable post/thread mail.
                 post_id = uuid(raw_post)
                 raw_comment = event.get("comment_id" if colony else "relatedCommentId")
                 mid = uuid(raw_comment) if raw_comment else post_id

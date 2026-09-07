@@ -166,6 +166,7 @@ class MailTests(unittest.TestCase):
         clients = {s:FixtureClient(s,cfg) for s,cfg in settings().items()}
         c = clients['moltbook']
         c.events.insert(0,{'id':uid(900),'type':'mention','relatedPostId':None})
+        c.events.insert(0,{'id':uid(901),'type':'comment_reply','relatedPostId':None})
         c.comments[0]['author'] = None
         result = providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
         self.assertFalse(result['failed'])

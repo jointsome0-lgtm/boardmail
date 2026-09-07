@@ -240,5 +240,19 @@ class AdapterTests(unittest.TestCase):
         self.assertIn('anonymous public originals',sources['alias']['coverage'])
         self.assertIn('Configured adapter',sources['moltbook']['coverage'])
 
+    def test_adapter_system_exit_still_returns_json_and_source_health(self):
+        adapter=self.root/'exits.py'
+        config=self.root/'config.json'
+        config.write_text(json.dumps({'database':str(self.db),'sources':{
+            'custom':{'account_id':'demo-agent','adapter':str(adapter)}}}))
+        for source,expected in [('import sys\nsys.exit(2)\n','adapter_load_failed'),
+                                ('import sys\nAPI_VERSION=1\ndef collect(settings,state,known):\n    sys.exit(7)\n','adapter_failed')]:
+            adapter.write_text(source)
+            code,result=self.cli('--config',str(config),'collect')
+            self.assertEqual(code,1)
+            self.assertEqual(result['errors'][0]['error'],expected)
+            self.assertEqual(result['sources'][0]['error'],expected)
+            self.assertEqual(result['errors'][0]['next_action'],'check_trusted_adapter_code')
+
 
 if __name__ == '__main__': unittest.main()

@@ -86,13 +86,13 @@ def collect_all(store, sources, *, client_factory=None):
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                     try:
                         module = runpy.run_path(adapter)
-                    except Exception:
+                    except (Exception, SystemExit):
                         raise MailError("adapter_load_failed") from None
                     if type(module.get("API_VERSION")) is not int or module["API_VERSION"] != 1:
                         raise MailError("adapter_version_unsupported")
                     try:
                         batch = module["collect"](settings, state, frozenset(known))
-                    except Exception:
+                    except (Exception, SystemExit):
                         raise MailError("adapter_failed") from None
             validate(batch)
             count, stale = store.save_collection(source, settings["account_id"], adapter, revision, batch)

@@ -96,8 +96,8 @@ Every pass checks the newest page and reserves separate time for older work. Pos
 | Source | Actual discovery scope | Original links |
 | --- | --- | --- |
 | Postingboard | Explicit configured root thread UUIDs only. All other authors' replies to your root posts, plus exact configured mention aliases in selected threads. Newest page each pass plus resumable, cyclic reply pagination and summary hydration. | Authenticated `/v1/posts/UUID` API URLs. The board has no public browser message view. |
-| The Colony | Retained `comment_on_post`, `reply_to_comment` and `mention` notifications. Anonymous direct post/comment lookup. Non-post mentions are skipped. | Post URL with a comment anchor when applicable. |
-| Moltbook | Retained `post_comment`, `comment_reply` and `mention` notifications with anonymous original checks. The post-comment shape has live verification; reply/mention variants remain provisional. | Thread URL. An exact comment jump is not verified. |
+| The Colony | Retained `comment_on_post`, `reply_to_comment` and `mention` notifications. Anonymous direct post/comment lookup. Comment titles use "Public reply" without an extra post fetch. Notifications without a post reference are skipped. | Post URL with a comment anchor when applicable. |
+| Moltbook | Retained `post_comment`, `comment_reply` and `mention` notifications with anonymous original checks. Notifications without a post reference are skipped. The post-comment shape has live verification; reply/mention variants remain provisional. | Thread URL. An exact comment jump is not verified. |
 
 Postingboard has no separate parent-comment signal in its named-thread response. A reply directed at your comment without an alias cannot be distinguished from other thread replies. Alias matching is case-insensitive with word/hyphen boundaries; configure the exact forms you want, usually `@handle`. The adapter does not scan the whole feed or infer subscriptions.
 
