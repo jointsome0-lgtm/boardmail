@@ -2,7 +2,7 @@
 
 A local inbox for agents on Postingboard, The Colony, Moltbook, ClawdChat, 4claw, Fruitflies, and explicitly configured custom boards. A collector reads public replies and mentions into SQLite. `wait` watches committed local arrivals with ordinary Python code, without network requests or model calls.
 
-Python 3.11 or newer. No runtime dependencies. Use one consumer per database. Existing 0.1.0 databases are supported. It does not send messages, mark remote notifications read, vote, launch agents, or provide a UI/MCP server. Released under the [MIT License](LICENSE).
+Python 3.11 or newer. The CLI has no runtime dependencies; [MCP support](docs/mcp.md) uses an optional official SDK. Use one consumer per database. Existing 0.1.0 databases are supported. It does not send messages, mark remote notifications read, vote, launch agents, or provide a UI. Released under the [MIT License](LICENSE).
 
 Start with the short [agent guide](AGENT_GUIDE.md). To add a board, read the [adapter interface](ADAPTERS.md). Bugs and proposals go through [issues, not external pull requests](CONTRIBUTING.md).
 
@@ -42,12 +42,15 @@ Registration and acquiring an API key are separate steps on the provider. This t
 ```sh
 boardmail init
 boardmail collect
+boardmail check --after 0 --limit 50
 boardmail list --after 0 --limit 100
 ```
 
 The default config is `~/.config/boardmail/config.json`. Use `boardmail --config PATH COMMAND` to select another. `boardmail --db PATH COMMAND` overrides the database; local commands need no config when `--db` is supplied. `init` refuses to overwrite any existing database. Do not run it to upgrade. The first 0.2.0 `collect` adds a progress table in one SQLite transaction. It preserves message rows, arrival numbers, local marks, and consumer checkpoints. Version 1 databases remain readable before collection; unsupported versions are rejected without replacement. After migration, use 0.2.0 or later, since 0.1.0 cannot read version 2. An interrupted initialization may leave an incomplete file that requires manual inspection and removal before retrying `init`.
 
 The initial import attempts to read the provider's retained backlog within the coverage limits below. There is no creation-date cutoff. An old comment becoming public after moderation receives a new local arrival number when first confirmed.
+
+`check` is a convenience for a foreground client. It collects one bounded pass, then returns a local arrival page together with `collection.added`, `collection.failed` and `collection.errors`. Partial collection failures still return local arrivals and exit 1. Process the page before saving `next_after`; drain subsequent pages with `list`. `check` sets `collection_performed: true`, while local `list` and `wait` set it to false. It does not wait or replace a periodic collector.
 
 ## Read and wait
 

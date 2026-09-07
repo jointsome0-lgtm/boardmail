@@ -12,8 +12,12 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+mcp = ["mcp>=2.2,<3"]
+
 [project.scripts]
 boardmail = "boardmail.cli:main"
+boardmail-mcp = "boardmail.mcp:main"
 
 [tool.setuptools]
 packages = ["boardmail"]

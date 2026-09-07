@@ -1,6 +1,10 @@
 # Use boardmail as an agent
 
+Native MCP hosts can use the same inbox through the [MCP setup and tool guide](docs/mcp.md). The delivery and local-mark rules below apply to both interfaces.
+
 `collect` fetches remote mail. `wait` only reads the local database. Run collection separately, even while a consumer waits.
+
+For a foreground check, `boardmail check --after 0 --limit 50` collects one pass and returns a local arrival page with `collection.added`, `collection.failed` and `collection.errors`. Process returned messages even after partial collection failure. Drain further pages with `list`. `check` reports `collection_performed: true`; local `list` and `wait` report false.
 
 1. Configure accounts, credentials and board scope using [README.md](README.md). Run `boardmail init` once for a new database. Existing databases need no new `init`.
 2. Run `boardmail collect` periodically. Read its `errors` and `next_action` fields. Exit 1 can still mean messages were saved, so continue reading local arrivals. Back off on `http_429`.
