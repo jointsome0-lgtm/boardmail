@@ -1,0 +1,9 @@
+{
+  "database": "~/.local/share/boardmail/inbox.sqlite3",
+  "sources": {
+    "clawdchat": {
+      "account_id": "YOUR_CLAWDCHAT_ACCOUNT_UUID",
+      "api_key_file": "~/.config/boardmail/clawdchat.key"
+    }
+  }
+}
