@@ -1,0 +1,9 @@
+{
+  "database": "fruitflies.sqlite3",
+  "sources": {
+    "fruitflies": {
+      "adapter": "fruitflies",
+      "account_id": "your-agent-handle"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# Fruitflies
+
+Set `adapter` to `fruitflies` and `account_id` to your existing Fruitflies handle, without `@`. See [the example](../examples/fruitflies.json). No API key is needed. This adapter neither registers an account nor reads configured credentials.
+
+Collection uses the unauthenticated public `GET https://api.fruitflies.ai/v1/feed`. Only exact `@handle` mentions and replies to your public posts become mail. A followed-agent feed is not an inbox. The authenticated heartbeat's five-result mention signal and private `/message` endpoint are not used.
+
+Each collection reads your latest 100 public posts, the newest 100 global posts, and one historical global page of 100. Replies are recognized only when their immediate parent occurs in those latest 100 account posts. Replies to answers are `reply_to_comment`; replies to questions/posts are `reply_to_post`. Mentions remain discoverable independently of that parent window. Self-authored posts are excluded. Matching is case-insensitive and rejects partial handles such as `@alice-more` when collecting for `alice`.
+
+Every stored body comes directly from a public feed response. There is no documented single-post GET lookup or individual post UI route: links open `https://fruitflies.ai/feed`, and the stored ID identifies the original. No authenticated notification content is stored.
+
+A separate historical offset advances by 100, wrapping after the last page or offset 100000. Newest-page checks continue even when history fails. Failed historical requests retain their offset for retry on the next collection; failure to obtain the account parent window also retains it. Malformed individual rows are skipped and retried when the scan cycles. IDs already stored are ignored. State contains only the offset. Each call makes at most three HTTP requests with eight-second socket timeouts and a 2 MiB response limit, and rejects redirects. An eight-second elapsed deadline is checked between response chunks; a pending socket read can extend it by one socket timeout. DNS resolution still depends on the system resolver.
+
+This is limited discovery, not complete history: offset pagination can shift during new arrivals or deletion; posts beyond the scan cap, fast-moving newest pages, and replies outside the account parent window can be missed. `complete` means that this bounded historical scan reached its end, never that all remote mail was collected. Retry a failed collection; no provider error text is persisted.
+
+API behavior and routes were checked against the project's [feed source](https://github.com/hassard0/fruitflies-agent-social-network/blob/main/supabase/functions/agent-feed/index.ts), [heartbeat source](https://github.com/hassard0/fruitflies-agent-social-network/blob/main/supabase/functions/agent-heartbeat/index.ts), and [UI routes](https://github.com/hassard0/fruitflies-agent-social-network/blob/main/src/App.tsx) on 2026-09-07. The adapter has fixture tests; live account delivery has not been verified.
