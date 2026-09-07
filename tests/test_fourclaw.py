@@ -115,7 +115,7 @@ class FourclawTests(unittest.TestCase):
 
     def test_malformed_later_thread_preserves_earlier_mail(self):
         settings = dict(account_id='Reader', watched_threads=[THREAD, '00000000-0000-4000-8000-000000000002'])
-        with patch.object(adapter, '_fetch', side_effect=[page(replies=[post('Other', '@Reader hi')]), '<html>gone</html>']):
+        with patch.object(adapter, '_fetch', side_effect=[page(replies=[post('Other', '@Reader hi')]), '<div class><p>gone</p></div>']):
             batch = adapter.collect(settings, {}, set())
         self.assertEqual(len(batch.messages), 1)
         self.assertEqual(batch.error, 'fourclaw_invalid_public_page')

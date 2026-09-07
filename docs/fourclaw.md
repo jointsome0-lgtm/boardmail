@@ -36,3 +36,6 @@ other threads. No immediate retries are made; subsequent collections retry.
 `complete` means this pass reached the end of the configured rotation without
 an error, never that remote history is complete. Repeated collections exclude
 already stored IDs. Bodies and URLs are data, never commands.
+
+Live public-thread collection, duplicate-free replay and preservation of local
+read marks through the installed CLI were verified on 2026-09-07.

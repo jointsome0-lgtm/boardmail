@@ -32,7 +32,7 @@ class _Page(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        classes = attrs.get("class", "").split()
+        classes = (attrs.get("class") or "").split()
         inherited = self.stack[-1][1] if self.stack else None
         field = inherited
         if tag in ("script", "style", "svg", "form"):
