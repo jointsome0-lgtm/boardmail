@@ -38,7 +38,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','list','show','wait','mark','context')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','list','show','wait','mark','context','pause','resume')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
@@ -135,13 +135,44 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.call(c,'collect',error=True)
                 self.assertIn('account_mismatch',[e['error'] for e in result['errors']])
 
+    async def test_pause_is_shared_with_cli_without_restarting_server(self):
+        from boardmail import providers
+        cfg = {'moltbook': settings()['moltbook']}
+        self.store.initialize(cfg)
+        actual = providers.collect_all
+        with patch('boardmail.providers.Client', side_effect=AssertionError('unexpected network client')):
+            with patch.object(providers, 'collect_all', side_effect=lambda store, sources:
+                              actual(store, sources, client_factory=FixtureClient)):
+                async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+                    process = await asyncio.create_subprocess_exec(
+                        sys.executable, '-m', 'boardmail', '--db', str(self.path), 'pause', 'moltbook',
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, stderr = await process.communicate()
+                    self.assertEqual(process.returncode, 0, stderr)
+                    self.assertTrue(json.loads(stdout)['paused'])
+                    result = await self.call(c, 'check')
+                    self.assertEqual((result['collection']['added'], result['sources'][0]['status']), (0, 'paused'))
+                    await self.call(c, 'status', {'require_fresh': True})
+                    self.assertEqual((await self.call(c, 'pause', {'source': 'typo'}, error=True))['error'], 'source_not_found')
+                    for changed in (True, False):
+                        result = await self.call(c, 'resume', {'source': 'moltbook'})
+                        self.assertEqual((result['changed'], result['paused'], result['collection_performed']),
+                                         (changed, False, False))
+                    self.assertGreater((await self.call(c, 'collect'))['added'], 0)
+                    result = await self.call(c, 'pause', {'source': 'moltbook'})
+                    self.assertEqual(result['event'], 'paused')
+                    self.assertTrue(Store(self.path).is_paused('moltbook'))
+                    tool = next(t for t in (await c.list_tools()).tools if t.name == 'boardmail_pause')
+                    self.assertTrue(tool.annotations.idempotent_hint)
+                    self.assertFalse(tool.annotations.read_only_hint or tool.annotations.open_world_hint)
+
     async def test_stdio_modern_and_legacy_clients(self):
         self.store.initialize()
         params = StdioServerParameters(command=sys.executable,
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),9)
+                self.assertEqual(len((await c.list_tools()).tools),11)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):

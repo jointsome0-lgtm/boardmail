@@ -30,6 +30,7 @@ def next_action(error):
     if error in ("config_missing", "invalid_config", "credentials_unavailable"): return "check_config_and_credentials"
     if error in ("account_mismatch", "adapter_mismatch"): return "restore_source_identity_or_use_a_new_source"
     if error == "database_exists": return "use_existing_database_do_not_overwrite"
+    if error == "source_not_found": return "check_source_name_in_status_or_config"
     if error in ("unsupported_database", "local_state_error"): return "inspect_database_do_not_delete"
     if error in ("adapter_load_failed", "adapter_version_unsupported", "invalid_adapter_result", "adapter_failed"):
         return "check_trusted_adapter_code"
@@ -77,6 +78,8 @@ def collect_all(store, sources, *, client_factory=None):
     store.prepare_collection()
     added, errors = 0, []
     for source, settings in sources.items():
+        if store.is_paused(source):
+            continue
         adapter = str(settings.get("adapter", source))
         try:
             known, state, revision = store.collection_state(source, settings["account_id"], adapter)

@@ -22,8 +22,11 @@ def parser():
     sub = p.add_subparsers(dest="command",required=True)
     sub.add_parser("init",help="Create a new database; never overwrite")
     sub.add_parser("collect",help="Collect one retained public backlog pass")
+    for command in ("pause", "resume"):
+        s = sub.add_parser(command, help="Pause or resume a source without fetching or deleting mail")
+        s.add_argument("source", help="Source name from status or config")
     s = sub.add_parser("status",help="Local source health and counts")
-    s.add_argument("--require-fresh",action="store_true",help="Exit 1 unless every source's last successful poll is within the threshold")
+    s.add_argument("--require-fresh",action="store_true",help="Require fresh active sources; paused sources are excluded")
     s.add_argument("--stale-after",type=int,help="Freshness threshold in seconds; default 540")
     for command in ("check","list","wait"):
         s = sub.add_parser(command)
@@ -49,7 +52,8 @@ def run(args):
     # Local reads need no config when --db is supplied; an explicit config still
     # enables remote context lookups unless --local is given.
     needed = args.command in ("collect", "check") or args.db is None or (
-        args.command == "context" and args.config is not None and not args.local)
+        args.config is not None and (args.command in ("pause", "resume") or
+                                    args.command == "context" and not args.local))
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])
     options = {key: value for key, value in vars(args).items() if key not in ("config", "db", "command")}

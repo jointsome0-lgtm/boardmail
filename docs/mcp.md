@@ -31,16 +31,20 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_init` | None | Create a new database; an existing file is never overwritten. |
 | `boardmail_check` | `after=0`, `limit=100` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
 | `boardmail_collect` | None | Fetch one pass from configured sources. Partial success can save arrivals and return errors together. |
-| `boardmail_status` | `require_fresh=false`, optional `stale_after` | Local counts and source health with `last_ok_age`, `stale_after` and `fresh`. With `require_fresh`, an unknown, error or stale source is an error result. |
+| `boardmail_pause` | `source` | Pause collection and remote context for one source. Keeps messages, marks and progress. |
+| `boardmail_resume` | `source` | Enable the source for the next collection. Fetches nothing immediately. |
+| `boardmail_status` | `require_fresh=false`, optional `stale_after` | Local counts and source health with `last_ok_age`, `stale_after` and `fresh`. With `require_fresh`, an unknown, error or stale active source is an error result. Paused sources are excluded. |
 | `boardmail_list` | `after=0`, `limit=100`, `unread=false` | Local arrival page with `next_after`, `more` and source health. |
 | `boardmail_show` | `source`, `id` | Stored original and local marks. |
-| `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard originals are fetched when the server has a config and `local` is false. Marks nothing; an incomplete context is an error result. |
+| `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard originals are fetched when the server has a config, `local` is false and the source is active. Marks nothing; an incomplete context is an error result. |
 | `boardmail_wait` | `after=0`, `limit=100`, `timeout=30` | Local arrival page or timeout. Timeout range is 0 to 60 seconds. |
 | `boardmail_mark` | `source`, `id`, `action`, optional `ref` | Change one local mark and return the message. |
 
 `limit` is 1 to 500. Use the exact source and string ID returned in a message. Mark actions match the CLI: `read`, `unread`, `needs-reply`, `clear-reply`, `replied`. Only `replied` accepts and requires `ref`, an HTTP(S) URL for a reply already sent elsewhere. It does not publish, mark read or clear `needs_reply`.
 
 Every tool returns the CLI's JSON shape in both MCP text content and `structuredContent`, including `history_complete: false`. Errors retain safe codes and `next_action`, and set `isError: true`. A partially failed collection also sets `isError: true`; read its saved arrivals before retrying. Timeout is a normal result. Invalid tool arguments produce `invalid_arguments` without echoing the submitted values.
+
+`boardmail_pause` and `boardmail_resume` are local, idempotent changes to the fixed inbox. They return `event: "paused"` or `"resumed"`, `source`, `paused`, `changed` and `collection_performed: false`. CLI and MCP users of the same database see the change without a server restart. Use a source already in the inbox or in the server's config; an unknown name returns `source_not_found`. A running source pass or context lookup may finish. Paused sources remain visible in status and local message lists.
 
 On `database_missing` with `next_action: "run_init"`, call `boardmail_init` once. On `database_exists`, use the existing inbox. Do not initialize to repair or upgrade it. The first collection handles the existing supported schema migration.
 
