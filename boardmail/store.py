@@ -170,9 +170,10 @@ class Store:
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
             # Age of the last successful poll; it proves nothing about a consumer.
-            value["last_ok_age"] = max(0, int(now - value["last_ok"])) if value["last_ok"] is not None else None
+            elapsed = None if value["last_ok"] is None else max(0.0, now - value["last_ok"])
+            value["last_ok_age"] = None if elapsed is None else int(elapsed)
             value["stale_after"] = stale_after
-            if value["status"] == "ok" and value["last_ok_age"] > stale_after:
+            if value["status"] == "ok" and elapsed > stale_after:
                 value["status"] = "stale"
             adapter, pending = progress.get(value["source"], (value["source"], False))
             value.update(coverage=COVERAGE.get(adapter, "Configured adapter scope; consult its instructions."), history_complete=False)
@@ -208,6 +209,13 @@ class Store:
             # Freshness is only the last successful poll's age. Backlog is separate.
             return {"counts": dict(counts), "sources": sources, "stale_after": stale_after,
                     "fresh": bool(sources) and all(s["status"] == "ok" for s in sources)}
+
+    def adapter(self, source):
+        with self.connect() as db:
+            row = None
+            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+                row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
+            return row[0] if row else source
 
     def find(self, source, message_id):
         with self.connect() as db:

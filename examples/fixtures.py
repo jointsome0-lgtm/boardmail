@@ -93,7 +93,7 @@ class FixtureClient:
             items = sorted(self.comments[key],key=lambda p:p['seq'],reverse=True)
             if "before" in params:
                 items = [p for p in items if p['seq']<params['before']]
-            selected = deepcopy(items[:params['limit']])
+            selected = deepcopy(items[:params.get('limit',10)])
             for item in selected:
                 if item['id'] in self.summaries:
                     del item['body']

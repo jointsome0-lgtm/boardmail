@@ -1,6 +1,8 @@
 """Inbox discovery beyond watched roots, thread context and freshness checks. All data is invented."""
+from contextlib import redirect_stdout
 from copy import deepcopy
 from urllib.error import HTTPError
+from unittest.mock import patch
 import io
 import json
 from pathlib import Path
@@ -9,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import commands, config, providers
+from boardmail import cli, commands, config, providers
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, settings, uid
@@ -117,6 +119,56 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(all(p.get('q') == 'meliora' for path, p, _ in self.fixture.calls if path == '/v1/search'))
         self.assertEqual(self.collect(cfg)['added'], 0)
 
+    def test_watched_page_body_completes_a_pending_inbox_discovery(self):
+        cfg = {**self.cfg, 'threads': [uid(301)]}
+        addressed = named(399, 301, body='@sample-agent the watched page carries this body.')
+        self.fixture.comments[uid(301)].append(addressed)
+        self.fixture.inbox = [(9001, addressed, ['mention'])]
+        get = self.fixture.get
+        def timing_out(path, params=None, **kw):
+            if path.endswith(uid(399)): raise MailError('source_timeout')
+            return get(path, params, **kw)
+        self.fixture.get = timing_out
+        result = self.collect(cfg)
+        self.assertTrue(result['failed']); self.assertEqual(result['added'], 3)
+        found = self.store.show('postingboard', uid(399))
+        self.assertEqual((found['kind'], found['discovery'], found['thread_id']), ('mention', 'inbox:mention', uid(301)))
+        self.assertEqual(self.state()['pending'], {})
+        self.store.mark('postingboard', uid(399), 'read'); self.fixture.get = get
+        self.assertEqual(self.collect(cfg)['added'], 0)
+        self.assertEqual(self.store.show('postingboard', uid(399)), {**found, 'read_at': self.store.show('postingboard', uid(399))['read_at']})
+
+    def test_alias_named_inbox_never_reads_the_native_inbox(self):
+        cfg = {**self.cfg, 'inbox': False, 'threads': [], 'alias_search': ['inbox']}
+        self.fixture.others = {uid(700): named(700, 700, body='My inbox is empty today.')}
+        self.fixture.search['inbox'] = [self.fixture.others[uid(700)]]
+        result = self.collect(cfg)
+        self.assertFalse(result['failed']); self.assertEqual(result['added'], 1)
+        self.assertEqual(self.store.show('postingboard', uid(700))['discovery'], 'search:inbox')
+        self.assertEqual({path for path, _, _ in self.fixture.calls}, {'/v1/search', '/v1/posts/'+uid(700)})
+
+    def test_shared_search_candidate_is_judged_by_every_term_and_keeps_inbox_reasons(self):
+        cfg = {**self.cfg, 'inbox': False, 'threads': [], 'alias_search': ['first', 'second']}
+        posts = {uid(800): named(800, 800), uid(801): named(801, 800, body='Only the SECOND term appears in full.'),
+                 uid(802): named(802, 800, reply_to=801, body='first and second both appear.')}
+        self.fixture.others = posts
+        self.fixture.search = {'first': [posts[uid(801)], posts[uid(802)]], 'second': [posts[uid(801)]]}
+        get = self.fixture.get
+        def timing_out(path, params=None, **kw):
+            if path.endswith(uid(802)): raise MailError('source_timeout')
+            return get(path, params, **kw)
+        self.fixture.get = timing_out
+        result = self.collect(cfg)
+        self.assertEqual((result['added'], result['sources'][0]['error']), (1, 'source_timeout'))
+        self.assertEqual(self.store.show('postingboard', uid(801))['discovery'], 'search:second')
+        self.assertEqual((self.state()['search'], self.state()['pending'][uid(802)]['terms']), ({'first': 802, 'second': 801}, ['first']))
+        self.fixture.get = get
+        self.fixture.inbox = [(1, posts[uid(802)], ['direct_reply'])]
+        self.assertEqual(self.collect({**cfg, 'inbox': True})['added'], 1)
+        later = self.store.show('postingboard', uid(802))
+        self.assertEqual((later['discovery'], later['kind'], later['parent_id']), ('inbox:direct_reply', 'reply_to_comment', uid(801)))
+        self.assertEqual(self.state()['pending'], {})
+
     def test_config_accepts_inbox_without_threads_and_rejects_bad_alias_search(self):
         root = Path(self.temp.name)
         def load(source):
@@ -181,6 +233,39 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(self.context(uid(602), self.cfg)[0]['parent']['error'], 'invalid_response')
         with self.assertRaises(MailError): self.context('../not-a-uuid', self.cfg)
 
+    def test_fetched_relationships_outrank_legacy_local_rows(self):
+        self.fixture.roots[uid(900)] = named(900, 900)
+        self.fixture.comments[uid(900)] = [named(901, 900, body='Parent.'), named(902, 900, reply_to=901)]
+        self.store.save('postingboard', self.cfg['account_id'], [{**mail(902), 'thread_id': uid(900)}])
+        result, code = self.context(uid(902), self.cfg)
+        self.assertEqual((code, result['parent']['id'], result['parent']['message']['body'], result['root']['status']), (0, uid(901), 'Parent.', 'available'))
+        # Offline, a row stored before reply targets were kept cannot name its parent.
+        result, code = self.context(uid(902), None)
+        self.assertEqual((code, result['parent']['status'], result['parent']['id']), (1, 'unknown', None))
+        self.store.prepare_collection()  # Rows with a discovery value exist only after the collector's migration.
+        self.store.save('postingboard', self.cfg['account_id'], [{**mail(903), 'thread_id': uid(900), 'discovery': 'thread'}])
+        result, code = self.context(uid(903), None)
+        self.assertEqual((code, result['parent']['id'], result['parent']['status']), (1, uid(900), 'unknown'))
+        self.store.save('moltbook', uid(2), [{**mail(904), 'thread_id': uid(900)}, {**mail(900), 'thread_id': uid(900)}])
+        result, code = commands.context(self.store, 'moltbook', uid(904), None)
+        self.assertEqual((code, result['parent']['id'], result['parent']['origin']), (0, uid(900), 'local'))
+
+    def test_cli_context_with_explicit_config_keeps_the_database_override(self):
+        root = Path(self.temp.name)
+        (root/'example.key').write_text('synthetic-key')
+        (root/'config.json').write_text(json.dumps({'database': 'other.sqlite3', 'sources': {'postingboard': {
+            'account_id': self.cfg['account_id'], 'api_key_file': 'example.key', 'threads': [uid(600)]}}}))
+        def run(*args):
+            out = io.StringIO()
+            with patch.object(providers, 'Client', lambda *_: self.fixture), redirect_stdout(out):
+                code = cli.main(['--config', str(root/'config.json'), '--db', str(self.path), 'context', 'postingboard', uid(602), *args])
+            return code, json.loads(out.getvalue())
+        code, result = run()
+        self.assertEqual((code, result['fetched'], result['parent']['status'], result['target']['origin']), (0, True, 'available', 'local'))
+        code, result = run('--local')
+        self.assertEqual((code, result['fetched'], result['parent']['status']), (1, False, 'unknown'))
+        self.assertFalse((root/'other.sqlite3').exists())
+
     def test_cli_context_reads_local_records_offline(self):
         self.store.save('postingboard', self.cfg['account_id'], [{**mail(600), 'thread_id': uid(600), 'kind': 'reply_to_post'}])
         command = [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'context', 'postingboard']
@@ -230,6 +315,13 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual((code, result['sources'][0]['status'], result['sources'][0]['error']), (1, 'error', 'http_503'))
         self.assertEqual(self.status()[0], 0)
         self.assertEqual(self.status('--stale-after', '-1')[1]['error'], 'invalid_arguments')
+
+    def test_stale_boundary_uses_exact_elapsed_time(self):
+        self.store.save('moltbook', uid(2), [], now=100)
+        for now, expected in ((640.0, 'ok'), (640.5, 'stale')):
+            with patch.object(providers.time, 'time', return_value=now), patch('boardmail.store.time.time', return_value=now):
+                source = self.store.status()['sources'][0]
+            self.assertEqual((source['status'], source['last_ok_age']), (expected, 540))
 
 
 if __name__ == '__main__': unittest.main()

@@ -17,7 +17,7 @@ class Parser(argparse.ArgumentParser):
 
 def parser():
     p = Parser(prog="boardmail")
-    p.add_argument("--config",type=Path,default=Path.home()/".config/boardmail/config.json")
+    p.add_argument("--config",type=Path,help="Default ~/.config/boardmail/config.json")
     p.add_argument("--db",type=Path,help="Database override; local reads need no config when supplied")
     sub = p.add_subparsers(dest="command",required=True)
     sub.add_parser("init",help="Create a new database; never overwrite")
@@ -46,7 +46,11 @@ def parser():
 
 
 def run(args):
-    data = config.load(args.config) if args.command in ("collect", "check") or args.db is None else None
+    # Local reads need no config when --db is supplied; an explicit config still
+    # enables remote context lookups unless --local is given.
+    needed = args.command in ("collect", "check") or args.db is None or (
+        args.command == "context" and args.config is not None and not args.local)
+    data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])
     options = {key: value for key, value in vars(args).items() if key not in ("config", "db", "command")}
     def invoke():

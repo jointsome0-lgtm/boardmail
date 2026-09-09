@@ -290,10 +290,11 @@ def postingboard_mail(client, known, batch):
         state["pending"] = pending
         end = time.monotonic()+SOURCE_SECONDS
         client.deadline = time.monotonic()+SOURCE_SECONDS/3
-        for mode in ["inbox"]*bool(settings.get("inbox"))+list(settings.get("alias_search", [])):
+        modes = [("inbox", None)]*bool(settings.get("inbox"))+[("search", t) for t in settings.get("alias_search", [])]
+        for mode, term in modes:
             try:
                 if mode == "inbox": postingboard_inbox(client, known, batch, pending)
-                else: postingboard_search(client, mode, known, batch, pending)
+                else: postingboard_search(client, term, known, batch, pending)
             except FAILURES as exc:
                 if failure(batch, exc) == "http_429": return
         client.deadline = end
@@ -369,24 +370,38 @@ def forward_pages(client, path, params, state, key, batch, record):
         cursor = following
 
 
-def candidate(item, pending, known, discovery, reasons=()):
+def candidate(item, pending, known, *, reasons=(), term=None):
+    """Record or merge one preview. Every Inbox reason and search term that
+    offered a message is kept, so the full original can be judged against all of them."""
     mid = uuid(item["id"])
-    if mid in known or mid in pending: return  # The first discovery reason is kept.
-    seq = item["seq"]
-    if type(seq) is not int or not 0 <= seq < 2**63: raise ValueError("Invalid sequence")
-    root = uuid(item.get("root_id") or item.get("thread_id") or mid)
-    title = item.get("title")
-    pending[mid] = {"root": root, "seq": seq, "discovery": discovery, "reasons": list(reasons),
-                    "parent": uuid(item["reply_to_id"]) if item.get("reply_to_id") else None,
-                    "title": text(title) if title is not None else None}
+    if mid in known: return
+    entry = pending.get(mid)
+    if entry is None:
+        seq = item["seq"]
+        if type(seq) is not int or not 0 <= seq < 2**63: raise ValueError("Invalid sequence")
+        title = item.get("title")
+        entry = pending[mid] = {"root": uuid(item.get("root_id") or item.get("thread_id") or mid), "seq": seq,
+                                "parent": uuid(item["reply_to_id"]) if item.get("reply_to_id") else None,
+                                "title": text(title) if title is not None else None, "reasons": [], "terms": []}
+    entry["reasons"] = sorted(set(entry["reasons"]) | set(reasons))
+    if term is not None and term not in entry["terms"]: entry["terms"].append(term)
+
+
+def discovery_of(entry, settings, title, body):
+    """Native Inbox reasons name the message as addressed; otherwise only a
+    configured or recorded term found in the full text is a truthful reason."""
+    if entry.get("reasons"): return "inbox:"+"+".join(entry["reasons"])
+    terms = dict.fromkeys([*entry.get("terms", []), *settings.get("alias_search", [])])
+    matched = [t for t in terms if alias_pattern([t]).search(title+"\n"+body)]
+    return "search:"+"+".join(matched) if matched else None
 
 
 def postingboard_inbox(client, known, batch, pending):
     def record(item):
         reasons = item.get("reasons", [])
         if not isinstance(reasons, list): raise ValueError("Invalid reasons")
-        reasons = sorted({r for r in reasons if isinstance(r, str) and re.fullmatch(r"[a-z_]{1,32}", r)})
-        candidate(item, pending, known, "inbox:"+"+".join(reasons) if reasons else "inbox", reasons)
+        reasons = {r for r in reasons if isinstance(r, str) and re.fullmatch(r"[a-z_]{1,32}", r)}
+        candidate(item, pending, known, reasons=reasons or {"inbox"})
     forward_pages(client, "/v1/inbox", {}, batch.state, "inbox_after", batch, record)
 
 
@@ -394,7 +409,7 @@ def postingboard_search(client, alias, known, batch, pending):
     cursors = batch.state.setdefault("search", {})
     try:
         forward_pages(client, "/v1/search", {"q": alias}, cursors, alias, batch,
-                      lambda item: candidate(item, pending, known, "search:"+alias))
+                      lambda item: candidate(item, pending, known, term=alias))
     except HTTPError as exc:
         if exc.code == 400: cursors[alias] = 0  # A rejected cursor restarts; known IDs dedupe.
         raise
@@ -419,16 +434,13 @@ def resolve_postingboard(client, mid, entry, mention, known, batch, pending):
         exc.close(); batch.unavailable += 1
         del pending[mid]
         return
-    root, discovery = entry["root"], entry["discovery"]
+    root = entry["root"]
     message = postingboard_post(client, post, mid, root, entry.get("title"), seq=entry["seq"])
     parent = message["parent_id"] or entry.get("parent")
-    if post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner:
+    discovery = discovery_of(entry, client.settings, message["title"], message["body"])
+    if discovery is None or (post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner):
         kind = None
-    elif discovery.startswith("search:"):
-        # Explicit rule over the full original: the term itself, case-insensitively, at name boundaries.
-        matched = alias_pattern([discovery[len("search:"):]]).search(message["title"]+"\n"+message["body"])
-        kind = "mention" if matched else None
-    elif "mention" in entry.get("reasons", ()) or (mention and mention.search(message["body"])):
+    elif discovery.startswith("search:") or "mention" in entry["reasons"] or (mention and mention.search(message["body"])):
         kind = "mention"
     else:
         kind = "reply_to_comment" if parent and parent != root else "reply_to_post"
@@ -445,6 +457,7 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
     items = replies["items"]
     if not isinstance(items, list): raise ValueError("Invalid replies")
     before = cursors.get(thread) if cursors is not None else None
+    pending = batch.state.get("pending", {})
     for item in [root, *items]:
         mid = uuid(item["id"])
         seq = item["seq"]
@@ -464,16 +477,23 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                     if uuid(post["id"]) != mid or mid != thread and uuid(post["root_id"]) != thread:
                         raise ValueError("Unexpected reply")
                     body = text(post["body"])
+                    title = text(root.get("title") or "Untitled thread")
                     author_id = uuid(post["agent_id"]) if post.get("agent_id") else None
-                    kind = "mention" if mention and mention.search(body) else "reply_to_post" if own and mid != thread else None
-                    if author_id != client.owner and kind:
+                    # A watched page can supply the full original of a pending discovery
+                    # candidate; its retained reason completes that discovery here.
+                    entry = pending.get(mid)
+                    discovery = (discovery_of(entry, client.settings, title, body) if entry else None) or "thread"
+                    addressed = entry is not None and "mention" in entry["reasons"]
+                    kind = "mention" if addressed or (mention and mention.search(body)) else "reply_to_post" if own and mid != thread else None
+                    if author_id == client.owner: pending.pop(mid, None)
+                    elif kind:
                         author = text(post["author"]) if post.get("author") is not None else None
+                        parent = (uuid(post["reply_to_id"]) if post.get("reply_to_id") else None) or (entry or {}).get("parent")
                         batch.messages.append({"id": mid, "thread_id": thread, "provider_seq": seq, "kind": kind,
-                            "parent_id": uuid(post["reply_to_id"]) if post.get("reply_to_id") else None,
-                            "author": author, "title": text(root.get("title") or "Untitled thread"), "body": body,
+                            "parent_id": parent, "author": author, "title": title, "body": body,
                             "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"]),
-                            "discovery": "thread"})
-                        known.add(mid)
+                            "discovery": discovery})
+                        known.add(mid); pending.pop(mid, None)
         except FAILURES as exc:
             code = failure(batch, exc)
             if code in ("http_429", "budget_exhausted"): raise

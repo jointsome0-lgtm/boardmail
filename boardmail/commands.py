@@ -85,38 +85,44 @@ def context(store, source, message_id, settings, *, client_factory=None):
             raise MailError("invalid_message_id") from None
         client = (client_factory or providers.Client)("postingboard", settings)
         lookup = lambda mid, root=None: providers.postingboard_lookup(client, mid, root)
+    adapter = "postingboard" if lookup is not None else store.adapter(source)
 
     def resolve(mid, root=None):
+        """Element plus the relationships to trust: a fetched original outranks a stored row."""
         stored = store.find(source, mid)
+        remote = lookup(mid, root) if lookup is not None else ("unknown", None, None)
+        if remote[2] is not None:
+            remote = (remote[0], remote[1], {"source": source, **remote[2]})
         if stored is not None:
             found = element("available", stored, origin="local")
             if lookup is not None:
-                found["remote_status"], found["error"], _ = lookup(mid, root)
-            return found
-        if lookup is None:
-            return element("unknown", id=mid)
-        status, error, message = lookup(mid, root)
-        if message is not None:
-            message = {"source": source, **message}
-        found = element(status, message, origin="remote" if message else None, error=error, id=mid)
-        found["remote_status"] = status
-        return found
+                found["remote_status"], found["error"] = remote[:2]
+            return found, remote[2] or stored, remote[2] is not None
+        found = element(remote[0], remote[2], origin="remote" if remote[2] else None, error=remote[1], id=mid)
+        if lookup is not None:
+            found["remote_status"] = remote[0]
+        return found, remote[2], True
 
-    target = resolve(message_id)
-    relations = target["message"]
+    target, relations, authoritative = resolve(message_id)
     if relations is None:
         root = parent = element("unknown")
     else:
         root_id = relations["thread_id"]
-        # Replies attach to the root unless an explicit reply target is known.
-        parent_id = relations["parent_id"] or (root_id if root_id != message_id else None)
-        root = target if root_id == message_id else resolve(root_id, root_id)
-        if parent_id is None:
+        root = target if root_id == message_id else resolve(root_id, root_id)[0]
+        parent_id = relations["parent_id"]
+        if parent_id is None and root_id != message_id:
+            # A reply attaches to the root unless the board recorded a reply target.
+            # Rows stored before reply targets were kept cannot say which; only a fetch can.
+            recorded = authoritative or adapter != "postingboard" or relations.get("discovery") is not None
+            parent_id = root_id if recorded else None
+            if not recorded:
+                parent = element("unknown")
+        if parent_id is None and root_id == message_id:
             parent = element("none")
         elif parent_id == root_id:
             parent = root
-        else:
-            parent = resolve(parent_id, root_id)
+        elif parent_id is not None:
+            parent = resolve(parent_id, root_id)[0]
             if parent["message"] is not None and parent["message"]["thread_id"] != root_id:
                 parent = element("unavailable", error="invalid_response", id=parent_id)
     complete = target["status"] == "available" and root["status"] == "available" and parent["status"] in ("available", "none")
