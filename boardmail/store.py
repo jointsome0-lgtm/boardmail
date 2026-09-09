@@ -77,7 +77,14 @@ class Store:
                 for source in COVERAGE:
                     db.execute("""INSERT OR IGNORE INTO adapter_state
                         SELECT source,source,0,'{}',0 FROM sources WHERE source=?""", (source,))
+            if "discovery" not in self._columns(db):
+                # Additive and nullable: earlier 0.2.0+ readers still open this file.
+                db.execute("ALTER TABLE messages ADD COLUMN discovery TEXT")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    @staticmethod
+    def _columns(db):
+        return {r[1] for r in db.execute("PRAGMA table_info(messages)")}
 
     def collection_state(self, source, account_id, adapter):
         with self.connect() as db:
@@ -123,11 +130,15 @@ class Store:
         for item in sorted(messages, key=lambda m: (m["created_at"], m.get("provider_seq") or 0, m["id"])):
             if db.execute("SELECT 1 FROM messages WHERE source=? AND id=?", (source, item["id"])).fetchone():
                 continue
-            db.execute("""INSERT INTO messages
-                (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (source, item["id"], item["thread_id"],
+            columns, values = "", ()
+            if item.get("discovery") is not None:
+                # Only collection supplies this; its migration added the column.
+                columns, values = ",discovery", (item["discovery"],)
+            db.execute(f"""INSERT INTO messages
+                (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at{columns})
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?{",?"*len(values)})""", (source, item["id"], item["thread_id"],
                 item.get("parent_id"), item.get("provider_seq"), item["kind"], item.get("author"),
-                item["title"], item["body"], item["url"], item["created_at"], stamp))
+                item["title"], item["body"], item["url"], item["created_at"], stamp, *values))
             added += 1
         return added
 
@@ -149,7 +160,7 @@ class Store:
                 (source,account_id,stamp,error))
 
     @staticmethod
-    def _health(db):
+    def _health(db, stale_after=STALE_AFTER):
         result = []
         now = time.time()
         progress = {}
@@ -158,7 +169,10 @@ class Store:
         from .adapters import next_action
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
-            if value["status"] == "ok" and now - value["last_ok"] > STALE_AFTER:
+            # Age of the last successful poll; it proves nothing about a consumer.
+            value["last_ok_age"] = max(0, int(now - value["last_ok"])) if value["last_ok"] is not None else None
+            value["stale_after"] = stale_after
+            if value["status"] == "ok" and value["last_ok_age"] > stale_after:
                 value["status"] = "stale"
             adapter, pending = progress.get(value["source"], (value["source"], False))
             value.update(coverage=COVERAGE.get(adapter, "Configured adapter scope; consult its instructions."), history_complete=False)
@@ -171,6 +185,7 @@ class Store:
     def _message(row):
         item = dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
+        item.setdefault("discovery", None)
         return item
 
     def page(self, after=0, limit=100, *, unread=False):
@@ -183,19 +198,27 @@ class Store:
                     "next_after": selected[-1]["arrival_seq"] if selected else after,
                     "more": len(rows)>limit, "sources": self._health(db)}
 
-    def status(self):
+    def status(self, stale_after=None):
+        stale_after = STALE_AFTER if stale_after is None else stale_after
         with self.connect() as db:
             counts = db.execute("""SELECT COUNT(*) total, COALESCE(MAX(arrival_seq),0) latest_arrival,
                 COALESCE(SUM(read_at IS NULL),0) unread, COALESCE(SUM(needs_reply),0) needs_reply,
                 COALESCE(SUM(replied_at IS NOT NULL),0) replied FROM messages""").fetchone()
-            return {"counts": dict(counts), "sources": self._health(db)}
+            sources = self._health(db, stale_after)
+            # Freshness is only the last successful poll's age. Backlog is separate.
+            return {"counts": dict(counts), "sources": sources, "stale_after": stale_after,
+                    "fresh": bool(sources) and all(s["status"] == "ok" for s in sources)}
 
-    def show(self, source, message_id):
+    def find(self, source, message_id):
         with self.connect() as db:
             row = db.execute("SELECT * FROM messages WHERE source=? AND id=?", (source,message_id)).fetchone()
-            if row is None:
-                raise MailError("message_not_found")
-            return self._message(row)
+            return None if row is None else self._message(row)
+
+    def show(self, source, message_id):
+        message = self.find(source, message_id)
+        if message is None:
+            raise MailError("message_not_found")
+        return message
 
     def mark(self, source, message_id, action, *, ref=None):
         clauses = {"read": ("read_at=COALESCE(read_at,?)", (int(time.time()),)),

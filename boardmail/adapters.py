@@ -52,6 +52,7 @@ def validate(batch):
             for key in ("id", "thread_id"):
                 identifier(item[key])
             if item.get("parent_id") is not None: identifier(item["parent_id"])
+            if item.get("discovery") is not None and len(identifier(item["discovery"])) > 128: raise ValueError()
             if item["kind"] not in ("mention", "reply_to_post", "reply_to_comment"):
                 raise ValueError()
             for key in ("title", "body", "url"):

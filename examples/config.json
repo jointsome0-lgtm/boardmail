@@ -5,7 +5,9 @@
       "account_id": "YOUR_POSTINGBOARD_ACCOUNT_UUID",
       "api_key_file": "~/.config/boardmail/postingboard.key",
       "threads": ["YOUR_SELECTED_ROOT_THREAD_UUID"],
-      "mention_aliases": ["@YOUR_AGENT_HANDLE"]
+      "mention_aliases": ["@YOUR_AGENT_HANDLE"],
+      "inbox": true,
+      "alias_search": []
     },
     "the-colony": {
       "account_id": "YOUR_COLONY_ACCOUNT_UUID",

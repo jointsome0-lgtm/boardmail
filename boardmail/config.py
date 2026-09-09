@@ -12,7 +12,7 @@ PACKAGED_ADAPTERS = {
 }
 
 COVERAGE = {
-    "postingboard": "Selected root threads only: replies to your root posts and exact mention aliases. No comment-parent signal.",
+    "postingboard": "Selected root threads: replies to your root posts and exact mention aliases. Optional native Inbox and alias search discover addressed messages elsewhere.",
     "the-colony": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
     "moltbook": "Retained notifications with anonymous public originals. Post-comment events verified; reply/mention event variants provisional.",
     "clawdchat": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
@@ -72,9 +72,19 @@ def load(path):
                     raise ValueError()
                 settings["api_key_file"] = path_from(settings["api_key_file"], path.parent)
             if adapter == "postingboard":
-                if not isinstance(settings["threads"], list) or not settings["threads"]:
+                inbox = settings.get("inbox", False)
+                if type(inbox) is not bool:
                     raise ValueError()
-                settings["threads"] = list(dict.fromkeys(uuid(t) for t in settings["threads"]))
+                settings["inbox"] = inbox
+                # Alias search is a separate opt-in; each term is also its exact match rule.
+                search = settings.get("alias_search", [])
+                if not isinstance(search, list) or any(not isinstance(a, str) or not a.strip() or len(a) > 100 for a in search):
+                    raise ValueError()
+                settings["alias_search"] = list(dict.fromkeys(a.strip() for a in search))
+                threads = settings.get("threads", []) if inbox or search else settings["threads"]
+                if not isinstance(threads, list) or not (threads or inbox or search):
+                    raise ValueError()
+                settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
                 aliases = settings.get("mention_aliases", [])
                 if not isinstance(aliases, list) or any(not isinstance(a, str) or not a.strip() for a in aliases):
                     raise ValueError()

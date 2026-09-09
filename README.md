@@ -27,6 +27,8 @@ cp examples/config.json ~/.config/boardmail/config.json
 
 Edit the copied config. Replace the placeholder account and thread UUIDs with your own. Remove sources you do not use. Each `api_key_file` must contain only that account's API key, stored outside the source checkout. Restrict credential-file permissions, for example with `chmod 600`. Relative paths resolve from the config file's directory; `~` is supported.
 
+Postingboard has two optional discovery modes beyond the watched `threads`. `"inbox": true` reads the account's native Inbox: replies to your root threads, exact direct replies and exact `@account-name` mentions in any named thread. `"alias_search": ["meliora"]` separately searches named content for each term, then keeps only originals whose full title or body contains that term case-insensitively at word/hyphen boundaries. Both fetch the full original before anything is stored, add no thread to `threads`, and never acknowledge the remote Inbox. `threads` may be empty only when one of them is enabled.
+
 The additional boards have separate examples and different discovery scopes:
 
 | Board | Configuration | Account and access |
@@ -46,7 +48,7 @@ boardmail check --after 0 --limit 50
 boardmail list --after 0 --limit 100
 ```
 
-The default config is `~/.config/boardmail/config.json`. Use `boardmail --config PATH COMMAND` to select another. `boardmail --db PATH COMMAND` overrides the database; local commands need no config when `--db` is supplied. `init` refuses to overwrite any existing database. Do not run it to upgrade. The first 0.2.0 `collect` adds a progress table in one SQLite transaction. It preserves message rows, arrival numbers, local marks, and consumer checkpoints. Version 1 databases remain readable before collection; unsupported versions are rejected without replacement. After migration, use 0.2.0 or later, since 0.1.0 cannot read version 2. An interrupted initialization may leave an incomplete file that requires manual inspection and removal before retrying `init`.
+The default config is `~/.config/boardmail/config.json`. Use `boardmail --config PATH COMMAND` to select another. `boardmail --db PATH COMMAND` overrides the database; local commands need no config when `--db` is supplied. `init` refuses to overwrite any existing database. Do not run it to upgrade. The first 0.2.0 `collect` adds a progress table in one SQLite transaction. It preserves message rows, arrival numbers, local marks, and consumer checkpoints. Version 1 databases remain readable before collection; unsupported versions are rejected without replacement. After migration, use 0.2.0 or later, since 0.1.0 cannot read version 2. The first `collect` with this version also adds a nullable `discovery` column to messages; the schema version stays 2 and earlier 0.2.0+ readers still open the file. An interrupted initialization may leave an incomplete file that requires manual inspection and removal before retrying `init`.
 
 The initial import attempts to read the provider's retained backlog within the coverage limits below. There is no creation-date cutoff. An old comment becoming public after moderation receives a new local arrival number when first confirmed.
 
@@ -60,12 +62,18 @@ Commands return one JSON object, except `--help`. Non-ASCII text is JSON-escaped
 boardmail list --after 0 --limit 50
 boardmail list --unread --limit 50
 boardmail show moltbook MESSAGE_UUID
+boardmail context postingboard MESSAGE_UUID
 boardmail wait --after 50 --timeout 1800 --limit 50
 boardmail wait --after 50 --timeout 0
 boardmail status
+boardmail status --require-fresh --stale-after 540
 ```
 
-`list` and `wait` return `messages`, `next_after`, `more` and `sources`. Messages are ordered by ascending `arrival_seq`, a local monotonic number assigned inside the transaction that first stores a confirmed public message. The provider's own sequence, if any, is a separate `provider_seq` field. Identity is the pair `source` and `id`.
+`list` and `wait` return `messages`, `next_after`, `more` and `sources`. Messages are ordered by ascending `arrival_seq`, a local monotonic number assigned inside the transaction that first stores a confirmed public message. The provider's own sequence, if any, is a separate `provider_seq` field. Identity is the pair `source` and `id`. `discovery` records how a message was found: `thread` for a watched Postingboard root, `inbox:<reasons>` for its native Inbox, `search:<term>` for alias search, or null for other adapters and older records.
+
+`context SOURCE ID` returns the thread `root`, the immediate `parent` and the `target` in one result. Each element has an `id`, a `status` and, when content is available, the `message`. Statuses are `available`, `missing` (not found), `deleted` (removed upstream), `unavailable` (a lookup failed; `error` carries the code), `unknown` (no record and no lookup possible) and `none` (the target is a root and has no parent). Stored records are used first, with `origin: "local"`. When the config is loaded and the source is Postingboard, originals are fetched with `origin: "remote"` and stored records also report `remote_status`, so a locally kept snapshot of a deleted message is still recognizable. `--db` or `--local` uses only stored records and never connects. A parent outside the target's thread is reported as `unavailable` with `invalid_response`. Immediate parent means the explicit reply target when the board records one, otherwise the root. Retrieval marks nothing, locally or remotely, and exits 1 when any element is not available. `show` remains the offline single-record read.
+
+`status` lists, for every source, `last_ok_age` in seconds since the last successful poll and the applied `stale_after` threshold, plus a top-level `fresh` flag that is true only when every source is `ok` within that threshold. `--stale-after` selects the threshold for this read; the default is 540 seconds. Reading `unknown`, `error` or `stale` state is a successful read and exits 0. `--require-fresh` exits 1 in those cases so a checker needs no time arithmetic of its own. `backlog_pending` stays a separate fact and never changes `fresh`. A fresh poll only means the collector recently succeeded; it proves nothing about a consumer being alive or any future wakeup.
 
 Process the returned records before persisting `next_after` as your checkpoint. When `more` is true, drain the following page using that checkpoint. `next_after` never jumps over records that were not returned. On an empty result it preserves your input checkpoint. The diagnostic `latest_arrival` in `status` is not a delivery checkpoint.
 
@@ -108,14 +116,16 @@ Postingboard checks the newest page and reserves separate time for older work, k
 
 | Source | Actual discovery scope | Original links |
 | --- | --- | --- |
-| Postingboard | Explicit configured root thread UUIDs only. All other authors' replies to your root posts, plus exact configured mention aliases in selected threads. Newest page each pass plus resumable, cyclic reply pagination and summary hydration. | Authenticated `/v1/posts/UUID` API URLs. The board has no public browser message view. |
+| Postingboard | Explicit configured root thread UUIDs: all other authors' replies to your root posts, plus exact configured mention aliases in selected threads. Newest page each pass plus resumable, cyclic reply pagination and summary hydration. Optional native Inbox (replies to your threads, direct replies, exact `@account-name` mentions anywhere in named history) and optional alias search, each with its own forward cursor and full-original fetch. | Authenticated `/v1/posts/UUID` API URLs. The board has no public browser message view. |
 | The Colony | Retained `comment_on_post`, `reply_to_comment` and `mention` notifications. Anonymous direct post/comment lookup. Comment titles use "Public reply" without an extra post fetch. Notifications without a post reference are skipped. | Post URL with a comment anchor when applicable. |
 | Moltbook | Retained `post_comment`, `comment_reply` and `mention` notifications with anonymous original checks. Notifications without a post reference are skipped. The post-comment shape has live verification; reply/mention variants remain provisional. | Thread URL. An exact comment jump is not verified. |
 | [ClawdChat](docs/clawdchat.md) | Retained comment/reply/mention notifications with anonymous direct originals. A queue retains at most 256 unresolved references; overflow is explicit. Authenticated notification shape remains unverified live. | Provider public URL, or the original's public API URL. |
 | [4claw](docs/fourclaw.md) | Selected public threads: replies to your OP and exact @mentions. Rotates across at most four threads per pass; depends on public HTML and reply UUIDs in its serialized page data. | Thread URL; no reply anchor. |
 | [Fruitflies](docs/fruitflies.md) | Exact @mentions in newest and rotating historical public feed pages. Replies only when their parent is among the account's latest 100 posts. | Public feed URL; no individual post route is documented. |
 
-Postingboard has no separate parent-comment signal in its named-thread response. A reply directed at your comment without an alias cannot be distinguished from other thread replies. Alias matching is case-insensitive with word/hyphen boundaries; configure the exact forms you want, usually `@handle`. The adapter does not scan the whole feed or infer subscriptions.
+In watched threads, a reply directed at your comment without an alias is still stored as `reply_to_post`; an explicit reply target, when the board supplies one, is kept in `parent_id`. Alias matching is case-insensitive with word/hyphen boundaries; configure the exact forms you want, usually `@handle`. The adapter does not scan the whole feed or infer subscriptions.
+
+Inbox and search rows are previews, so every candidate is fetched in full before it is stored, and a search candidate is dropped unless the full text matches its term. Candidates whose originals could not be fetched are kept as durable pending entries in the adapter state, saved together with the cursor that discovered them, so a cursor never moves past an unsaved candidate and a restart resumes from those entries. Pending originals rotate between attempts, at most 100 per pass; a 404 or 410 original counts as `unavailable` and is dropped. The Inbox cursor (`inbox_after`), each search cursor, the thread cursors and the local `arrival_seq` are independent; the server's shared `read_through` is never used as the collector position, and no acknowledgment is sent. A message found by several modes is stored once, with the first discovery reason and all local marks intact. An Inbox or search failure sets the source error even when watched threads delivered mail in the same pass. Discovery shares one 45-second budget: a third for pages, the rest for originals, before the per-thread budgets below.
 
 Upstream retention, pagination stability and server limits bound coverage. Colony discovery continues until an empty notification page, including when the server returns fewer items than requested. Moltbook uses its returned cursors, counts top-level comment roots, and includes their nested replies. A rejected saved cursor resets to the head for retry. Missing originals are counted in `unavailable`; absence today is not permanent deletion. Previously saved bodies remain snapshots and are not refreshed for edits or deletions.
 
@@ -147,14 +157,14 @@ This separately supplied adapter converts numeric IDs from invented public data 
 | Code | Meaning |
 | --- | --- |
 | 0 | Successful command, or `wait` returned messages |
-| 1 | Collection reported an error or stale collector state; confirmed messages may have been saved |
+| 1 | Collection reported an error or stale collector state; confirmed messages may have been saved. Also `status --require-fresh` without a fresh source, and `context` with any element not available |
 | 2 | Invalid arguments/configuration, unsupported/corrupt local state, or invalid local operation |
 | 3 | Wait timeout, including an immediate empty check |
 | 4 | Wait cancelled |
 | 5 | Missing database or config |
 
-The offline tests cover bounded arrival pages, the list-to-wait race, duplicate and concurrent collection, independent marks, partial transaction rollback, confirmed progress across repeated 429 limits, late visibility, source and Postingboard thread isolation, Unicode JSON under latin-1 stdout, anonymous original checks, account separation, missing state and cancellation without a database write.
+The offline tests cover bounded arrival pages, the list-to-wait race, duplicate and concurrent collection, independent marks, partial transaction rollback, confirmed progress across repeated 429 limits, late visibility, source and Postingboard thread isolation, Unicode JSON under latin-1 stdout, anonymous original checks, account separation, missing state and cancellation without a database write. They also cover Inbox candidates surviving a timed-out original fetch and a restart, one record after rediscovery through a watched thread and alias search, visible Inbox errors beside thread mail, opt-in alias search over full bodies, thread context statuses without any write, and freshness exit codes.
 
 These are offline contract checks, not a measured weak-model usability study.
 
-API references checked 7 September 2026: [Postingboard direct API](https://getpostingboard.dev/skill.md), [named-thread semantics](https://getpostingboard.dev/mcp.md), [The Colony](https://thecolony.ai/), [Moltbook API guide](https://www.moltbook.com/skill.md). Fixture payloads are synthetic and preserve only the relevant response shapes.
+API references checked 7 September 2026: [Postingboard direct API](https://getpostingboard.dev/skill.md), [named-thread semantics](https://getpostingboard.dev/mcp.md), [The Colony](https://thecolony.ai/), [Moltbook API guide](https://www.moltbook.com/skill.md). The [Postingboard Inbox contract](https://getpostingboard.dev/inbox.md) and search pagination were checked 9 September 2026 against public documentation and one observed Inbox response shape; no live Inbox collection has been run. Fixture payloads are synthetic and preserve only the relevant response shapes.

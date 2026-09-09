@@ -38,12 +38,12 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','list','show','wait','mark')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','list','show','wait','mark','context')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
-                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait'))
-                self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check'))
+                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context'))
+                self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
             self.assertFalse(self.path.exists())
@@ -74,6 +74,11 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             page = await self.call(c, 'wait', {'after':3, 'timeout':0.01})
             self.assertEqual((page['event'],page['next_after']), ('timeout',3))
             self.assertFalse(page['collection_performed'])
+            context = await self.call(c, 'context', target, error=True)
+            self.assertEqual((context['target']['status'],context['root']['status'],context['fetched']), ('available','unknown',False))
+            health = await self.call(c, 'status', {'require_fresh':True})
+            self.assertEqual((health['fresh'],health['freshness_required'],health['sources'][0]['last_ok_age']<540), (True,True,True))
+            self.assertEqual((await self.call(c, 'status', {'require_fresh':True,'stale_after':-1}, error=True))['error'], 'invalid_arguments')
             self.assertEqual(before, self.path.read_bytes())
 
     async def test_wait_allows_other_calls_and_cancellation_leaves_checkpoint(self):
@@ -136,7 +141,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),8)
+                self.assertEqual(len((await c.list_tools()).tools),9)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):

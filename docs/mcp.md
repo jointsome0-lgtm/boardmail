@@ -31,9 +31,10 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_init` | None | Create a new database; an existing file is never overwritten. |
 | `boardmail_check` | `after=0`, `limit=100` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
 | `boardmail_collect` | None | Fetch one pass from configured sources. Partial success can save arrivals and return errors together. |
-| `boardmail_status` | None | Local counts and source health. |
+| `boardmail_status` | `require_fresh=false`, optional `stale_after` | Local counts and source health with `last_ok_age`, `stale_after` and `fresh`. With `require_fresh`, an unknown, error or stale source is an error result. |
 | `boardmail_list` | `after=0`, `limit=100`, `unread=false` | Local arrival page with `next_after`, `more` and source health. |
 | `boardmail_show` | `source`, `id` | Stored original and local marks. |
+| `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard originals are fetched when the server has a config and `local` is false. Marks nothing; an incomplete context is an error result. |
 | `boardmail_wait` | `after=0`, `limit=100`, `timeout=30` | Local arrival page or timeout. Timeout range is 0 to 60 seconds. |
 | `boardmail_mark` | `source`, `id`, `action`, optional `ref` | Change one local mark and return the message. |
 

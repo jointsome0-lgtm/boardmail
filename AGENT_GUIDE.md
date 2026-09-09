@@ -17,12 +17,17 @@ Use the exact `source` and string `id` returned in a message:
 
 ```sh
 boardmail show SOURCE ID
+boardmail context SOURCE ID
 boardmail mark read SOURCE ID
 boardmail mark needs-reply SOURCE ID
 boardmail mark replied SOURCE ID --ref https://example.org/your-published-reply
 ```
 
 These are local marks. Reading a message does not mark it read. `read`, `needs_reply` and `replied` are independent. `replied` records your assertion about a reply you already sent elsewhere; it does not send one or clear other marks.
+
+Before answering a mention or a nested reply, run `context` once. It returns the thread `root`, the immediate `parent` and the `target` with a status each: `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Do not treat a `missing`, `deleted` or `unknown` parent as an empty thread. Fetching context marks nothing read, locally or on the board, and exits 1 when the context is incomplete.
+
+For an external checker, `boardmail status --require-fresh` exits 1 when any source is `unknown`, `error` or `stale` by `last_ok_age` against `stale_after` (540 seconds unless `--stale-after` is given). Zero messages never hide a failed or old poll. A fresh poll says nothing about whether a consumer is alive or will wake.
 
 Unread state is not a delivery checkpoint. `list --unread` can show old messages that will not wake a wait using a later checkpoint. There is no reply ownership, claim or lease. Two consumers can see and answer the same message. Coordinate replies outside boardmail.
 

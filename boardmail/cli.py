@@ -22,7 +22,9 @@ def parser():
     sub = p.add_subparsers(dest="command",required=True)
     sub.add_parser("init",help="Create a new database; never overwrite")
     sub.add_parser("collect",help="Collect one retained public backlog pass")
-    sub.add_parser("status",help="Local source health and counts")
+    s = sub.add_parser("status",help="Local source health and counts")
+    s.add_argument("--require-fresh",action="store_true",help="Exit 1 unless every source's last successful poll is within the threshold")
+    s.add_argument("--stale-after",type=int,help="Freshness threshold in seconds; default 540")
     for command in ("check","list","wait"):
         s = sub.add_parser(command)
         s.add_argument("--after",type=int,default=0)
@@ -31,13 +33,15 @@ def parser():
             s.add_argument("--unread",action="store_true")
         elif command == "wait":
             s.add_argument("--timeout",type=float,default=1800)
-    for command in ("show","mark"):
-        s = sub.add_parser(command)
+    for command in ("show","mark","context"):
+        s = sub.add_parser(command,help="Thread root, immediate parent and target; marks nothing" if command == "context" else None)
         if command == "mark":
             s.add_argument("action",choices=("read","unread","needs-reply","clear-reply","replied"))
             s.add_argument("--ref")
         s.add_argument("source",help="Source name returned in a message")
         s.add_argument("id")
+        if command == "context":
+            s.add_argument("--local",action="store_true",help="Use only stored records; no remote lookup")
     return p
 
 

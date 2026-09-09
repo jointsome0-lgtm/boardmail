@@ -114,13 +114,17 @@ def descendants(comments, batch):
 FAILURES = (MailError, OSError, HTTPException, ValueError, KeyError, TypeError, AttributeError)
 
 
-def failure(batch, exc):
-    if isinstance(exc, MailError): code = str(exc)
-    elif isinstance(exc, HTTPError):
-        code = "http_"+str(exc.code)
+def error_code(exc):
+    if isinstance(exc, MailError): return str(exc)
+    if isinstance(exc, HTTPError):
         exc.close()
-    elif isinstance(exc, (OSError, HTTPException)): code = "network_error"
-    else: code = "invalid_response"
+        return "http_"+str(exc.code)
+    if isinstance(exc, (OSError, HTTPException)): return "network_error"
+    return "invalid_response"
+
+
+def failure(batch, exc):
+    code = error_code(exc)
     batch.complete = False
     if code != "budget_exhausted" and (batch.error is None or code == "http_429"):
         batch.error = code
@@ -269,11 +273,43 @@ def accept_original(client, original, post_id, ids, known, batch, colony, title)
     known.add(mid)
 
 
+def alias_pattern(aliases):
+    return re.compile(r"(?<![\w-])(?:"+"|".join(re.escape(a) for a in aliases)+r")(?![\w-])", re.I) if aliases else None
+
+
 def postingboard_mail(client, known, batch):
-    aliases = client.settings.get("mention_aliases", [])
-    mention = re.compile(r"(?<![\w-])(?:"+"|".join(re.escape(a) for a in aliases)+r")(?![\w-])", re.I) if aliases else None
-    cursors = batch.state.setdefault("threads", {})
-    for thread in client.settings["threads"]:
+    settings = client.settings
+    mention = alias_pattern(settings.get("mention_aliases", []))
+    state = batch.state
+    pending = state.get("pending", {})
+    for mid in [m for m in pending if m in known]:
+        del pending[mid]
+    if settings.get("inbox") or settings.get("alias_search") or pending:
+        # Discovery beyond watched roots shares one budget: a third for pages,
+        # the rest for full originals. Its cursors never touch thread cursors.
+        state["pending"] = pending
+        end = time.monotonic()+SOURCE_SECONDS
+        client.deadline = time.monotonic()+SOURCE_SECONDS/3
+        for mode in ["inbox"]*bool(settings.get("inbox"))+list(settings.get("alias_search", [])):
+            try:
+                if mode == "inbox": postingboard_inbox(client, known, batch, pending)
+                else: postingboard_search(client, mode, known, batch, pending)
+            except FAILURES as exc:
+                if failure(batch, exc) == "http_429": return
+        client.deadline = end
+        for mid in list(pending)[:MAX_PAGES]:
+            if time.monotonic() >= end: break
+            entry = pending.pop(mid)
+            pending[mid] = entry  # Rotation: one failing original cannot block later ones.
+            try:
+                resolve_postingboard(client, mid, entry, mention, known, batch, pending)
+            except FAILURES as exc:
+                code = failure(batch, exc)
+                if code == "http_429": return
+                if code == "budget_exhausted": break
+        if pending: batch.complete = False
+    cursors = state.setdefault("threads", {})
+    for thread in settings["threads"]:
         path = "/v1/posts/"+thread
         end = time.monotonic()+SOURCE_SECONDS
         first = None
@@ -309,6 +345,99 @@ def postingboard_mail(client, known, batch):
         if cursors.get(thread) is not None: batch.complete = False
 
 
+def forward_pages(client, path, params, state, key, batch, record):
+    """Follow one independent forward sequence. Its saved position moves only
+    after a page's candidates are recorded, so progress never skips a candidate."""
+    cursor = state.get(key, 0)
+    for page_number in range(MAX_PAGES):
+        raw = client.get(path, {**params, "after": cursor, "limit": 30}, authenticated=True)
+        items = raw["items"]
+        if not isinstance(items, list): raise ValueError("Invalid page")
+        for item in items:
+            record(item)
+        newest = raw.get("resume_after", raw.get("newest_cursor"))
+        if newest is None and not items: newest = cursor
+        if type(newest) is not int or not cursor <= newest < 2**63: raise ValueError("Invalid checkpoint")
+        following = raw["next_after"]
+        if following is not None and (type(following) is not int or following <= cursor or not items):
+            raise MailError("pagination_no_progress")
+        state[key] = newest
+        if following is None: return
+        if page_number+1 == MAX_PAGES:
+            batch.complete = False
+            return
+        cursor = following
+
+
+def candidate(item, pending, known, discovery, reasons=()):
+    mid = uuid(item["id"])
+    if mid in known or mid in pending: return  # The first discovery reason is kept.
+    seq = item["seq"]
+    if type(seq) is not int or not 0 <= seq < 2**63: raise ValueError("Invalid sequence")
+    root = uuid(item.get("root_id") or item.get("thread_id") or mid)
+    title = item.get("title")
+    pending[mid] = {"root": root, "seq": seq, "discovery": discovery, "reasons": list(reasons),
+                    "parent": uuid(item["reply_to_id"]) if item.get("reply_to_id") else None,
+                    "title": text(title) if title is not None else None}
+
+
+def postingboard_inbox(client, known, batch, pending):
+    def record(item):
+        reasons = item.get("reasons", [])
+        if not isinstance(reasons, list): raise ValueError("Invalid reasons")
+        reasons = sorted({r for r in reasons if isinstance(r, str) and re.fullmatch(r"[a-z_]{1,32}", r)})
+        candidate(item, pending, known, "inbox:"+"+".join(reasons) if reasons else "inbox", reasons)
+    forward_pages(client, "/v1/inbox", {}, batch.state, "inbox_after", batch, record)
+
+
+def postingboard_search(client, alias, known, batch, pending):
+    cursors = batch.state.setdefault("search", {})
+    try:
+        forward_pages(client, "/v1/search", {"q": alias}, cursors, alias, batch,
+                      lambda item: candidate(item, pending, known, "search:"+alias))
+    except HTTPError as exc:
+        if exc.code == 400: cursors[alias] = 0  # A rejected cursor restarts; known IDs dedupe.
+        raise
+
+
+def postingboard_post(client, post, mid, root, title, *, seq=None):
+    if uuid(post["id"]) != mid or uuid(post.get("root_id") or mid) != root: raise ValueError("Unexpected post")
+    seq = post.get("seq", seq)
+    if type(seq) is not int or not 0 <= seq < 2**63: raise ValueError("Invalid sequence")
+    author = text(post["author"]) if post.get("author") is not None else None
+    return {"id": mid, "thread_id": root, "provider_seq": seq, "author": author,
+            "parent_id": uuid(post["reply_to_id"]) if post.get("reply_to_id") else None,
+            "title": text(post.get("title") or title or "Untitled thread"), "body": text(post["body"]),
+            "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"])}
+
+
+def resolve_postingboard(client, mid, entry, mention, known, batch, pending):
+    try:
+        post = client.get("/v1/posts/"+mid, authenticated=True)["post"]
+    except HTTPError as exc:
+        if exc.code not in (404, 410): raise
+        exc.close(); batch.unavailable += 1
+        del pending[mid]
+        return
+    root, discovery = entry["root"], entry["discovery"]
+    message = postingboard_post(client, post, mid, root, entry.get("title"), seq=entry["seq"])
+    parent = message["parent_id"] or entry.get("parent")
+    if post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner:
+        kind = None
+    elif discovery.startswith("search:"):
+        # Explicit rule over the full original: the term itself, case-insensitively, at name boundaries.
+        matched = alias_pattern([discovery[len("search:"):]]).search(message["title"]+"\n"+message["body"])
+        kind = "mention" if matched else None
+    elif "mention" in entry.get("reasons", ()) or (mention and mention.search(message["body"])):
+        kind = "mention"
+    else:
+        kind = "reply_to_comment" if parent and parent != root else "reply_to_post"
+    if kind:
+        batch.messages.append({**message, "parent_id": parent, "kind": kind, "discovery": discovery})
+        known.add(mid)
+    del pending[mid]
+
+
 def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=None):
     root, replies = raw["post"], raw["replies"]
     if uuid(root["id"]) != thread: raise ValueError("Unexpected root")
@@ -340,8 +469,10 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                     if author_id != client.owner and kind:
                         author = text(post["author"]) if post.get("author") is not None else None
                         batch.messages.append({"id": mid, "thread_id": thread, "provider_seq": seq, "kind": kind,
+                            "parent_id": uuid(post["reply_to_id"]) if post.get("reply_to_id") else None,
                             "author": author, "title": text(root.get("title") or "Untitled thread"), "body": body,
-                            "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"])})
+                            "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"]),
+                            "discovery": "thread"})
                         known.add(mid)
         except FAILURES as exc:
             code = failure(batch, exc)
@@ -352,6 +483,18 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
     if following is not None and (type(following) is not int or not items or following != before):
         raise MailError("pagination_no_progress")
     return following
+
+
+def postingboard_lookup(client, mid, root=None):
+    """One authenticated GET; it never acknowledges or marks anything remotely."""
+    try:
+        post = client.get("/v1/posts/"+mid, authenticated=True)["post"]
+        message = postingboard_post(client, post, mid, root or uuid(post.get("root_id") or mid), None)
+    except HTTPError as exc:
+        return {404: "missing", 410: "deleted"}.get(exc.code, "unavailable"), error_code(exc), None
+    except FAILURES as exc:
+        return "unavailable", error_code(exc), None
+    return "available", None, message
 
 
 def collect(source, settings, state, known, *, client_factory=None):
