@@ -168,6 +168,17 @@ class DiscoveryTests(unittest.TestCase):
         later = self.store.show('postingboard', uid(802))
         self.assertEqual((later['discovery'], later['kind'], later['parent_id']), ('inbox:direct_reply', 'reply_to_comment', uid(801)))
         self.assertEqual(self.state()['pending'], {})
+        # Two valid 70-character terms both match: the stored reason stays within the 128-character limit.
+        long_terms = ['a'*70, 'b'*70]
+        posts[uid(803)] = named(803, 800, body=' '.join(long_terms))
+        self.fixture.search = {t: [posts[uid(803)]] for t in long_terms}
+        posts[uid(804)] = named(804, 800, body='Many reasons.')
+        self.fixture.inbox = [(2, posts[uid(804)], ['z'*32, 'y'*32, 'x'*32, 'w'*32, 'mention'])]
+        result = self.collect({**cfg, 'inbox': True, 'alias_search': long_terms})
+        self.assertEqual((result['failed'], result['added'], self.state()['pending']), (False, 2, {}))
+        self.assertEqual(self.store.show('postingboard', uid(803))['discovery'], 'search:'+'a'*70)
+        many = self.store.show('postingboard', uid(804))['discovery']
+        self.assertTrue(many.startswith('inbox:mention+') and len(many) <= 128, many)
 
     def test_config_accepts_inbox_without_threads_and_rejects_bad_alias_search(self):
         root = Path(self.temp.name)

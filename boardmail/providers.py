@@ -387,13 +387,20 @@ def candidate(item, pending, known, *, reasons=(), term=None):
     if term is not None and term not in entry["terms"]: entry["terms"].append(term)
 
 
+INBOX_REASONS = ("mention", "direct_reply", "reply_to_your_thread")
+
+
 def discovery_of(entry, settings, title, body):
     """Native Inbox reasons name the message as addressed; otherwise only a
-    configured or recorded term found in the full text is a truthful reason."""
-    if entry.get("reasons"): return "inbox:"+"+".join(entry["reasons"])
+    configured or recorded term found in the full text is a truthful reason.
+    The stored reason is bounded: documented reasons first, or the first
+    matched term, so a valid message never exceeds the discovery limit."""
+    if entry.get("reasons"):
+        reasons = sorted(entry["reasons"], key=lambda r: (r not in INBOX_REASONS, r))[:3]
+        return "inbox:"+"+".join(reasons)
     terms = dict.fromkeys([*entry.get("terms", []), *settings.get("alias_search", [])])
-    matched = [t for t in terms if alias_pattern([t]).search(title+"\n"+body)]
-    return "search:"+"+".join(matched) if matched else None
+    matched = next((t for t in terms if alias_pattern([t]).search(title+"\n"+body)), None)
+    return None if matched is None else "search:"+matched
 
 
 def postingboard_inbox(client, known, batch, pending):
