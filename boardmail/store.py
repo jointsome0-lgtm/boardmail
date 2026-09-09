@@ -55,7 +55,8 @@ class Store:
             db.execute("""CREATE TABLE sources (
                 source TEXT PRIMARY KEY, account_id TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'unknown', last_checked INTEGER,
-                last_ok INTEGER, error TEXT, unavailable INTEGER NOT NULL DEFAULT 0)""")
+                last_ok INTEGER, error TEXT, unavailable INTEGER NOT NULL DEFAULT 0,
+                paused INTEGER NOT NULL DEFAULT 0)""")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             db.execute(PROGRESS_SCHEMA)
             for source, settings in (sources or {}).items():
@@ -68,6 +69,29 @@ class Store:
         with self.connect() as db:
             self._check_account(db, source, account_id)
             return {r[0] for r in db.execute("SELECT id FROM messages WHERE source=?", (source,))}
+
+    def is_paused(self, source):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM sources WHERE source=?", (source,)).fetchone()
+            return bool(dict(row).get("paused", False)) if row else False
+
+    def set_paused(self, source, paused, settings=None):
+        with self.connect(write=True) as db:
+            row = db.execute("SELECT * FROM sources WHERE source=?", (source,)).fetchone()
+            if row is None and settings is None:
+                raise MailError("source_not_found")
+            if settings is not None:
+                self._check_account(db, source, settings["account_id"])
+            previous = bool(dict(row).get("paused", False)) if row else False
+            if "paused" not in {r[1] for r in db.execute("PRAGMA table_info(sources)")}:
+                # Local readers keep supporting older databases without writing.
+                db.execute("ALTER TABLE sources ADD COLUMN paused INTEGER NOT NULL DEFAULT 0")
+            if row is None:
+                db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
+                           (source, settings["account_id"]))
+            if previous != paused:
+                db.execute("UPDATE sources SET paused=? WHERE source=?", (paused, source))
+            return previous != paused
 
     def prepare_collection(self):
         with self.connect(write=True) as db:
@@ -169,6 +193,7 @@ class Store:
         from .adapters import next_action
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
+            value["paused"] = bool(value.get("paused", False))
             # Age of the last successful poll; it proves nothing about a consumer.
             elapsed = None if value["last_ok"] is None else max(0.0, now - value["last_ok"])
             value["last_ok_age"] = None if elapsed is None else int(elapsed)
@@ -179,6 +204,8 @@ class Store:
             value.update(coverage=COVERAGE.get(adapter, "Configured adapter scope; consult its instructions."), history_complete=False)
             value.update(backlog_pending=pending,
                          next_action=next_action(value["error"]) if value["error"] else "collect_periodically")
+            if value["paused"]:
+                value.update(status="paused", next_action="resume_source")
             result.append(value)
         return result
 
@@ -208,7 +235,7 @@ class Store:
             sources = self._health(db, stale_after)
             # Freshness is only the last successful poll's age. Backlog is separate.
             return {"counts": dict(counts), "sources": sources, "stale_after": stale_after,
-                    "fresh": bool(sources) and all(s["status"] == "ok" for s in sources)}
+                    "fresh": bool(sources) and all(s["status"] in ("ok", "paused") for s in sources)}
 
     def adapter(self, source):
         with self.connect() as db:

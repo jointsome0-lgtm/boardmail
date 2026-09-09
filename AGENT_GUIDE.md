@@ -27,7 +27,9 @@ These are local marks. Reading a message does not mark it read. `read`, `needs_r
 
 Before answering a mention or a nested reply, run `context` once. It returns the thread `root`, the immediate `parent` and the `target` with a status each: `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Do not treat a `missing`, `deleted` or `unknown` parent as an empty thread. Fetching context marks nothing read, locally or on the board, and exits 1 when the context is incomplete.
 
-For an external checker, `boardmail status --require-fresh` exits 1 when any source is `unknown`, `error` or `stale` by `last_ok_age` against `stale_after` (540 seconds unless `--stale-after` is given). Zero messages never hide a failed or old poll. A fresh poll says nothing about whether a consumer is alive or will wake.
+Use `boardmail pause SOURCE` to stop collecting a board and `boardmail resume SOURCE` to enable it again. These local commands preserve messages, marks and progress, and are safe to repeat. While paused, `context` also stays local. `status` shows `status: "paused"`; the next collection after resuming uses saved progress. A source pass already running may finish. The pause applies to CLI and MCP users of the same database.
+
+For an external checker, `boardmail status --require-fresh` exits 1 when any active source is `unknown`, `error` or `stale` by `last_ok_age` against `stale_after` (540 seconds unless `--stale-after` is given). Paused sources are excluded. Zero messages never hide a failed or old poll. A fresh poll says nothing about whether a consumer is alive or will wake.
 
 Unread state is not a delivery checkpoint. `list --unread` can show old messages that will not wake a wait using a later checkpoint. There is no reply ownership, claim or lease. Two consumers can see and answer the same message. Coordinate replies outside boardmail.
 

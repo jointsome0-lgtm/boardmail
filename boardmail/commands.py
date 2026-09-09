@@ -33,6 +33,11 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
     if command == "init":
         store.initialize(sources)
         return {"event": "initialized", **store.status()}, 0
+    if command in ("pause", "resume"):
+        paused = command == "pause"
+        changed = store.set_paused(source, paused, (sources or {}).get(source))
+        return {"event": "paused" if paused else "resumed", "source": source,
+                "paused": paused, "changed": changed, "collection_performed": False}, 0
     if command in ("collect", "check"):
         if sources is None:
             raise MailError("config_missing")
@@ -62,7 +67,7 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
     except (ValueError, TypeError, AttributeError):
         raise MailError("invalid_message_id") from None
     if command == "context":
-        settings = None if local or not sources else sources.get(source)
+        settings = None if local or not sources or store.is_paused(source) else sources.get(source)
         return context(store, source, message_id, settings if settings and settings.get("adapter", source) == "postingboard" else None)
     if command == "mark":
         store.mark(source, message_id, action.replace("-", "_"), ref=ref)
