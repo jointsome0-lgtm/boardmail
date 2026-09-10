@@ -71,6 +71,11 @@ def load(path):
                 if not isinstance(settings["api_key_file"], str) or not settings["api_key_file"]:
                     raise ValueError()
                 settings["api_key_file"] = path_from(settings["api_key_file"], path.parent)
+            if adapter in COVERAGE and "totp_secret_file" in settings:
+                secret_file = settings["totp_secret_file"]
+                if adapter != "the-colony" or not isinstance(secret_file, str) or not secret_file.strip():
+                    raise ValueError()
+                settings["totp_secret_file"] = path_from(secret_file, path.parent)
             if adapter == "postingboard":
                 inbox = settings.get("inbox", False)
                 if type(inbox) is not bool:

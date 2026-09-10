@@ -1,5 +1,9 @@
 """Read-only adapters; confirmed prefixes survive failures with error health."""
+import base64
+import binascii
 from datetime import datetime
+import hashlib
+import hmac
 from http.client import HTTPException
 import json
 import re
@@ -16,11 +20,61 @@ PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_AUTH_ERROR_BYTES = 4096
+COLONY_AUTH_CODES = frozenset({
+    "AUTH_2FA_REQUIRED", "AUTH_2FA_INVALID", "AUTH_INVALID_TOKEN",
+    "AUTH_TOKEN_REVOKED", "AUTH_PENDING_ACTIVATION", "AUTH_IP_DENIED", "AUTH_AGENT_ONLY",
+})
 
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise MailError("redirect_refused")
+
+
+def colony_auth_error(exc):
+    """Read only a bounded, allowlisted reason; never retain provider prose."""
+    try:
+        raw = exc.read(MAX_AUTH_ERROR_BYTES + 1)
+        if len(raw) > MAX_AUTH_ERROR_BYTES:
+            return None
+        data = json.loads(raw)
+        detail = data.get("detail") if isinstance(data, dict) else None
+        code = detail.get("code") if isinstance(detail, dict) else None
+        if isinstance(code, str) and code in COLONY_AUTH_CODES:
+            return code.lower()
+    except (OSError, HTTPException, ValueError, TypeError, AttributeError):
+        pass
+    finally:
+        exc.close()
+    return None
+
+
+def colony_totp(secret_file):
+    """Generate one SHA-1, 30-second, six-digit TOTP without storing its value."""
+    try:
+        with secret_file.open(encoding="ascii") as stream:
+            raw = stream.read(129)
+    except OSError:
+        raise MailError("credentials_unavailable") from None
+    except UnicodeError:
+        raise MailError("invalid_totp_secret") from None
+    if len(raw) > 128:
+        raise MailError("invalid_totp_secret")
+    secret = raw.strip()
+    if not secret:
+        raise MailError("credentials_unavailable")
+    try:
+        key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
+        if not key:
+            raise ValueError()
+    except (binascii.Error, ValueError):
+        raise MailError("invalid_totp_secret") from None
+    counter = (int(time.time()) // 30).to_bytes(8, "big")
+    digest = hmac.new(key, counter, hashlib.sha1).digest()
+    offset = digest[-1] & 15
+    number = int.from_bytes(digest[offset:offset + 4], "big") & 0x7fffffff
+    return f"{number % 1_000_000:06d}"
 
 
 class Client:
@@ -50,7 +104,15 @@ class Client:
         prefix = "" if self.source == "postingboard" else "/api/v1"
         request = Request(self.host+prefix+path, headers=headers,
                           data=json.dumps(body).encode() if body is not None else None)
-        with self.opener.open(request, timeout=min(10,remaining)) as response:
+        try:
+            response = self.opener.open(request, timeout=min(10,remaining))
+        except HTTPError as exc:
+            if self.source == "the-colony" and (token or path == "/auth/token") and exc.code in (400, 401, 403):
+                code = colony_auth_error(exc)
+                if code:
+                    raise MailError(code) from None
+            raise
+        with response:
             chunks, size = [], 0
             while True:
                 if time.monotonic() > self.deadline:
@@ -71,8 +133,13 @@ class Client:
                     raise ValueError()
             except (OSError, ValueError):
                 raise MailError("credentials_unavailable") from None
-            self.token = (self._request("/auth/token", body={"api_key":key})["access_token"]
-                          if self.source == "the-colony" else key)
+            if self.source == "the-colony":
+                body = {"api_key": key}
+                if "totp_secret_file" in self.settings:
+                    body["totp_code"] = colony_totp(self.settings["totp_secret_file"])
+                self.token = self._request("/auth/token", body=body)["access_token"]
+            else:
+                self.token = key
         return self._request(path+("?"+urlencode(params) if params else ""),
                              token=self.token if authenticated else None)
 
