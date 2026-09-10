@@ -102,6 +102,35 @@ class PublicContextTests(unittest.TestCase):
         self.assertIsNone(result['target']['current_message'])
         self.assertEqual(code, 1)
 
+    def test_moltbook_reuses_received_parent_and_root_within_the_shared_budget(self):
+        self.setup_source('moltbook')
+        get, remaining = self.client.get, [3]  # One root and two comment pages fit.
+        def bounded(path, params=None, **kwargs):
+            if not remaining[0]: raise MailError('budget_exhausted')
+            remaining[0] -= 1
+            return get(path, params, **kwargs)
+        self.client.get = bounded
+        with patch.object(providers, 'PAGE_SIZE', 1):
+            result, code = self.context()
+            self.assertEqual((code, result['complete']), (0, True))
+            self.assertEqual(result['parent']['message']['body'], 'Our published answer.')
+            self.assertEqual(result['previous_exchange']['status'], 'linked')
+            self.assertEqual(len(self.client.calls), 3)
+            # Originals are cached only for that command, never across later reads.
+            self.parent_raw['content'] = 'An edited answer.'
+            remaining[0] = 3; self.client.calls.clear()
+            result, code = self.context()
+            self.assertEqual((code, result['parent']['message']['body']), (0, 'An edited answer.'))
+            self.assertEqual(len(self.client.calls), 3)
+
+        def missing_page(path, params=None, **kwargs):
+            if path.endswith('/comments'):
+                raise HTTPError('https://example.invalid', 404, '', {}, io.BytesIO())
+            return get(path, params, **kwargs)
+        self.client.get = missing_page
+        result, _ = self.context()
+        self.assertEqual((result['target']['remote_status'], result['target']['error']), ('unavailable', 'http_404'))
+
     def test_moltbook_unknown_thread_and_bad_parent_are_not_guessed(self):
         self.setup_source('moltbook')
         self.parent_raw['post_id'] = uid(999)

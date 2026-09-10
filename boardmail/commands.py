@@ -99,7 +99,11 @@ def context(store, source, message_id, settings, *, client_factory=None):
             client = (client_factory or providers.Client)(adapter, settings)
             fetch = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
                      "moltbook": providers.moltbook_lookup}[adapter]
-        lookup = lambda mid, root=None: fetch(client, mid, root)
+        if adapter == "moltbook":
+            originals = {}
+            lookup = lambda mid, root=None: fetch(client, mid, root, originals=originals)
+        else:
+            lookup = lambda mid, root=None: fetch(client, mid, root)
 
     def resolve(mid, root=None):
         """Element plus the relationships to trust: a fetched original outranks a stored row."""

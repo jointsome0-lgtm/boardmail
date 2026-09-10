@@ -641,42 +641,58 @@ def parent_reference(adapter, thread, parent):
     return None
 
 
-def moltbook_lookup(client, mid, root=None):
+def moltbook_lookup(client, mid, root=None, *, originals=None):
     """Find an anonymous original in its paginated comment tree.
 
     A stored comment supplies its thread ID. Without that relationship only a
     root can be fetched; a missing post endpoint cannot establish comment absence.
     """
     from .adapters import Batch
+    originals = {} if originals is None else originals
+    thread_loaded = False
     try:
         thread = root or mid
-        post = client.get("/posts/" + thread)["post"]
-        if uuid(post["id"]) != thread: raise ValueError("Unexpected thread")
+        if (thread, thread) not in originals:
+            post = client.get("/posts/" + thread)["post"]
+            if uuid(post["id"]) != thread: raise ValueError("Unexpected thread")
+            originals[thread, thread] = post
+        post = originals[thread, thread]
+        thread_loaded = True
         if post.get("is_deleted"):
             return ("deleted", None, None) if mid == thread else ("unavailable", "thread_deleted", None)
         if post.get("is_spam"): return "unavailable", "hidden_by_provider", None
         title = text(post.get("title") or "Public reply")
         if mid == thread:
             return "available", None, notification_message(client, post, mid, thread, title)
-        position, visited = None, set()
-        batch = Batch()
-        for _ in range(MAX_PAGES):
-            items, following = page(client, "/posts/" + thread + "/comments", "comments", position)
-            for original in descendants(items, batch):
-                if uuid(original["id"]) != mid: continue
-                if original.get("post_id") and uuid(original["post_id"]) != thread:
-                    raise ValueError("Unexpected thread")
-                if original.get("is_deleted"): return "deleted", None, None
-                if original.get("is_spam"): return "unavailable", "hidden_by_provider", None
-                return "available", None, notification_message(client, original, mid, thread, title)
-            if batch.error: return "unavailable", batch.error, None
-            if following is None: return "missing", None, None
-            cursor = following["cursor"]
-            if cursor in visited: raise MailError("pagination_no_progress")
-            visited.add(cursor)
-            position = following
-        return "unavailable", "budget_exhausted", None
+        if (thread, mid) not in originals:
+            position, visited = None, set()
+            batch = Batch()
+            for _ in range(MAX_PAGES):
+                items, following = page(client, "/posts/" + thread + "/comments", "comments", position)
+                for original in descendants(items, batch):
+                    comment_id = uuid(original["id"])
+                    if comment_id == thread: raise ValueError("Comment shares root identity")
+                    # Keep encountered parents for this context command. They must
+                    # not need another scan against the same remaining time budget.
+                    originals[thread, comment_id] = original
+                    if comment_id == mid: break
+                if (thread, mid) in originals: break
+                if batch.error: return "unavailable", batch.error, None
+                if following is None: return "missing", None, None
+                cursor = following["cursor"]
+                if cursor in visited: raise MailError("pagination_no_progress")
+                visited.add(cursor)
+                position = following
+            else:
+                return "unavailable", "budget_exhausted", None
+        original = originals[thread, mid]
+        if original.get("post_id") and uuid(original["post_id"]) != thread:
+            raise ValueError("Unexpected thread")
+        if original.get("is_deleted"): return "deleted", None, None
+        if original.get("is_spam"): return "unavailable", "hidden_by_provider", None
+        return "available", None, notification_message(client, original, mid, thread, title)
     except HTTPError as exc:
+        if thread_loaded: return "unavailable", error_code(exc), None
         if root is None and exc.code == 404:
             exc.close()
             return "unknown", "thread_unknown", None
