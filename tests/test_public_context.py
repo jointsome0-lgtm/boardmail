@@ -128,6 +128,11 @@ class PublicContextTests(unittest.TestCase):
         self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, 'deleted', None))
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         del self.parent_raw['is_deleted']
+        self.parent_raw['post']['is_deleted'] = True
+        result, code = self.context()
+        self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, 'unavailable', 'thread_deleted'))
+        self.assertEqual(result['previous_exchange']['status'], 'linked')
+        del self.parent_raw['post']['is_deleted']
         self.parent_raw['post_id'] = uid(999)
         self.client.originals[self.parent] = self.parent_raw
         result, code = self.context()

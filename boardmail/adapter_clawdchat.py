@@ -135,9 +135,11 @@ def _original(client, entry, *, include_own=False):
     context = original if entry["is_post"] else original.get("post") or {}
     if context.get("id") and uuid(context["id"]) != post_id:
         raise ValueError()
+    if original.get("is_deleted"):
+        raise MailError("original_deleted")
+    if context.get("is_deleted"):
+        raise MailError("thread_deleted")
     for obj in (original, context):
-        if obj.get("is_deleted"):
-            raise MailError("original_deleted")
         if obj.get("is_hidden") or obj.get("visibility", "public") != "public":
             raise MailError("original_unavailable")
     author = original["author"]
@@ -234,7 +236,7 @@ def collect(settings, state, known):
                     seen.add(mid)
                 del pending[mid]
             except FAILURES as exc:
-                if isinstance(exc, MailError) and str(exc) in ("http_403", "http_404", "http_410", "original_deleted", "original_unavailable"):
+                if isinstance(exc, MailError) and str(exc) in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
                     batch.unavailable += 1
                 else:
                     code = _error(batch, exc)

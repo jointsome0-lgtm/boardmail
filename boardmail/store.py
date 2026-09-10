@@ -122,16 +122,22 @@ class Store:
     def save_collection(self, source, account_id, adapter, revision, batch):
         with self.connect(write=True) as db:
             self._check_account(db, source, account_id)
-            row = db.execute("SELECT adapter,revision FROM adapter_state WHERE source=?", (source,)).fetchone()
+            row = db.execute("SELECT adapter,revision,state FROM adapter_state WHERE source=?", (source,)).fetchone()
             if row and row["adapter"] != adapter:
                 raise MailError("adapter_mismatch")
             stale = (row["revision"] if row else 0) != revision
             added = self._insert_messages(db, source, batch.messages, int(time.time()))
             if not stale:
                 self._save_health(db, source, account_id, batch.unavailable, batch.error, int(time.time()))
+                state = json.dumps(batch.state, allow_nan=False)
+                unchanged = (json.dumps(json.loads(state), sort_keys=True) ==
+                             json.dumps(json.loads(row["state"]) if row else {}, sort_keys=True))
+                # A failed preflight has health to report, but cannot invalidate
+                # a concurrent collector's checkpoint when it made no progress.
+                advance = not (batch.error and not batch.messages and unchanged)
                 db.execute("""INSERT INTO adapter_state VALUES (?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET
                     revision=excluded.revision,state=excluded.state,backlog_pending=excluded.backlog_pending""",
-                    (source, adapter, revision+1, json.dumps(batch.state, allow_nan=False), not batch.complete))
+                    (source, adapter, revision+int(advance), state, not batch.complete))
             return added, stale
 
     @staticmethod

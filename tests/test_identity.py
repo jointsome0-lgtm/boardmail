@@ -40,13 +40,17 @@ class IdentityTests(unittest.TestCase):
                 self.assertEqual(providers.collect_all(store, {'account-a': cfg})['added'], 1)
                 store.mark('account-a', uid(10), 'needs_reply')
                 row = store.show('account-a', uid(10))
-                before = store.collection_state('account-a', uid(1), 'postingboard')[:2]
+                before = store.collection_state('account-a', uid(1), 'postingboard')
                 key.write_text('synthetic-B'); calls.clear()
                 result = providers.collect_all(store, {'account-a': cfg})
                 self.assertEqual((result['added'], result['errors'][0]['error']), (0, 'account_mismatch'))
                 self.assertEqual(calls, ['/v1/me'])
-                self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard')[:2], before)
+                self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard'), before)
                 self.assertEqual(store.show('account-a', uid(10)), row)
+                # A valid pass started before the key failed still owns its checkpoint revision.
+                self.assertEqual(store.save_collection('account-a', uid(1), 'postingboard', before[2],
+                    Batch(state={**before[1], 'inbox_after': 15})), (0, False))
+                self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard')[1]['inbox_after'], 15)
                 key.write_text('synthetic-A')
                 self.assertFalse(providers.collect_all(store, {'account-a': cfg})['failed'])
 
@@ -75,6 +79,7 @@ class IdentityTests(unittest.TestCase):
                     self.assertGreater(result['added'], 0)
                     self.assertEqual(len(client.calls), 1)
                     self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[1], state)
+                    self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[2], 1)
                     self.assertEqual(next(s for s in store.status()['sources'] if s['source'] == 'alias')['last_ok'], last_ok)
 
 

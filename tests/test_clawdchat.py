@@ -205,6 +205,9 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(added, 0)
         self.assertEqual([p for p, _, _ in self.client.calls], ["/agents/me"])
         self.assertEqual(batch.state, state)
+        self.assertEqual(self.store.collection_state("clawd", uid(1), "clawdchat")[2], 1)
+        self.assertEqual(self.store.save_collection("clawd", uid(1), "clawdchat", 1,
+            Batch(state={"offset": 16, "pending": []})), (0, False))
 
     def test_local_setup_errors_keep_pending_state_and_planned_budget_is_partial(self):
         state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),
