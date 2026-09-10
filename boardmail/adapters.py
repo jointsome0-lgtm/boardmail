@@ -28,6 +28,10 @@ class Batch:
 def next_action(error):
     if error == "database_missing": return "run_init"
     if error in ("config_missing", "invalid_config", "credentials_unavailable"): return "check_config_and_credentials"
+    if error == "auth_2fa_required": return "configure_colony_totp_secret_file"
+    if error in ("auth_2fa_invalid", "invalid_totp_secret"): return "check_totp_secret_and_system_clock"
+    if error in ("auth_invalid_token", "auth_token_revoked", "auth_pending_activation", "auth_ip_denied", "auth_agent_only", "http_401", "http_403"):
+        return "check_config_and_credentials"
     if error in ("account_mismatch", "adapter_mismatch"): return "restore_source_identity_or_use_a_new_source"
     if error == "database_exists": return "use_existing_database_do_not_overwrite"
     if error == "source_not_found": return "check_source_name_in_status_or_config"
