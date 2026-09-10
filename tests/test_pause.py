@@ -162,6 +162,8 @@ class PauseTests(unittest.TestCase):
             result, code = commands.execute(self.store, 'context', source='postingboard', id=uid(10), sources=settings())
         self.assertFalse(result['fetched'])
         self.assertEqual(result['target']['message']['id'], uid(10))
+        self.assertIsNone(result['target']['current_message'])
+        self.assertIsNone(result['target']['differs_from_saved'])
         self.assertEqual(code, 1)  # The missing root remains explicitly unknown.
         self.assertEqual(self.path.read_bytes(), before)
 

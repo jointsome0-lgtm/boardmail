@@ -207,6 +207,55 @@ class ContextTests(unittest.TestCase):
     def context(self, mid, cfg=None):
         return commands.context(self.store, 'postingboard', mid, cfg, client_factory=lambda *_: self.fixture)
 
+    def test_saved_root_compares_text_exactly_without_changing_snapshot_or_marks(self):
+        saved = {**mail(610), 'thread_id': uid(610), 'title': 'Original title', 'body': 'Cafe\u0301\r\n'}
+        self.store.save('postingboard', self.cfg['account_id'], [saved])
+        for action in ('read', 'needs_reply', 'replied'):
+            self.store.mark('postingboard', uid(610), action, ref='https://example.invalid/reply' if action == 'replied' else None)
+        snapshot = self.store.show('postingboard', uid(610))
+        before = self.path.read_bytes()
+        # Different author, URL and timestamps do not change the text comparison.
+        current = self.fixture.others[uid(610)] = {**named(610, 610), 'title': saved['title'], 'body': saved['body']}
+        cases = [('Original title', 'Cafe\u0301\r\n', False), ('Renamed', 'Cafe\u0301\r\n', True),
+                 ('Original title', 'Cafe\u0301\n', True), ('Original title', 'Caf\u00e9\r\n', True)]
+        for title, body, differs in cases:
+            with self.subTest(title=title, body=body):
+                current.update(title=title, body=body)
+                self.fixture.calls.clear()
+                result, code = self.context(uid(610), self.cfg)
+                self.assertEqual((code, result['complete']), (0, True))
+                self.assertEqual(result['target'], result['root'])
+                self.assertEqual(result['target']['message'], snapshot)
+                self.assertEqual(result['target']['current_message']['body'], body)
+                self.assertEqual(result['target']['current_message']['source'], 'postingboard')
+                self.assertIs(result['target']['differs_from_saved'], differs)
+                self.assertIsNone(result['parent']['current_message'])
+                self.assertIsNone(result['parent']['differs_from_saved'])
+                self.assertEqual([path for path, _, _ in self.fixture.calls], ['/v1/posts/' + uid(610)])
+                self.assertEqual(self.path.read_bytes(), before)
+
+    def test_reply_label_is_not_an_edit_and_thread_rename_belongs_to_root(self):
+        current = self.fixture.others[uid(602)]
+        current.update(title='', body='Synthetic text')
+        self.store.save('postingboard', self.cfg['account_id'], [
+            {**mail(n), 'thread_id': uid(600), 'title': self.fixture.others[uid(n)]['title'],
+             'body': self.fixture.others[uid(n)]['body']} for n in (600, 601)])
+        self.fixture.others[uid(600)]['title'] = 'Renamed thread'
+        before = self.path.read_bytes()
+        result, code = self.context(uid(602), self.cfg)
+        self.assertEqual(code, 0)
+        self.assertIs(result['target']['differs_from_saved'], False)
+        self.assertNotEqual(result['target']['message']['title'], result['target']['current_message']['title'])
+        self.assertIs(result['parent']['differs_from_saved'], False)
+        self.assertIs(result['root']['differs_from_saved'], True)
+        self.assertEqual(len(self.fixture.calls), 3)
+        current['body'] = 'Edited reply'
+        result, code = self.context(uid(602), self.cfg)
+        self.assertEqual((code, result['target']['message']['body'], result['target']['current_message']['body']),
+                         (0, 'Synthetic text', 'Edited reply'))
+        self.assertIs(result['target']['differs_from_saved'], True)
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_nested_reply_gets_same_thread_parent_and_root_without_marks(self):
         before = self.path.read_bytes()
         result, code = self.context(uid(602), self.cfg)
@@ -214,6 +263,9 @@ class ContextTests(unittest.TestCase):
         self.assertEqual((result['target']['status'], result['target']['origin'], result['target']['remote_status']), ('available', 'local', 'available'))
         self.assertEqual((result['parent']['id'], result['parent']['origin'], result['parent']['message']['body']), (uid(601), 'remote', 'A parent comment.'))
         self.assertEqual((result['root']['id'], result['root']['message']['thread_id']), (uid(600), uid(600)))
+        for role in ('root', 'parent'):  # Remote-only elements already carry current text in message.
+            self.assertIsNone(result[role]['current_message'])
+            self.assertIsNone(result[role]['differs_from_saved'])
         self.assertEqual(self.path.read_bytes(), before); self.assertIsNone(self.store.show('postingboard', uid(602))['read_at'])
         self.assertFalse(any('ack' in path for path, _, _ in self.fixture.calls))
         # A root-level reply's immediate parent is the root itself; a root has no parent.
@@ -233,11 +285,29 @@ class ContextTests(unittest.TestCase):
             result, code = self.context(uid(602), self.cfg)
             self.assertEqual((code, result['parent']['status'], result['root']['status']), (1, expected, 'available'))
             self.assertEqual(result['parent']['error'], 'http_%d' % status)
+            self.assertIsNone(result['parent']['current_message'])
+            self.assertIsNone(result['parent']['differs_from_saved'])
             self.assertNotIn('private', json.dumps(result))
+        snapshot = self.store.show('postingboard', uid(602))
+        before = self.path.read_bytes()
+        for status, expected in outcomes.items():
+            def failing_target(path, params=None, **kw):
+                if path.endswith(uid(602)): raise http(status)
+                return get(path, params, **kw)
+            self.fixture.get = failing_target
+            result, code = self.context(uid(602), self.cfg)
+            self.assertEqual((code, result['target']['status'], result['target']['remote_status']), (0, 'available', expected))
+            self.assertEqual(result['target']['message'], snapshot)
+            self.assertIsNone(result['target']['current_message'])
+            self.assertIsNone(result['target']['differs_from_saved'])
+            self.assertEqual(self.path.read_bytes(), before)
         self.fixture.get = get
         result, code = self.context(uid(602), None)
         self.assertEqual((code, result['fetched'], result['parent']['status'], result['root']['status']), (1, False, 'unknown', 'unknown'))
         self.assertEqual(result['target']['origin'], 'local'); self.assertNotIn('remote_status', result['target'])
+        for role in ('root', 'parent', 'target'):
+            self.assertIsNone(result[role]['current_message'])
+            self.assertIsNone(result[role]['differs_from_saved'])
         result, code = self.context(uid(999), self.cfg)
         self.assertEqual((code, result['target']['status'], result['parent']['status']), (1, 'missing', 'unknown'))
         self.fixture.others[uid(601)]['root_id'] = uid(777)
@@ -260,6 +330,19 @@ class ContextTests(unittest.TestCase):
         self.store.save('moltbook', uid(2), [{**mail(904), 'thread_id': uid(900)}, {**mail(900), 'thread_id': uid(900)}])
         result, code = commands.context(self.store, 'moltbook', uid(904), None)
         self.assertEqual((code, result['parent']['id'], result['parent']['origin']), (0, uid(900), 'local'))
+        self.assertIsNone(result['target']['current_message'])
+        self.assertIsNone(result['target']['differs_from_saved'])
+
+    def test_incompatible_stored_thread_cannot_be_compared(self):
+        self.fixture.others[uid(700)] = named(700, 700)
+        self.fixture.others[uid(602)].update(root_id=uid(700), thread_id=uid(700), reply_to_id=None)
+        before = self.path.read_bytes()
+        result, code = self.context(uid(602), self.cfg)
+        self.assertEqual((code, result['root']['id']), (0, uid(700)))
+        self.assertEqual(result['target']['message']['thread_id'], uid(600))
+        self.assertEqual(result['target']['current_message']['thread_id'], uid(700))
+        self.assertIsNone(result['target']['differs_from_saved'])
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_cli_context_with_explicit_config_keeps_the_database_override(self):
         root = Path(self.temp.name)
@@ -273,8 +356,12 @@ class ContextTests(unittest.TestCase):
             return code, json.loads(out.getvalue())
         code, result = run()
         self.assertEqual((code, result['fetched'], result['parent']['status'], result['target']['origin']), (0, True, 'available', 'local'))
+        self.assertEqual(result['target']['current_message']['body'], '@sample-agent nested reply.')
+        self.assertIs(result['target']['differs_from_saved'], True)
         code, result = run('--local')
         self.assertEqual((code, result['fetched'], result['parent']['status']), (1, False, 'unknown'))
+        self.assertIsNone(result['target']['current_message'])
+        self.assertIsNone(result['target']['differs_from_saved'])
         self.assertFalse((root/'other.sqlite3').exists())
 
     def test_cli_context_reads_local_records_offline(self):
