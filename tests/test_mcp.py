@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from boardmail.mcp import create_server
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, settings, uid
+from examples.fixtures import FixtureClient, named, settings, uid
 from test_mail import mail
 
 try:
@@ -134,6 +134,26 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 cfg['postingboard']['account_id'] = uid(999)
                 result = await self.call(c,'collect',error=True)
                 self.assertIn('account_mismatch',[e['error'] for e in result['errors']])
+
+    async def test_context_returns_saved_and_current_text_without_marks(self):
+        cfg = {'postingboard': settings()['postingboard']}
+        self.store.initialize(cfg)
+        self.store.save('postingboard', cfg['postingboard']['account_id'], [{**mail(610), 'thread_id': uid(610)}])
+        fixture = FixtureClient('postingboard', cfg['postingboard'])
+        fixture.others[uid(610)] = named(610, 610, body='Edited root text')
+        before = self.path.read_bytes()
+        with patch('boardmail.providers.Client', return_value=fixture):
+            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+                target = {'source': 'postingboard', 'id': uid(610)}
+                result = await self.call(c, 'context', target)
+                self.assertEqual(result['target']['message']['body'], 'Synthetic text')
+                self.assertEqual(result['target']['current_message']['body'], 'Edited root text')
+                self.assertIs(result['target']['differs_from_saved'], True)
+                local = await self.call(c, 'context', {**target, 'local': True})
+                self.assertIsNone(local['target']['current_message'])
+                self.assertIsNone(local['target']['differs_from_saved'])
+        self.assertEqual(len(fixture.calls), 1)
+        self.assertEqual(self.path.read_bytes(), before)
 
     async def test_pause_is_shared_with_cli_without_restarting_server(self):
         from boardmail import providers

@@ -76,7 +76,8 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
 
 
 def element(status, message=None, *, origin=None, error=None, id=None):
-    return {"id": message["id"] if message else id, "status": status, "origin": origin, "error": error, "message": message}
+    return {"id": message["id"] if message else id, "status": status, "origin": origin, "error": error,
+            "message": message, "current_message": None, "differs_from_saved": None}
 
 
 def context(store, source, message_id, settings, *, client_factory=None):
@@ -102,6 +103,11 @@ def context(store, source, message_id, settings, *, client_factory=None):
             found = element("available", stored, origin="local")
             if lookup is not None:
                 found["remote_status"], found["error"] = remote[:2]
+                found["current_message"] = current = remote[2]
+                if current is not None and (stored["id"], stored["thread_id"]) == (current["id"], current["thread_id"]):
+                    # Reply titles are display labels, often inherited from the thread.
+                    fields = ("title", "body") if stored["id"] == stored["thread_id"] else ("body",)
+                    found["differs_from_saved"] = any(stored[field] != current[field] for field in fields)
             return found, remote[2] or stored, remote[2] is not None
         found = element(remote[0], remote[2], origin="remote" if remote[2] else None, error=remote[1], id=mid)
         if lookup is not None:
