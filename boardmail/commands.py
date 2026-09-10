@@ -69,7 +69,7 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
     if command == "context":
         settings = None if local or not sources or store.is_paused(source) else sources.get(source)
         return context(store, source, message_id,
-                       settings if settings and settings.get("adapter", source) in ("postingboard", "the-colony") else None)
+                       settings if settings and settings.get("adapter", source) in ("postingboard", "the-colony", "moltbook", "clawdchat") else None)
     if command == "mark":
         store.mark(source, message_id, action.replace("-", "_"), ref=ref)
     return {"event": "marked" if command == "mark" else "message",
@@ -91,15 +91,28 @@ def context(store, source, message_id, settings, *, client_factory=None):
             config.uuid(message_id)
         except (ValueError, TypeError, AttributeError):
             raise MailError("invalid_message_id") from None
-        client = (client_factory or providers.Client)(adapter, settings)
-        fetch = providers.colony_lookup if adapter == "the-colony" else providers.postingboard_lookup
-        lookup = lambda mid, root=None: fetch(client, mid, root)
+        if adapter == "clawdchat":
+            from . import adapter_clawdchat
+            client = client_factory(adapter, settings) if client_factory else adapter_clawdchat.Client(settings)
+            fetch = adapter_clawdchat.lookup
+        else:
+            client = (client_factory or providers.Client)(adapter, settings)
+            fetch = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
+                     "moltbook": providers.moltbook_lookup}[adapter]
+        if adapter == "moltbook":
+            originals = {}
+            lookup = lambda mid, root=None: fetch(client, mid, root, originals=originals)
+        else:
+            lookup = lambda mid, root=None: fetch(client, mid, root)
 
     def resolve(mid, root=None):
         """Element plus the relationships to trust: a fetched original outranks a stored row."""
         stored = store.find(source, mid)
-        # A stored Colony root needs no speculative comment lookup to identify its endpoint.
-        lookup_root = mid if adapter == "the-colony" and root is None and stored and stored["thread_id"] == mid else root
+        # Moltbook exposes comments through their thread. Known roots need no comment probe.
+        lookup_root = root
+        if root is None and stored and (adapter == "moltbook" or
+                adapter in ("the-colony", "clawdchat") and stored["thread_id"] == mid):
+            lookup_root = stored["thread_id"]
         remote = lookup(mid, lookup_root) if lookup is not None else ("unknown", None, None)
         if remote[2] is not None:
             remote = (remote[0], remote[1], {"source": source, **remote[2]})

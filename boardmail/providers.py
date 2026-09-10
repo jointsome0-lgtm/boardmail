@@ -342,7 +342,7 @@ def notification_message(client, original, mid, post_id, title):
     name = author.get("username" if colony else "name")
     if name is not None: name = text(name)
     url = client.host+("/posts/" if colony else "/post/")+post_id
-    if colony and mid != post_id: url += "#comment-"+mid
+    if mid != post_id: url += "#comment-"+mid
     return {"id": mid, "thread_id": post_id,
         "parent_id": uuid(original["parent_id"]) if original.get("parent_id") else None,
         "author": name, "title": title, "body": text(original["body" if colony else "content"]),
@@ -632,7 +632,77 @@ def parent_reference(adapter, thread, parent):
     if adapter == "the-colony":
         url = HOSTS[adapter] + "/posts/" + uuid(thread)
         return url if parent == thread else url + "#comment-" + uuid(parent)
+    if adapter == "moltbook":
+        url = HOSTS[adapter] + "/post/" + uuid(thread)
+        return url if parent == thread else url + "#comment-" + uuid(parent)
+    if adapter == "clawdchat":
+        from .adapter_clawdchat import ORIGIN
+        return ORIGIN + "/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
     return None
+
+
+def moltbook_lookup(client, mid, root=None, *, originals=None):
+    """Find an anonymous original in its paginated comment tree.
+
+    A stored comment supplies its thread ID. Without that relationship only a
+    root can be fetched; a missing post endpoint cannot establish comment absence.
+    """
+    from .adapters import Batch
+    originals = {} if originals is None else originals
+    thread_loaded = False
+    try:
+        thread = root or mid
+        if (thread, thread) not in originals:
+            post = client.get("/posts/" + thread)["post"]
+            if uuid(post["id"]) != thread: raise ValueError("Unexpected thread")
+            originals[thread, thread] = post
+        post = originals[thread, thread]
+        thread_loaded = True
+        if post.get("is_deleted"):
+            return ("deleted", None, None) if mid == thread else ("unavailable", "thread_deleted", None)
+        if post.get("is_spam"): return "unavailable", "hidden_by_provider", None
+        title = text(post.get("title") or "Public reply")
+        if mid == thread:
+            return "available", None, notification_message(client, post, mid, thread, title)
+        if (thread, mid) not in originals:
+            position, visited = None, set()
+            batch = Batch()
+            for _ in range(MAX_PAGES):
+                items, following = page(client, "/posts/" + thread + "/comments", "comments", position)
+                for original in descendants(items, batch):
+                    comment_id = uuid(original["id"])
+                    if comment_id == thread: raise ValueError("Comment shares root identity")
+                    # Keep encountered parents for this context command. They must
+                    # not need another scan against the same remaining time budget.
+                    originals[thread, comment_id] = original
+                    if comment_id == mid: break
+                if (thread, mid) in originals: break
+                if batch.error: return "unavailable", batch.error, None
+                if following is None: return "missing", None, None
+                cursor = following["cursor"]
+                if cursor in visited: raise MailError("pagination_no_progress")
+                visited.add(cursor)
+                position = following
+            else:
+                return "unavailable", "budget_exhausted", None
+        original = originals[thread, mid]
+        if original.get("post_id") and uuid(original["post_id"]) != thread:
+            raise ValueError("Unexpected thread")
+        if original.get("is_deleted"): return "deleted", None, None
+        if original.get("is_spam"): return "unavailable", "hidden_by_provider", None
+        return "available", None, notification_message(client, original, mid, thread, title)
+    except HTTPError as exc:
+        if thread_loaded: return "unavailable", error_code(exc), None
+        if root is None and exc.code == 404:
+            exc.close()
+            return "unknown", "thread_unknown", None
+        if mid != thread and exc.code in (404, 410):
+            code = "thread_missing" if exc.code == 404 else "thread_deleted"
+            exc.close()
+            return "unavailable", code, None
+        return {404: "missing", 410: "deleted"}.get(exc.code, "unavailable"), error_code(exc), None
+    except FAILURES as exc:
+        return "unavailable", error_code(exc), None
 
 
 def collect(source, settings, state, known, *, client_factory=None):
@@ -640,6 +710,14 @@ def collect(source, settings, state, known, *, client_factory=None):
     batch = Batch(state=state)
     try:
         client = (client_factory or Client)(source, settings)
+        profile = client.get("/v1/me" if source == "postingboard" else "/agents/me", authenticated=True)
+        if profile.get("success") is False: raise ValueError("Invalid profile")
+        account = profile["agent"] if source == "moltbook" else profile
+        if uuid(account["id"]) != uuid(settings["account_id"]):
+            raise MailError("account_mismatch")
+    except FAILURES as exc:
+        return Batch(state=state, complete=False, error=error_code(exc))
+    try:
         if source == "postingboard": postingboard_mail(client, known, batch)
         else: notification_mail(client, known, batch)
     except FAILURES as exc:

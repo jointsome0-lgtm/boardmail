@@ -72,6 +72,10 @@ class FixtureClient:
         self.calls.append((path,params,authenticated))
         if self.fail:
             raise HTTPError("https://untrusted.invalid/secret-token",503,"private provider prose",{},io.BytesIO())
+        if path == ("/v1/me" if self.source == "postingboard" else "/agents/me"):
+            assert authenticated
+            profile = {"id": self.owner}
+            return {"agent": profile} if self.source == "moltbook" else profile
         if self.source == "postingboard":
             assert authenticated
             if path in ("/v1/inbox","/v1/search"):

@@ -34,13 +34,7 @@ class Client:
             self.owner = uuid(settings["account_id"])
         except (KeyError, ValueError, TypeError, AttributeError):
             raise MailError("invalid_config") from None
-        try:
-            with Path(settings.get("api_key_file")).open() as stream:
-                self.key = stream.read(4097).strip()
-            if not self.key or len(self.key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in self.key):
-                raise ValueError()
-        except (OSError, UnicodeError, ValueError, TypeError):
-            raise MailError("credentials_unavailable") from None
+        self.settings, self.key = settings, None
         self.end = time.monotonic() + SOURCE_SECONDS
         self.deadline = self.end
         self.requests = 0
@@ -52,6 +46,15 @@ class Client:
     def get(self, path, params=None, *, authenticated=False):
         headers = {"Accept": "application/json", "User-Agent": "boardmail/0.2"}
         if authenticated:
+            if self.key is None:
+                try:
+                    with Path(self.settings.get("api_key_file")).open() as stream:
+                        key = stream.read(4097).strip()
+                    if not key or len(key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in key):
+                        raise ValueError()
+                    self.key = key
+                except (OSError, UnicodeError, ValueError, TypeError):
+                    raise MailError("credentials_unavailable") from None
             headers["Authorization"] = "Bearer " + self.key
         for attempt in range(3):  # At most two retries, all inside this phase's budget.
             remaining = self.deadline - time.monotonic()
@@ -121,7 +124,7 @@ def _reference(item):
     return {"id": mid, "post": post, "kind": kind, "is_post": item["type"] == "mention_post"}
 
 
-def _original(client, entry):
+def _original(client, entry, *, include_own=False):
     path = ("/posts/" if entry["is_post"] else "/comments/") + entry["id"]
     original = client.get(path)  # Never attach credentials to public-original requests.
     if uuid(original["id"]) != entry["id"]:
@@ -132,11 +135,15 @@ def _original(client, entry):
     context = original if entry["is_post"] else original.get("post") or {}
     if context.get("id") and uuid(context["id"]) != post_id:
         raise ValueError()
+    if original.get("is_deleted"):
+        raise MailError("original_deleted")
+    if context.get("is_deleted"):
+        raise MailError("thread_deleted")
     for obj in (original, context):
-        if obj.get("is_deleted") or obj.get("is_hidden") or obj.get("visibility", "public") != "public":
+        if obj.get("is_hidden") or obj.get("visibility", "public") != "public":
             raise MailError("original_unavailable")
     author = original["author"]
-    if uuid(author["id"]) == client.owner:
+    if uuid(author["id"]) == client.owner and not include_own:
         return None
     body = original.get("content")
     if body is None and entry["is_post"]:
@@ -159,6 +166,23 @@ def _error(batch, exc):
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
 
 
+def lookup(client, mid, root=None):
+    """Read a public parent, target or root without requiring account credentials."""
+    try:
+        entry = {"id": mid, "post": root, "is_post": mid == root, "kind": "mention"}
+        try:
+            message = _original(client, entry, include_own=True)
+        except MailError as exc:
+            if root is not None or str(exc) != "http_404": raise
+            entry["is_post"] = True
+            message = _original(client, entry, include_own=True)
+    except FAILURES as exc:
+        code = str(exc) if isinstance(exc, MailError) else "invalid_response"
+        if code == "original_deleted": return "deleted", None, None
+        return {"http_404": "missing", "http_410": "deleted"}.get(code, "unavailable"), code, None
+    return "available", None, message
+
+
 def collect(settings, state, known):
     """Rotate retries, read fresh and backfill pages, then confirm new references.
 
@@ -167,6 +191,15 @@ def collect(settings, state, known):
     """
     batch = Batch(state={"offset": 0, "pending": []})
     pending = {}
+    try:
+        client = Client(settings)
+        client.phase(5)
+        if uuid(client.get("/agents/me", authenticated=True)["id"]) != client.owner:
+            raise MailError("account_mismatch")
+    except FAILURES as exc:
+        batch.error = _error(batch, exc)
+        batch.state = state
+        return batch
     try:
         offset = state.get("offset", 0)
         if type(offset) is not int or not 0 <= offset < 2**63:
@@ -182,10 +215,6 @@ def collect(settings, state, known):
                 raise ValueError()
             if mid not in known:
                 pending[mid] = {"id": mid, "post": post, "kind": entry["kind"], "is_post": entry["is_post"]}
-        client = Client(settings)
-        client.phase(5)
-        if uuid(client.get("/agents/me", authenticated=True)["id"]) != client.owner:
-            raise MailError("account_mismatch")
     except FAILURES as exc:
         _error(batch, exc)
         batch.state["pending"] = list(pending.values())
@@ -207,7 +236,7 @@ def collect(settings, state, known):
                     seen.add(mid)
                 del pending[mid]
             except FAILURES as exc:
-                if isinstance(exc, MailError) and str(exc) in ("http_403", "http_404", "http_410", "original_unavailable"):
+                if isinstance(exc, MailError) and str(exc) in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
                     batch.unavailable += 1
                 else:
                     code = _error(batch, exc)

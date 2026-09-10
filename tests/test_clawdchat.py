@@ -195,11 +195,19 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(len(self.store.known("clawd", uid(1))), 6)
 
     def test_wrong_token_owner_stops_before_notifications(self):
+        state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),
+                                          "kind": "reply_to_post", "is_post": False}]}
+        self.store.prepare_collection()
+        self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state=state))
         self.client.profile = {"id": uid(999)}
         batch, added = self.collect()
         self.assertEqual(batch.error, "account_mismatch")
         self.assertEqual(added, 0)
         self.assertEqual([p for p, _, _ in self.client.calls], ["/agents/me"])
+        self.assertEqual(batch.state, state)
+        self.assertEqual(self.store.collection_state("clawd", uid(1), "clawdchat")[2], 1)
+        self.assertEqual(self.store.save_collection("clawd", uid(1), "clawdchat", 1,
+            Batch(state={"offset": 16, "pending": []})), (0, False))
 
     def test_local_setup_errors_keep_pending_state_and_planned_budget_is_partial(self):
         state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),
@@ -281,6 +289,15 @@ class TransportTests(unittest.TestCase):
                                       proxy={"https": "http://proxy.invalid:8080"})
         self.assertEqual(client.get("/notifications", authenticated=True), {"id": "example"})
         self.assertEqual(len(handler.requests), 3)
+
+    def test_public_original_needs_no_readable_key_file(self):
+        client, handler = self.client([(200, b'{"id":"public-original"}', None)])
+        client.settings['api_key_file'].unlink()
+        self.assertEqual(client.get('/comments/' + uid(10)), {'id': 'public-original'})
+        self.assertIsNone(handler.requests[0].get_header('Authorization'))
+        with self.assertRaisesRegex(MailError, '^credentials_unavailable$'):
+            client.get('/agents/me', authenticated=True)
+        self.assertEqual(len(handler.requests), 1)
 
     def test_transient_retry_cap_rate_limit_and_response_size(self):
         client, handler = self.client([(503, b"PRIVATE ERROR", None)] * 4)
