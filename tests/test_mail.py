@@ -139,9 +139,11 @@ class MailTests(unittest.TestCase):
                    'relatedCommentId':uid(n+10)} for n in (501,502,503)]
         def factory(*_):
             client = FixtureClient('moltbook',cfg)
+            base_get = client.get
             used = 0
             def get(path,params=None,**kw):
                 nonlocal used
+                if path == '/agents/me': return base_get(path, params, **kw)
                 if path=='/notifications':return {'notifications':events,'has_more':False}
                 root = int(UUID(path.split('/')[2]))
                 if path.endswith('/comments'):

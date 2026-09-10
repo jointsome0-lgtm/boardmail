@@ -132,7 +132,7 @@ class ExchangeTests(unittest.TestCase):
                                                           'reply_ref': self.ref, 'messages': []})
 
     def test_postingboard_exact_refs_and_unsupported_adapters_are_distinct(self):
-        for source in ('postingboard', 'moltbook'):
+        for source in ('postingboard', 'custom'):
             self.store.save(source, uid(3), [{**mail(610), 'thread_id': uid(600), 'parent_id': uid(601)}, mail(611)])
             self.store.mark(source, uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
             result, code = commands.execute(self.store, 'context', source=source, id=uid(610), local=True)

@@ -6,7 +6,9 @@ For the first run, use the [README](../README.md). For a consumer loop, use the 
 
 The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local commands need no config when `--db` is supplied; an explicit `--config` also enables remote `context` unless `--local` is given.
 
-Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Collection rejects a changed account under an existing source name; use a separate database for a different account.
+Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook and ClawdChat compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
+
+Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, 4claw accepts `watched_threads` and `mention_aliases`, but has no `mention_mode` setting. Custom adapters keep their own options.
 
 `init` creates a new database and refuses any existing file. It is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. The optional message `discovery` column is added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
 
@@ -32,7 +34,9 @@ Only `replied` accepts `--ref`. It records an assertion without visiting the URL
 
 `context SOURCE ID` returns `root`, immediate `parent` and `target`. `show` remains an offline, single-message read. Context retrieval changes no saved text or marks.
 
-With config, active Postingboard and Colony sources fetch current originals. `--local`, a paused source, or `--db` without explicit `--config` keeps the read local. Current remote relationships take precedence over stored relationships. Colony uses anonymous originals, including your own comments that the collector excludes.
+With config, active Postingboard, Colony, Moltbook and ClawdChat sources fetch current originals. `--local`, a paused source, or `--db` without explicit `--config` keeps the read local. Current remote relationships take precedence over stored relationships. Colony, Moltbook and ClawdChat use anonymous originals, including your own comments that the collector excludes. These public lookups need no readable API-key file.
+
+Moltbook exposes comments through their thread. A stored comment supplies that thread ID; its lookup scans up to 100 comment pages within the shared 45-second context budget. An unfinished search returns `unavailable`, not `missing`. An unstored comment whose thread cannot be established returns `unknown` with `thread_unknown`. An unstored root can be fetched directly.
 
 Each element has `id`, `status`, `origin`, `error`, `message`, `current_message` and `differs_from_saved`. Saved elements can also have `remote_status`.
 
@@ -62,7 +66,16 @@ The parent is the board's explicit reply target, otherwise the root. A parent fr
 | `unknown` | No comparison; inspect `reason`. |
 | `none` | The target is a root. |
 
-Unknown reasons are `no_parent_identity`, `parent_not_recorded_by_board`, `parent_invalid` and `unsupported_source`. Sharing a thread does not establish a link. Supported canonical forms are Postingboard `https://getpostingboard.dev/v1/posts/UUID` and Colony `https://thecolony.ai/posts/POST_UUID#comment-COMMENT_UUID`, or a Colony post URL for an explicit root parent. Alternate schemes, hosts and trailing slashes do not match. Configured aliases keep separate records. No `reply_ref` URL is fetched.
+Unknown reasons are `no_parent_identity`, `parent_not_recorded_by_board`, `parent_invalid` and `unsupported_source`. Sharing a thread does not establish a link. Use these exact forms when recording a published reply with `mark replied --ref`:
+
+| Board | Comment reference | Explicit root reference |
+| --- | --- | --- |
+| Postingboard | `https://getpostingboard.dev/v1/posts/COMMENT_UUID` | `https://getpostingboard.dev/v1/posts/POST_UUID` |
+| Colony | `https://thecolony.ai/posts/POST_UUID#comment-COMMENT_UUID` | `https://thecolony.ai/posts/POST_UUID` |
+| Moltbook | `https://www.moltbook.com/post/POST_UUID#comment-COMMENT_UUID` | `https://www.moltbook.com/post/POST_UUID` |
+| ClawdChat | `https://clawdchat.cn/api/v1/comments/COMMENT_UUID` | `https://clawdchat.cn/api/v1/posts/POST_UUID` |
+
+Alternate schemes, hosts and trailing slashes do not match. A previously recorded thread-only link cannot identify a comment and remains unmatched. Moltbook's fragment supplies an exact local identity; jumping to that comment in its web UI has not been verified. Configured aliases keep separate records. No `reply_ref` URL is fetched.
 
 Local or paused reads can find a link even when the parent text is unavailable. Invalid parent identity prevents linkage. These links reflect earlier `mark replied` assertions; they do not prove authorship, close questions or change `needs_reply`.
 

@@ -342,7 +342,7 @@ def notification_message(client, original, mid, post_id, title):
     name = author.get("username" if colony else "name")
     if name is not None: name = text(name)
     url = client.host+("/posts/" if colony else "/post/")+post_id
-    if colony and mid != post_id: url += "#comment-"+mid
+    if mid != post_id: url += "#comment-"+mid
     return {"id": mid, "thread_id": post_id,
         "parent_id": uuid(original["parent_id"]) if original.get("parent_id") else None,
         "author": name, "title": title, "body": text(original["body" if colony else "content"]),
@@ -632,7 +632,61 @@ def parent_reference(adapter, thread, parent):
     if adapter == "the-colony":
         url = HOSTS[adapter] + "/posts/" + uuid(thread)
         return url if parent == thread else url + "#comment-" + uuid(parent)
+    if adapter == "moltbook":
+        url = HOSTS[adapter] + "/post/" + uuid(thread)
+        return url if parent == thread else url + "#comment-" + uuid(parent)
+    if adapter == "clawdchat":
+        from .adapter_clawdchat import ORIGIN
+        return ORIGIN + "/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
     return None
+
+
+def moltbook_lookup(client, mid, root=None):
+    """Find an anonymous original in its paginated comment tree.
+
+    A stored comment supplies its thread ID. Without that relationship only a
+    root can be fetched; a missing post endpoint cannot establish comment absence.
+    """
+    from .adapters import Batch
+    try:
+        thread = root or mid
+        post = client.get("/posts/" + thread)["post"]
+        if uuid(post["id"]) != thread: raise ValueError("Unexpected thread")
+        if post.get("is_deleted"):
+            return ("deleted", None, None) if mid == thread else ("unavailable", "thread_deleted", None)
+        if post.get("is_spam"): return "unavailable", "hidden_by_provider", None
+        title = text(post.get("title") or "Public reply")
+        if mid == thread:
+            return "available", None, notification_message(client, post, mid, thread, title)
+        position, visited = None, set()
+        batch = Batch()
+        for _ in range(MAX_PAGES):
+            items, following = page(client, "/posts/" + thread + "/comments", "comments", position)
+            for original in descendants(items, batch):
+                if uuid(original["id"]) != mid: continue
+                if original.get("post_id") and uuid(original["post_id"]) != thread:
+                    raise ValueError("Unexpected thread")
+                if original.get("is_deleted"): return "deleted", None, None
+                if original.get("is_spam"): return "unavailable", "hidden_by_provider", None
+                return "available", None, notification_message(client, original, mid, thread, title)
+            if batch.error: return "unavailable", batch.error, None
+            if following is None: return "missing", None, None
+            cursor = following["cursor"]
+            if cursor in visited: raise MailError("pagination_no_progress")
+            visited.add(cursor)
+            position = following
+        return "unavailable", "budget_exhausted", None
+    except HTTPError as exc:
+        if root is None and exc.code == 404:
+            exc.close()
+            return "unknown", "thread_unknown", None
+        if mid != thread and exc.code in (404, 410):
+            code = "thread_missing" if exc.code == 404 else "thread_deleted"
+            exc.close()
+            return "unavailable", code, None
+        return {404: "missing", 410: "deleted"}.get(exc.code, "unavailable"), error_code(exc), None
+    except FAILURES as exc:
+        return "unavailable", error_code(exc), None
 
 
 def collect(source, settings, state, known, *, client_factory=None):
@@ -640,6 +694,14 @@ def collect(source, settings, state, known, *, client_factory=None):
     batch = Batch(state=state)
     try:
         client = (client_factory or Client)(source, settings)
+        profile = client.get("/v1/me" if source == "postingboard" else "/agents/me", authenticated=True)
+        if profile.get("success") is False: raise ValueError("Invalid profile")
+        account = profile["agent"] if source == "moltbook" else profile
+        if uuid(account["id"]) != uuid(settings["account_id"]):
+            raise MailError("account_mismatch")
+    except FAILURES as exc:
+        return Batch(state=state, complete=False, error=error_code(exc))
+    try:
         if source == "postingboard": postingboard_mail(client, known, batch)
         else: notification_mail(client, known, batch)
     except FAILURES as exc:

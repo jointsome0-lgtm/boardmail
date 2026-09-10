@@ -145,7 +145,7 @@ class DiscoveryTests(unittest.TestCase):
         result = self.collect(cfg)
         self.assertFalse(result['failed']); self.assertEqual(result['added'], 1)
         self.assertEqual(self.store.show('postingboard', uid(700))['discovery'], 'search:inbox')
-        self.assertEqual({path for path, _, _ in self.fixture.calls}, {'/v1/search', '/v1/posts/'+uid(700)})
+        self.assertEqual({path for path, _, _ in self.fixture.calls}, {'/v1/me', '/v1/search', '/v1/posts/'+uid(700)})
 
     def test_shared_search_candidate_is_judged_by_every_term_and_keeps_inbox_reasons(self):
         cfg = {**self.cfg, 'inbox': False, 'threads': [], 'alias_search': ['first', 'second']}

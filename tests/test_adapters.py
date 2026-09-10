@@ -112,7 +112,10 @@ class AdapterTests(unittest.TestCase):
                 clock, late, retained = [0.0], [False], [True]
                 def factory(*args):
                     client = FixtureClient(*args)
+                    base_get = client.get
+                    client.deadline = clock[0] + 6
                     def get(path, params=None, **kw):
+                        if path == '/agents/me': return base_get(path, params, **kw)
                         if clock[0]+1 > client.deadline: raise MailError('source_timeout')
                         clock[0] += 1
                         if path == '/notifications':
@@ -153,9 +156,10 @@ class AdapterTests(unittest.TestCase):
             result=collect_all(self.store,{'postingboard':cfg},client_factory=lambda *_:client)
         self.assertEqual(result['added'],1)
         self.assertEqual(self.store.show('postingboard',uid(10401))['body'],'A synthetic named-board reply.')
-        self.assertEqual(client.calls[0][1],{'limit':30})
-        self.assertEqual(client.calls[1][1],{'limit':30,'before':5000})
-        self.assertEqual(len(client.calls),2)
+        self.assertEqual(client.calls[0],('/v1/me', {}, True))
+        self.assertEqual(client.calls[1][1],{'limit':30})
+        self.assertEqual(client.calls[2][1],{'limit':30,'before':5000})
+        self.assertEqual(len(client.calls),3)
         self.assertTrue(result['sources'][0]['backlog_pending'])
 
     def test_moltbook_comment_cursor_progress_and_expired_cursor_recovery(self):

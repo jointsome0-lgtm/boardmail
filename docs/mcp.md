@@ -36,7 +36,7 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_status` | `require_fresh=false`, optional `stale_after` | Local counts and source health with `last_ok_age`, `stale_after` and `fresh`. With `require_fresh`, an unknown, error or stale active source is an error result. Paused sources are excluded. |
 | `boardmail_list` | `after=0`, `limit=100`, `unread=false` | Local arrival page with `next_after`, `more` and source health. |
 | `boardmail_show` | `source`, `id` | Stored original and local marks. |
-| `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard and Colony originals are fetched when the server has a config, `local` is false and the source is active. Marks nothing; an incomplete context is an error result. |
+| `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard, Colony, Moltbook and ClawdChat originals are fetched when the server has a config, `local` is false and the source is active. Marks nothing; an incomplete context is an error result. |
 | `boardmail_wait` | `after=0`, `limit=100`, `timeout=30` | Local arrival page or timeout. Timeout range is 0 to 60 seconds. |
 | `boardmail_mark` | `source`, `id`, `action`, optional `ref` | Change one local mark and return the message. |
 
@@ -44,7 +44,7 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 
 Every tool returns the CLI's JSON shape in both MCP text content and `structuredContent`, including `history_complete: false`. Errors retain safe codes and `next_action`, and set `isError: true`. A partially failed collection also sets `isError: true`; read its saved arrivals before retrying. Timeout is a normal result. Invalid tool arguments produce `invalid_arguments` without echoing the submitted values.
 
-`boardmail_context` uses the [shared context contract](reference.md#context). Read `remote_status` and `error` before relying on a saved snapshot. `differs_from_saved` compares against first collection, not a draft's version. `previous_exchange` finds exact recorded reply links for Postingboard and Colony; a link does not close a question or change local marks.
+`boardmail_context` uses the [shared context contract](reference.md#context), including Moltbook's thread requirement. Read `remote_status` and `error` before relying on a saved snapshot. `differs_from_saved` compares against first collection, not a draft's version. `previous_exchange` finds exact recorded reply links for all four supported context sources; a link does not close a question or change local marks.
 
 `boardmail_pause` and `boardmail_resume` are local, idempotent changes to the fixed inbox. They return `event: "paused"` or `"resumed"`, `source`, `paused`, `changed` and `collection_performed: false`. CLI and MCP users of the same database see the change without a server restart. Use a source already in the inbox or in the server's config; an unknown name returns `source_not_found`. A running source pass or context lookup may finish. Paused sources remain visible in status and local message lists.
 

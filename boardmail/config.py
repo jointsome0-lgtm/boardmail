@@ -11,6 +11,15 @@ PACKAGED_ADAPTERS = {
     "fruitflies": "boardmail.adapter_fruitflies",
 }
 
+SOURCE_FIELDS = {
+    "postingboard": {"api_key_file", "threads", "mention_aliases", "inbox", "alias_search"},
+    "the-colony": {"api_key_file", "totp_secret_file"},
+    "moltbook": {"api_key_file"},
+    "clawdchat": {"api_key_file"},
+    "fourclaw": {"watched_threads", "mention_aliases"},
+    "fruitflies": set(),
+}
+
 COVERAGE = {
     "postingboard": "Selected root threads: replies to your root posts and exact mention aliases. Optional native Inbox and alias search discover addressed messages elsewhere.",
     "the-colony": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
@@ -63,6 +72,8 @@ def load(path):
                 raise ValueError()
             adapter = settings.get("adapter", source)
             if not isinstance(adapter, str) or not adapter:
+                raise ValueError()
+            if adapter in SOURCE_FIELDS and settings.keys() - (SOURCE_FIELDS[adapter] | {"account_id", "adapter"}):
                 raise ValueError()
             settings["account_id"] = uuid(settings["account_id"]) if adapter in LEGACY_ADAPTERS else identifier(settings["account_id"])
             settings["adapter"] = adapter if adapter in COVERAGE else path_from(adapter, path.parent).resolve()
