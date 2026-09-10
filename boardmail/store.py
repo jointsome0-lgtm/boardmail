@@ -255,6 +255,13 @@ class Store:
             raise MailError("message_not_found")
         return message
 
+    def replied_with(self, source, reply_ref, *, exclude_id):
+        """All local records linked to one exact published reply, within this source."""
+        with self.connect() as db:
+            return [self._message(row) for row in db.execute(
+                "SELECT * FROM messages WHERE source=? AND reply_ref=? AND id<>? ORDER BY arrival_seq",
+                (source, reply_ref, exclude_id))]
+
     def mark(self, source, message_id, action, *, ref=None):
         clauses = {"read": ("read_at=COALESCE(read_at,?)", (int(time.time()),)),
                    "unread": ("read_at=NULL", ()), "needs_reply": ("needs_reply=1", ()),

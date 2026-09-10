@@ -298,7 +298,7 @@ def resolve_original(client, entry, known, batch, colony):
     post = raw if colony else raw["post"]
     if not colony and uuid(post["id"]) != post_id: raise ValueError("Unexpected post")
     title = text(post.get("title") or "Public reply")
-    accept_original(client, post, post_id, ids, known, batch, colony, title)
+    accept_original(client, post, post_id, ids, known, batch, title)
     following = None
     if not colony and ids.keys()-{post_id}:
         try:
@@ -309,14 +309,14 @@ def resolve_original(client, entry, known, batch, colony):
             raise
         for original in descendants(items, batch):
             try:
-                accept_original(client, original, post_id, ids, known, batch, colony, title)
+                accept_original(client, original, post_id, ids, known, batch, title)
             except FAILURES as exc:
                 failure(batch, exc)
     entry["cursor"] = following
     if following is None: batch.unavailable += len(ids)
 
 
-def accept_original(client, original, post_id, ids, known, batch, colony, title):
+def accept_original(client, original, post_id, ids, known, batch, title):
     mid = uuid(original["id"])
     if mid not in ids: return
     if original.get("post_id") and uuid(original["post_id"]) != post_id:
@@ -328,16 +328,25 @@ def accept_original(client, original, post_id, ids, known, batch, colony, title)
     if author.get("id") and uuid(author["id"]) == client.owner:
         del ids[mid]
         return
+    batch.messages.append({**notification_message(client, original, mid, post_id, title), "kind": ids[mid]})
+    del ids[mid]
+    known.add(mid)
+
+
+def notification_message(client, original, mid, post_id, title):
+    """Normalize a public original; collection alone filters out our own messages."""
+    colony = client.source == "the-colony"
+    author = original.get("author")
+    if author is None: author = {}
+    if not isinstance(author, dict): raise ValueError("Invalid author")
     name = author.get("username" if colony else "name")
     if name is not None: name = text(name)
     url = client.host+("/posts/" if colony else "/post/")+post_id
     if colony and mid != post_id: url += "#comment-"+mid
-    batch.messages.append({"id": mid, "thread_id": post_id, "kind": ids[mid],
+    return {"id": mid, "thread_id": post_id,
         "parent_id": uuid(original["parent_id"]) if original.get("parent_id") else None,
         "author": name, "title": title, "body": text(original["body" if colony else "content"]),
-        "url": url, "created_at": timestamp(original["created_at"])})
-    del ids[mid]
-    known.add(mid)
+        "url": url, "created_at": timestamp(original["created_at"])}
 
 
 def alias_pattern(aliases):
@@ -589,6 +598,41 @@ def postingboard_lookup(client, mid, root=None):
     except FAILURES as exc:
         return "unavailable", error_code(exc), None
     return "available", None, message
+
+
+def colony_lookup(client, mid, root=None):
+    """Read an anonymous original, including an owner's comment absent from the inbox."""
+    try:
+        is_post = mid == root
+        try:
+            post = client.get(("/posts/" if is_post else "/comments/") + mid)
+        except HTTPError as exc:
+            # An unstored target can be a post or a comment. Known relatives have one endpoint.
+            if root is not None or exc.code != 404: raise
+            exc.close()
+            post = client.get("/posts/" + mid)
+            is_post = True
+        if uuid(post["id"]) != mid: raise ValueError("Unexpected original")
+        thread = mid if is_post else uuid(post["post_id"])
+        if post.get("post_id") and uuid(post["post_id"]) != thread: raise ValueError("Unexpected thread")
+        if root is not None and thread != root: raise ValueError("Unexpected thread")
+        if post.get("is_deleted"): return "deleted", None, None
+        if post.get("is_spam"): return "unavailable", "hidden_by_provider", None
+        message = notification_message(client, post, mid, thread, text(post.get("title") or "Public reply"))
+    except HTTPError as exc:
+        return {404: "missing", 410: "deleted"}.get(exc.code, "unavailable"), error_code(exc), None
+    except FAILURES as exc:
+        return "unavailable", error_code(exc), None
+    return "available", None, message
+
+
+def parent_reference(adapter, thread, parent):
+    """Canonical identity for a local join, never a URL to fetch."""
+    if adapter == "postingboard": return HOSTS[adapter] + "/v1/posts/" + uuid(parent)
+    if adapter == "the-colony":
+        url = HOSTS[adapter] + "/posts/" + uuid(thread)
+        return url if parent == thread else url + "#comment-" + uuid(parent)
+    return None
 
 
 def collect(source, settings, state, known, *, client_factory=None):

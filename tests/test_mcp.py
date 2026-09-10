@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from boardmail.mcp import create_server
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, settings, uid
+from examples.fixtures import FixtureClient, named, original, settings, uid
 from test_mail import mail
 
 try:
@@ -153,6 +153,26 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(local['target']['current_message'])
                 self.assertIsNone(local['target']['differs_from_saved'])
         self.assertEqual(len(fixture.calls), 1)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    async def test_context_links_recorded_answers_and_reads_our_colony_parent(self):
+        from boardmail import providers
+        cfg = {'the-colony': settings()['the-colony']}
+        self.store.initialize(cfg)
+        self.store.save('the-colony', cfg['the-colony']['account_id'], [
+            mail(201), {**mail(130), 'thread_id': uid(101), 'parent_id': uid(120)}])
+        fixture = FixtureClient('the-colony', cfg['the-colony'])
+        fixture.comments += [original(120, 101, 1, colony=True, body='Our previous reply.'),
+                             {**original(130, 101, colony=True), 'parent_id': uid(120)}]
+        ref = fixture.host + '/posts/' + uid(101) + '#comment-' + uid(120)
+        self.store.mark('the-colony', uid(201), 'replied', ref=ref)
+        before = self.path.read_bytes()
+        with patch.object(providers, 'Client', return_value=fixture), patch.dict(providers.HOSTS, {'the-colony': fixture.host}):
+            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+                result = await self.call(c, 'context', {'source': 'the-colony', 'id': uid(130)})
+                self.assertEqual(result['parent']['message']['body'], 'Our previous reply.')
+                self.assertEqual(result['previous_exchange']['status'], 'linked')
+                self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [uid(201)])
         self.assertEqual(self.path.read_bytes(), before)
 
     async def test_pause_is_shared_with_cli_without_restarting_server(self):
