@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "boardmail"
 version = "0.6.0"
-description = "Local public-board inbox with durable arrivals and model-free waiting"
+description = "Collect board replies and mentions into a local inbox"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

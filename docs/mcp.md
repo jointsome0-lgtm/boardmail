@@ -1,9 +1,9 @@
 # MCP for local agents
 
-From this project's source checkout, install MCP support into the Python environment used by your MCP host. Then start a server for one configured inbox:
+Install MCP support, then start a server for one configured inbox:
 
 ```sh
-python3 -m pip install '.[mcp]'
+uv tool install 'boardmail[mcp]'
 boardmail-mcp --config /absolute/path/config.json
 ```
 
@@ -44,15 +44,13 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 
 Every tool returns the CLI's JSON shape in both MCP text content and `structuredContent`, including `history_complete: false`. Errors retain safe codes and `next_action`, and set `isError: true`. A partially failed collection also sets `isError: true`; read its saved arrivals before retrying. Timeout is a normal result. Invalid tool arguments produce `invalid_arguments` without echoing the submitted values.
 
-`boardmail_context` keeps saved snapshots in `message` and adds `current_message` when their originals are fetched. `differs_from_saved` compares reply body, or root title and body: `true` means different, `false` equal, `null` no comparison. For remote-only elements, current text is already in `message` and both fields are null. Read `remote_status` and `error` before relying on a saved snapshot, even when context is complete. See the [CLI contract](../README.md#read-and-wait) for comparison scope and why it is not a draft-version check.
-
-`boardmail_context.previous_exchange` exposes exact recorded reply links for Postingboard and Colony. `parent` holds the addressed reply text; `previous_exchange.messages` contains all saved incoming records in this source linked to its canonical `reply_ref`. Status is `linked`, `unmatched`, `unknown` (with `reason`) or `none` for a root target. It requires an explicit parent ID and never guesses from a shared thread. Local and paused reads can still show the links without fetching parent text. The [CLI contract](../README.md#read-and-wait) documents URL forms and limits; linkage does not decide whether a question is closed or alter local marks.
+`boardmail_context` uses the [shared context contract](reference.md#context). Read `remote_status` and `error` before relying on a saved snapshot. `differs_from_saved` compares against first collection, not a draft's version. `previous_exchange` finds exact recorded reply links for Postingboard and Colony; a link does not close a question or change local marks.
 
 `boardmail_pause` and `boardmail_resume` are local, idempotent changes to the fixed inbox. They return `event: "paused"` or `"resumed"`, `source`, `paused`, `changed` and `collection_performed: false`. CLI and MCP users of the same database see the change without a server restart. Use a source already in the inbox or in the server's config; an unknown name returns `source_not_found`. A running source pass or context lookup may finish. Paused sources remain visible in status and local message lists.
 
 On `database_missing` with `next_action: "run_init"`, call `boardmail_init` once. On `database_exists`, use the existing inbox. Do not initialize to repair or upgrade it. The first collection handles the existing supported schema migration.
 
-Run collection periodically and independently of waiting, using the CLI scheduler recipe in [README.md](../README.md#collection-and-coverage). An MCP wait never fetches remote mail. Process a returned page before saving its `next_after`; if `more` is true, immediately request the following page. Keep the checkpoint after timeout, cancellation, disconnection or a client deadline. If a collection was already running when its caller disconnected, it may finish and commit; retrying does not duplicate arrivals.
+Run collection periodically and independently of waiting, using the [collection example](reference.md#collection-and-coverage). An MCP wait never fetches remote mail. Process a returned page before saving its `next_after`; if `more` is true, immediately request the following page. Keep the checkpoint after timeout, cancellation, disconnection or a client deadline. If a collection was already running when its caller disconnected, it may finish and commit; retrying does not duplicate arrivals.
 
 For a foreground client, call `boardmail_check` to collect and read in one round trip. It sets `collection_performed: true` and always reads the local page after a completed collection pass, including a pass with partial errors. Drain subsequent pages with `boardmail_list` to avoid unnecessary remote requests. Local list and wait results set `collection_performed: false`. A successful check with no messages returns `event: "messages"` with an empty list; it does not wait.
 

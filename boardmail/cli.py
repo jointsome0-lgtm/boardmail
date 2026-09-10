@@ -16,35 +16,67 @@ class Parser(argparse.ArgumentParser):
 
 
 def parser():
-    p = Parser(prog="boardmail")
-    p.add_argument("--config",type=Path,help="Default ~/.config/boardmail/config.json")
-    p.add_argument("--db",type=Path,help="Database override; local reads need no config when supplied")
+    p = Parser(
+        prog="boardmail",
+        description="Collect board replies and mentions into a local inbox. Commands return JSON.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="After configuring an account:\n"
+               "  boardmail init                         # new database only\n"
+               "  boardmail check --after 0 --limit 50    # collect and read\n\n"
+               "Use boardmail COMMAND --help for arguments and examples.\n"
+               "Setup: https://github.com/jointsome0-lgtm/boardmail#install-and-configure",
+    )
+    p.add_argument("--config", type=Path, metavar="PATH",
+                   help="Config JSON; default ~/.config/boardmail/config.json")
+    p.add_argument("--db", type=Path, metavar="PATH",
+                   help="Override the configured SQLite file; local reads then need no config")
     sub = p.add_subparsers(dest="command",required=True)
-    sub.add_parser("init",help="Create a new database; never overwrite")
-    sub.add_parser("collect",help="Collect one retained public backlog pass")
-    for command in ("pause", "resume"):
-        s = sub.add_parser(command, help="Pause or resume a source without fetching or deleting mail")
-        s.add_argument("source", help="Source name from status or config")
-    s = sub.add_parser("status",help="Local source health and counts")
-    s.add_argument("--require-fresh",action="store_true",help="Require fresh active sources; paused sources are excluded")
-    s.add_argument("--stale-after",type=int,help="Freshness threshold in seconds; default 540")
-    for command in ("check","list","wait"):
-        s = sub.add_parser(command)
-        s.add_argument("--after",type=int,default=0)
-        s.add_argument("--limit",type=int,default=100)
+    sub.add_parser("init", help="Create a new inbox database",
+                   description="Create a new database. Never overwrites an existing file; not for upgrades.")
+    sub.add_parser("collect", help="Fetch one pass of remote mail",
+                   description="Collect from configured sources. Partial failure can still save messages.",
+                   epilog="Read the returned source errors before collecting again. Waiting never collects mail.")
+    for command, summary in (("pause", "Stop collection and remote context for one source"),
+                             ("resume", "Enable a source for the next collection")):
+        s = sub.add_parser(command, help=summary, description=summary + ". Keeps messages and progress.")
+        s.add_argument("source", metavar="SOURCE", help="Source name from status or config")
+    s = sub.add_parser("status", help="Show local counts and source health",
+                       description="Read collection health without contacting a board.")
+    s.add_argument("--require-fresh", action="store_true",
+                   help="Exit 1 if an active source is unknown, errored or stale; exclude paused sources")
+    s.add_argument("--stale-after", type=int, metavar="SECONDS",
+                   help="Age after which collection is stale; nonnegative seconds, default 540")
+    for command, summary in (("check", "Collect once, then read a local arrival page"),
+                             ("list", "Read a page of saved messages"),
+                             ("wait", "Wait for new local arrivals; never fetch remote mail")):
+        s = sub.add_parser(command, help=summary, description=summary + ".",
+                           epilog="Process messages before saving next_after. Use list to drain more pages."
+                                  " An empty page or timeout does not prove there is no remote mail.")
+        s.add_argument("--after", type=int, default=0, metavar="N",
+                       help="Last processed arrival_seq checkpoint, starting at 0; default %(default)s")
+        s.add_argument("--limit", type=int, default=100, metavar="N",
+                       help="Messages per page, 1 to 500; default %(default)s")
         if command == "list":
-            s.add_argument("--unread",action="store_true")
+            s.add_argument("--unread", action="store_true", help="Only messages without a local read mark")
         elif command == "wait":
-            s.add_argument("--timeout",type=float,default=1800)
-    for command in ("show","mark","context"):
-        s = sub.add_parser(command,help="Thread root, immediate parent and target; marks nothing" if command == "context" else None)
+            s.add_argument("--timeout", type=float, default=1800, metavar="SECONDS",
+                           help="Nonnegative, finite seconds; 0 checks once, default %(default)s. Run collection separately")
+    for command, summary in (("show", "Read one saved message and its marks"),
+                             ("mark", "Change a local read/reply mark"),
+                             ("context", "Read the target, parent and root; mark nothing")):
+        s = sub.add_parser(command, help=summary, description=summary + ".")
         if command == "mark":
-            s.add_argument("action",choices=("read","unread","needs-reply","clear-reply","replied"))
-            s.add_argument("--ref")
-        s.add_argument("source",help="Source name returned in a message")
-        s.add_argument("id")
+            s.add_argument("action", choices=("read","unread","needs-reply","clear-reply","replied"),
+                           help="read/unread set/clear reading; needs-reply/clear-reply set/clear the reply obligation;"
+                                " replied records a published reply without changing other marks")
+            s.add_argument("--ref", metavar="URL", help="Published HTTP(S) reply URL; required only for replied")
+            s.epilog = "Example: boardmail mark replied SOURCE ID --ref https://example.org/your-reply"
+        s.add_argument("source", metavar="SOURCE", help="Source name returned in a message")
+        s.add_argument("id", metavar="ID", help="Exact message ID from a Boardmail result")
         if command == "context":
-            s.add_argument("--local",action="store_true",help="Use only stored records; no remote lookup")
+            s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
+            s.epilog = "Configured active Postingboard/Colony sources can fetch current originals."
+            s.epilog += " With --db alone, context stays local; add --config to enable remote reads."
     return p
 
 
