@@ -34,9 +34,10 @@ def parser():
                "Publishing a reply happens through the board; mark replied records its URL.\n\n"
                "Put --config PATH and --db PATH before the command.\n"
                "Use boardmail COMMAND --help for arguments and examples.\n"
-               "Exit 0: success; 1: partial collection or required health check failed;\n"
+               "Exit 0: success; 1: partial collection, incomplete context or failed health check;\n"
                "2: invalid input or operation error; 3: wait timeout; 4: cancelled;\n"
-               "5: missing config or database. Read the JSON error and next_action.\n"
+               "5: missing config or database. Read the JSON result for details;\n"
+               "errors may include error and next_action.\n"
                "Setup: https://github.com/jointsome0-lgtm/boardmail#install-and-configure",
     )
     p.add_argument("--config", type=Path, metavar="PATH",
@@ -112,7 +113,8 @@ def parser():
             s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
             s.epilog += ("\nConfigured active Postingboard/Colony sources can fetch current originals.\n"
                          "Use --local for stored context only. With --db alone, context stays local;\n"
-                         "add --config before context to enable remote reads.")
+                         "add --config before context to enable remote reads.\n"
+                         "Exit 1 with complete: false means incomplete context; inspect target, parent and root.")
     return p
 
 
