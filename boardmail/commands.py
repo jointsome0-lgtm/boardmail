@@ -68,7 +68,8 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
         raise MailError("invalid_message_id") from None
     if command == "context":
         settings = None if local or not sources or store.is_paused(source) else sources.get(source)
-        return context(store, source, message_id, settings if settings and settings.get("adapter", source) == "postingboard" else None)
+        return context(store, source, message_id,
+                       settings if settings and settings.get("adapter", source) in ("postingboard", "the-colony") else None)
     if command == "mark":
         store.mark(source, message_id, action.replace("-", "_"), ref=ref)
     return {"event": "marked" if command == "mark" else "message",
@@ -82,21 +83,24 @@ def element(status, message=None, *, origin=None, error=None, id=None):
 
 def context(store, source, message_id, settings, *, client_factory=None):
     """Thread root, immediate parent and target. Reads local rows first, then
-    Postingboard originals when configured. Nothing is marked, locally or remotely."""
+    supported originals when configured. Nothing is marked, locally or remotely."""
     lookup = None
+    adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
     if settings is not None:
         try:
             config.uuid(message_id)
         except (ValueError, TypeError, AttributeError):
             raise MailError("invalid_message_id") from None
-        client = (client_factory or providers.Client)("postingboard", settings)
-        lookup = lambda mid, root=None: providers.postingboard_lookup(client, mid, root)
-    adapter = "postingboard" if lookup is not None else store.adapter(source)
+        client = (client_factory or providers.Client)(adapter, settings)
+        fetch = providers.colony_lookup if adapter == "the-colony" else providers.postingboard_lookup
+        lookup = lambda mid, root=None: fetch(client, mid, root)
 
     def resolve(mid, root=None):
         """Element plus the relationships to trust: a fetched original outranks a stored row."""
         stored = store.find(source, mid)
-        remote = lookup(mid, root) if lookup is not None else ("unknown", None, None)
+        # A stored Colony root needs no speculative comment lookup to identify its endpoint.
+        lookup_root = mid if adapter == "the-colony" and root is None and stored and stored["thread_id"] == mid else root
+        remote = lookup(mid, lookup_root) if lookup is not None else ("unknown", None, None)
         if remote[2] is not None:
             remote = (remote[0], remote[1], {"source": source, **remote[2]})
         if stored is not None:
@@ -137,5 +141,32 @@ def context(store, source, message_id, settings, *, client_factory=None):
             if parent["message"] is not None and parent["message"]["thread_id"] != root_id:
                 parent = element("unavailable", error="invalid_response", id=parent_id)
     complete = target["status"] == "available" and root["status"] == "available" and parent["status"] in ("available", "none")
+    exchange = previous_exchange(store, source, adapter, target, parent, relations)
     return {"event": "context", "source": source, "id": message_id, "fetched": lookup is not None,
-            "target": target, "parent": parent, "root": root, "complete": complete}, 0 if complete else 1
+            "target": target, "parent": parent, "root": root, "complete": complete,
+            "previous_exchange": exchange}, 0 if complete else 1
+
+
+def previous_exchange(store, source, adapter, target, parent, relations):
+    result = {"status": "unknown", "reason": None, "reply_ref": None, "messages": []}
+    if relations is None:
+        result["reason"] = "no_parent_identity"
+    elif relations["id"] == relations["thread_id"]:
+        result["status"] = "none"
+    elif relations["parent_id"] is None:
+        result["reason"] = "no_parent_identity" if parent["status"] == "unknown" else "parent_not_recorded_by_board"
+    elif parent["error"] == "invalid_response":
+        result["reason"] = "parent_invalid"
+    else:
+        try:
+            ref = providers.parent_reference(adapter, relations["thread_id"], parent["id"])
+        except (ValueError, TypeError, AttributeError):
+            result["reason"] = "parent_invalid"
+            return result
+        if ref is None:
+            result["reason"] = "unsupported_source"
+        else:
+            result["reply_ref"] = ref
+            result["messages"] = store.replied_with(source, ref, exclude_id=target["id"])
+            result["status"] = "linked" if result["messages"] else "unmatched"
+    return result
