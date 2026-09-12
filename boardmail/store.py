@@ -8,6 +8,7 @@ import time
 from urllib.parse import urlsplit
 
 from .config import COVERAGE, MailError
+from . import reader
 
 STALE_AFTER = 540
 SCHEMA_VERSION = 2
@@ -15,6 +16,10 @@ SCHEMA_VERSION = 2
 PROGRESS_SCHEMA = """CREATE TABLE IF NOT EXISTS adapter_state (
     source TEXT PRIMARY KEY, adapter TEXT NOT NULL, revision INTEGER NOT NULL,
     state TEXT NOT NULL, backlog_pending INTEGER NOT NULL DEFAULT 0)"""
+
+ORIGINALS_SCHEMA = """CREATE TABLE IF NOT EXISTS originals (
+    source TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL, PRIMARY KEY (source,id))"""
 
 
 class Store:
@@ -51,7 +56,7 @@ class Store:
                 author TEXT, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL,
                 created_at INTEGER NOT NULL, arrived_at INTEGER NOT NULL,
                 read_at INTEGER, needs_reply INTEGER NOT NULL DEFAULT 0,
-                replied_at INTEGER, reply_ref TEXT, UNIQUE(source, id))""")
+                replied_at INTEGER, reply_ref TEXT, discovery TEXT, addressing TEXT, UNIQUE(source, id))""")
             db.execute("""CREATE TABLE sources (
                 source TEXT PRIMARY KEY, account_id TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'unknown', last_checked INTEGER,
@@ -59,6 +64,7 @@ class Store:
                 paused INTEGER NOT NULL DEFAULT 0)""")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             db.execute(PROGRESS_SCHEMA)
+            db.execute(ORIGINALS_SCHEMA)
             for source, settings in (sources or {}).items():
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
@@ -104,6 +110,9 @@ class Store:
             if "discovery" not in self._columns(db):
                 # Additive and nullable: earlier 0.2.0+ readers still open this file.
                 db.execute("ALTER TABLE messages ADD COLUMN discovery TEXT")
+            if "addressing" not in self._columns(db):
+                db.execute("ALTER TABLE messages ADD COLUMN addressing TEXT")
+            db.execute(ORIGINALS_SCHEMA)
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     @staticmethod
@@ -128,6 +137,14 @@ class Store:
             stale = (row["revision"] if row else 0) != revision
             added = self._insert_messages(db, source, batch.messages, int(time.time()))
             if not stale:
+                for original in batch.originals:
+                    value = {key: original.get(key) for key in
+                             ("id", "thread_id", "parent_id", "author", "title", "body", "url", "created_at")}
+                    value["truncated"] = len(value["body"]) > 4096 or len(value["title"]) > 256
+                    value["body"], value["title"] = value["body"][:4096], value["title"][:256]
+                    db.execute("INSERT INTO originals VALUES (?,?,?,?) ON CONFLICT(source,id) DO UPDATE SET "
+                               "value=excluded.value,fetched_at=excluded.fetched_at",
+                               (source, value["id"], json.dumps(value, ensure_ascii=True), int(time.time())))
                 self._save_health(db, source, account_id, batch.unavailable, batch.error, int(time.time()))
                 state = json.dumps(batch.state, allow_nan=False)
                 unchanged = (json.dumps(json.loads(state), sort_keys=True) ==
@@ -161,9 +178,11 @@ class Store:
             if db.execute("SELECT 1 FROM messages WHERE source=? AND id=?", (source, item["id"])).fetchone():
                 continue
             columns, values = "", ()
-            if item.get("discovery") is not None:
+            for key in ("discovery", "addressing"):
                 # Only collection supplies this; its migration added the column.
-                columns, values = ",discovery", (item["discovery"],)
+                if item.get(key) is not None:
+                    columns += "," + key
+                    values += (item[key],)
             db.execute(f"""INSERT INTO messages
                 (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at{columns})
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?{",?"*len(values)})""", (source, item["id"], item["thread_id"],
@@ -220,17 +239,46 @@ class Store:
         item = dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
         item.setdefault("discovery", None)
+        item.setdefault("addressing", None)
         return item
 
-    def page(self, after=0, limit=100, *, unread=False):
+    def settings(self, *, scope=None, context=None, reset=False):
+        reader.validate_options(scope, context)
+        if type(reset) is not bool or reset and (scope is not None or context is not None):
+            raise MailError("invalid_arguments")
+        write = reset or scope is not None or context is not None
+        with self.connect(write=write) as db:
+            exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reader_settings'").fetchone()
+            if write and not exists:
+                db.execute("CREATE TABLE reader_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            if reset:
+                db.execute("DELETE FROM reader_settings")
+            if write:
+                for key, value in (("scope", scope), ("context", context)):
+                    if value is not None:
+                        db.execute("INSERT INTO reader_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+            saved = dict(db.execute("SELECT key,value FROM reader_settings")) if exists or write else {}
+            if any(key not in reader.CHOICES or value not in reader.CHOICES[key] for key, value in saved.items()):
+                raise MailError("invalid_settings")
+            return {**reader.DEFAULTS, **saved,
+                    "origin": {key: "saved" if key in saved else "default" for key in reader.DEFAULTS}}
+
+    def page(self, after=0, limit=100, *, unread=False, scope="all", context="none", through=None,
+             source=None, thread=None):
         with self.connect() as db:
-            rows = db.execute("SELECT * FROM messages WHERE arrival_seq>?" +
+            predicate, values = "arrival_seq>?", [after]
+            for column, value, operator in (("arrival_seq", through, "<="), ("source", source, "="), ("thread_id", thread, "=")):
+                if value is not None:
+                    predicate += " AND " + column + operator + "?"
+                    values.append(value)
+            rows = db.execute("SELECT * FROM messages WHERE " + predicate +
                 (" AND read_at IS NULL" if unread else "") + " ORDER BY arrival_seq LIMIT ?",
-                (after,limit+1)).fetchall()
+                (*values,limit+1)).fetchall()
             selected = rows[:limit]
-            return {"messages": [self._message(r) for r in selected],
+            result = {"messages": [self._message(r) for r in selected],
                     "next_after": selected[-1]["arrival_seq"] if selected else after,
                     "more": len(rows)>limit, "sources": self._health(db)}
+            return reader.present(db, result, scope=scope, context=context)
 
     def status(self, stale_after=None):
         stale_after = STALE_AFTER if stale_after is None else stale_after
@@ -286,15 +334,15 @@ class Store:
             if not changed:
                 raise MailError("message_not_found")
 
-    def wait(self, after, timeout, limit=100, *, cancelled=None):
+    def wait(self, after, timeout, limit=100, *, cancelled=None, scope="all", context="none"):
         cancelled = cancelled or threading.Event()
         deadline = time.monotonic()+timeout
         while True:
-            result = self.page(after,limit)
+            result = self.page(after,limit,scope=scope,context=context)
             if cancelled.is_set():
-                return {"event":"cancelled", "messages":[], "next_after":after,
-                        "more":bool(result["messages"]), "sources":result["sources"]}
-            if result["messages"]:
+                return {**result, "event":"cancelled", "messages":[], "thread_activity":[], "scanned":0,
+                        "next_after":after, "more":bool(result["scanned"]), "next_action":"keep_checkpoint"}
+            if result["scanned"]:
                 return {"event":"messages", **result}
             remaining = deadline-time.monotonic()
             if remaining <= 0:

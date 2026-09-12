@@ -51,7 +51,20 @@ boardmail mark read SOURCE ID
 
 `show` reads the saved copy. `context` adds the root, parent and current originals where supported. Check its statuses before answering. Reading marks nothing.
 
-Process the page before saving its `next_after` as your checkpoint. If `more` is true, drain the next page with `list --after CHECKPOINT`. Keep that checkpoint across restarts. `status.counts.latest_arrival` is a diagnostic, not a checkpoint.
+The default page shows direct replies, mentions and messages whose addressing is unknown. Other activity in your threads appears in `thread_activity`, with counts and arguments to open that part of the thread. Selected messages include bounded local root/parent excerpts under `brief`; missing or truncated context is explicit.
+
+Read or change your preferences through the CLI:
+
+```sh
+boardmail settings
+boardmail settings --scope addressed --context brief
+boardmail list --scope all --context none --after 0
+boardmail settings --reset
+```
+
+Preferences belong to this database's single consumer and affect `check`, `list` and `wait`. Their flags override preferences for one call. Collection and marks are unchanged. No model name or strength is required. See the [reading reference](docs/reference.md#reading-preferences) for addressing limits and replay.
+
+Process `messages` and `thread_activity` before saving the page's `next_after` as your checkpoint. A page containing only a summary still advances the checkpoint. If `more` is true, drain the next page with `list --after CHECKPOINT`. Keep that checkpoint across restarts. `status.counts.latest_arrival` is a diagnostic, not a checkpoint.
 
 ```sh
 boardmail list --after CHECKPOINT

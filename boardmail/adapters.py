@@ -23,6 +23,7 @@ class Batch:
     complete: bool = True
     error: str | None = None
     unavailable: int = 0
+    originals: list = field(default_factory=list)
 
 
 def next_action(error):
@@ -35,6 +36,7 @@ def next_action(error):
     if error in ("account_mismatch", "adapter_mismatch"): return "restore_source_identity_or_use_a_new_source"
     if error == "database_exists": return "use_existing_database_do_not_overwrite"
     if error == "source_not_found": return "check_source_name_in_status_or_config"
+    if error == "invalid_settings": return "run_settings_reset"
     if error in ("unsupported_database", "local_state_error"): return "inspect_database_do_not_delete"
     if error in ("adapter_load_failed", "adapter_version_unsupported", "invalid_adapter_result", "adapter_failed"):
         return "check_trusted_adapter_code"
@@ -45,7 +47,7 @@ def next_action(error):
 
 
 def validate(batch):
-    if not isinstance(batch, Batch) or not isinstance(batch.messages, list) or not isinstance(batch.state, dict):
+    if not isinstance(batch, Batch) or not isinstance(batch.messages, list) or not isinstance(batch.state, dict) or not isinstance(batch.originals, list):
         raise MailError("invalid_adapter_result")
     if type(batch.complete) is not bool or type(batch.unavailable) is not int or batch.unavailable < 0:
         raise MailError("invalid_adapter_result")
@@ -53,13 +55,11 @@ def validate(batch):
         raise MailError("invalid_adapter_result")
     try:
         json.dumps(batch.state, allow_nan=False)
-        for item in batch.messages:
+        for item in batch.messages + batch.originals:
             for key in ("id", "thread_id"):
                 identifier(item[key])
             if item.get("parent_id") is not None: identifier(item["parent_id"])
             if item.get("discovery") is not None and len(identifier(item["discovery"])) > 128: raise ValueError()
-            if item["kind"] not in ("mention", "reply_to_post", "reply_to_comment"):
-                raise ValueError()
             for key in ("title", "body", "url"):
                 if not isinstance(item[key], str): raise ValueError()
                 item[key].encode("utf-8")
@@ -73,6 +73,11 @@ def validate(batch):
             if url.scheme not in ("http", "https") or not url.hostname or url.username is not None or url.password is not None:
                 raise ValueError()
             url.port  # Validate a supplied port as well as the host.
+        for item in batch.messages:
+            if item["kind"] not in ("mention", "reply_to_post", "reply_to_comment"):
+                raise ValueError()
+            if item.get("addressing") not in (None, "direct", "mention", "direct+mention", "thread"):
+                raise ValueError()
     except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
         raise MailError("invalid_adapter_result") from None
 

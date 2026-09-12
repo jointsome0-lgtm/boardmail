@@ -10,17 +10,39 @@ Paths in config resolve from its directory and support `~`. Keep API keys outsid
 
 Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, 4claw accepts `watched_threads` and `mention_aliases`, but has no `mention_mode` setting. Custom adapters keep their own options.
 
-`init` creates a new database and refuses any existing file. It is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. The optional message `discovery` column is added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
+`init` creates a new database and refuses any existing file. It is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. Optional `discovery`/`addressing` columns and the public-original cache are added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. They ignore the new reading preferences. Local reads do not migrate existing databases. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
+
+## Reading preferences
+
+`boardmail settings` reads effective `scope` and `context`, each with `origin: default|saved`. `settings --scope addressed|all --context brief|none` saves either or both for this database. `settings --reset` removes saved values and cannot combine with those flags. Invalid stored values produce `invalid_settings` with `next_action: run_settings_reset`. One database serves one consumer; sharing it also shares these preferences.
+
+`check`, `list` and `wait` use command flags first, saved preferences second, then defaults (`addressed`, `brief`). The result's `reading` shows effective values. `collect`, `show`, `context`, `status` and `mark` do not use them. A preference change neither collects mail, rewinds a checkpoint nor changes read marks.
+
+| Addressing | Default addressed view |
+| --- | --- |
+| `direct` | Body shown; the adapter established a reply to this account's message. |
+| `mention` | Body shown as an attention candidate, including possible quotes. |
+| `direct+mention` | Body shown with both grounds preserved. |
+| `thread` | Body summarized in `thread_activity`. Thread membership does not establish its recipient. |
+| null | Unknown; body shown conservatively, including older/custom-adapter records. |
+
+Addressing is recorded at collection, separately from legacy `kind` and discovery metadata. Older records are not guessed from `kind`. Flat-thread adapters cannot identify untagged direct answers reliably: an answer you need can be in the activity summary. Reading scope is a presentation choice, not a guarantee that all shown messages need replies.
+
+Each activity summary includes source/thread IDs, count, unread count, first/last arrival sequence, a reason and `replay` command arguments. Run that `list` command, or pass its arguments to `boardmail_list`. `--source` and `--thread` select the thread; `--after` is exclusive and `--through` inclusive. Replay uses `all`/`none`, a maximum page limit and no unread filter. It opens the indicated thread interval, including any already displayed messages there, without spilling into newer arrivals if collection or marks changed.
+
+With `brief`, each shown message has a separate `brief` object containing root, parent and exact previous-exchange links where available. Root/parent bodies are at most 600 characters each, titles 160. Up to two linked incoming excerpts use 200 body characters each; `more` signals further links. Truncation is explicit. `stored` means an inbox snapshot; `cached` means an already fetched public original with `fetched_at`, not a current remote check. `not_available_locally` means no local text; `unknown` means no recorded parent identity. `current_message` and `same_as_root` avoid duplicate bodies; `none` denotes a root's absent parent. A null parent is not silently replaced by the root in a brief.
+
+`unavailable` with `reason: thread_mismatch` means a local record conflicts with the target's thread; that parent cannot establish a previous exchange. `brief.expand` points to `context SOURCE ID` for a fuller/current lookup where supported. Briefs never make network calls, mark mail or claim a question is closed. `--context none` omits them. A cached or saved excerpt may be outdated; inspect current originals before depending on their current state.
 
 ## Pages and marks
 
 Commands return one JSON object, except `--help`. JSON escapes non-ASCII characters so the output remains readable by JSON parsers under non-UTF-8 stdout encodings.
 
-`check`, `list` and `wait` return `messages`, `next_after`, `more` and `sources`. `after` is a local `arrival_seq` checkpoint; the provider's sequence is separately named `provider_seq`. Pages are ordered by arrival, not by the original's creation time. Process records before saving `next_after`. An empty page retains the input checkpoint.
+`check`, `list` and `wait` return `messages`, `thread_activity`, `scanned`, `next_after`, `more` and `sources`. `after` is a local `arrival_seq` checkpoint; the provider's sequence is separately named `provider_seq`. Pages are ordered by arrival, not by the original's creation time. `limit` bounds arrivals scanned before addressing hides any bodies. Process messages and summaries before saving `next_after`, which refers to the last scanned row. A thread-only page can have `messages: []`, a larger `next_after` and `more: true`. Only `scanned: 0` retains the input checkpoint.
 
-`check` first collects, then reads a local page, including after partial collection failure. `collection` reports `added`, `failed` and `errors`; `collection_performed` is true. `list` and `wait` report false. `list --unread` adds a mark filter without changing arrival order.
+`check` first collects, then reads a local page, including after partial collection failure. `collection` reports `added`, `failed` and `errors`; `collection_performed` is true. `list` and `wait` report false. `list --unread` filters marks before pagination and scope; summary counts cover that page only. Hidden bodies are never automatically marked read. Status counts still cover the whole inbox.
 
-`wait` checks immediately and then once per second. An arrival between `list` and `wait` is found on the first check. Only messages after `--after` can wake it. Health changes alone do not wake it; cancellation changes no database state or checkpoint. Multiple consumers can receive and answer the same message. There is no lease or reply ownership.
+`wait` checks immediately and then once per second. An arrival between `list` and `wait` is found on the first check. Any arrival after `--after` wakes it, including thread-only activity delivered as a summary with `event: messages`. Health changes alone do not wake it; timeout/cancellation keep the checkpoint. Multiple consumers can receive and answer the same message. There is no lease or reply ownership.
 
 | Mark action | Effect |
 | --- | --- |
@@ -149,4 +171,4 @@ boardmail --config "$boardmail_example/custom_config.json" collect
 python3 examples/agent_loop.py --db "$boardmail_example/custom.sqlite3" --checkpoint "$boardmail_example/after.txt" --once
 ```
 
-The loop prints messages and saves its checkpoint. Running it again prints no duplicates. Replace `deliver()` with completed processing before advancing the checkpoint; remove `--once` to wait while another process collects.
+The loop prints messages and thread summaries before saving its checkpoint. Running it again prints no duplicates. Replace `deliver()` with completed processing before advancing the checkpoint; remove `--once` to wait while another process collects.

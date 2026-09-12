@@ -2,7 +2,7 @@
 import math
 import sqlite3
 
-from . import config, providers
+from . import config, providers, reader
 from .adapters import next_action
 from .config import MailError
 
@@ -26,10 +26,27 @@ def outcome(operation):
 
 
 def execute(store, command, *, sources=None, after=0, limit=100, unread=False, timeout=1800, source=None,
-            id=None, action=None, ref=None, cancelled=None, require_fresh=False, stale_after=None, local=False):
+            id=None, action=None, ref=None, cancelled=None, require_fresh=False, stale_after=None, local=False,
+            scope=None, context_mode=None, reset=False, through=None, thread=None):
     if command in ("check", "list", "wait"):
         if type(after) is not int or not 0 <= after <= 2**63-1 or type(limit) is not int or not 1 <= limit <= 500:
             raise MailError("invalid_arguments")
+        reader.validate_options(scope, context_mode)
+        if through is not None and (command != "list" or type(through) is not int or not after <= through <= 2**63-1):
+            raise MailError("invalid_arguments")
+        if command == "list":
+            for value in (source, thread):
+                if value is not None:
+                    try:
+                        config.identifier(value)
+                    except (ValueError, TypeError, AttributeError):
+                        raise MailError("invalid_arguments") from None
+        settings = store.settings()
+        reading = {"scope": scope or settings["scope"], "context": context_mode or settings["context"]}
+    if command == "settings":
+        settings = store.settings(scope=scope, context=context_mode, reset=reset)
+        return {"event": "settings", "settings": settings, "applies_to": ["check", "list", "wait"],
+                "consumer": "one_per_database", "next_action": "check_or_list"}, 0
     if command == "init":
         store.initialize(sources)
         return {"event": "initialized", **store.status()}, 0
@@ -43,7 +60,7 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
             raise MailError("config_missing")
         result = providers.collect_all(store, sources)
         if command == "check":
-            return {"event": "messages", **store.page(after, limit), "collection_performed": True,
+            return {"event": "messages", **store.page(after, limit, **reading), "collection_performed": True,
                     "collection": {key: result[key] for key in ("added", "failed", "errors")}}, 1 if result["failed"] else 0
         return result, 1 if result["failed"] else 0
     if command == "status":
@@ -53,11 +70,12 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
         # Reading unknown, error or stale state is itself a success unless freshness was required.
         return result, 1 if require_fresh and not result["fresh"] else 0
     if command == "list":
-        return {"event": "messages", **store.page(after, limit, unread=unread), "collection_performed": False}, 0
+        return {"event": "messages", **store.page(after, limit, unread=unread, through=through,
+                source=source, thread=thread, **reading), "collection_performed": False}, 0
     if command == "wait":
         if not math.isfinite(timeout) or timeout < 0:
             raise MailError("invalid_arguments")
-        result = store.wait(after, timeout, limit, cancelled=cancelled)
+        result = store.wait(after, timeout, limit, cancelled=cancelled, **reading)
         result["collection_performed"] = False
         return result, {"messages": 0, "timeout": 3, "cancelled": 4}[result["event"]]
     if command not in ("mark", "show", "context"):

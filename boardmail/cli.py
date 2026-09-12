@@ -55,6 +55,14 @@ def parser():
                    epilog="Example: boardmail collect\n"
                           "Inspect added, failed and errors. Partial failure can still save mail.\n"
                           "Use list to read saved messages, or check to combine collection and reading.")
+    s = sub.add_parser("settings", help="Read or save this inbox's reading preferences",
+                       description="One consumer per database. Defaults: addressed scope, brief local context.",
+                       epilog="Examples:\n  boardmail settings\n  boardmail settings --scope all --context none\n"
+                              "  boardmail settings --reset\n"
+                              "Preferences affect check/list/wait only. Their flags override a saved preference once.")
+    s.add_argument("--scope", choices=("addressed", "all"), help="Default scope for check/list/wait")
+    s.add_argument("--context", dest="context_mode", choices=("brief", "none"), help="Default local context for check/list/wait")
+    s.add_argument("--reset", action="store_true", help="Restore defaults; cannot combine with other settings flags")
     for command, summary in (("pause", "Stop collection and remote context for one source"),
                              ("resume", "Enable a source for the next collection")):
         s = sub.add_parser(command, help=summary, description=summary + ". Keeps messages and progress.",
@@ -77,15 +85,22 @@ def parser():
         s = sub.add_parser(command, help=summary, description=summary + ".",
                            epilog=f"Example: boardmail {command} --after 0 --limit 50\n"
                                   "Replace 0 with your saved next_after after processing a page.\n"
-                                  "Read messages, mark them explicitly, then save next_after.\n"
+                                  "Handle messages and thread_activity, mark explicitly, then save next_after.\n"
                                   "Use list to drain more pages. An empty page or timeout does not prove\n"
                                   "there is no remote mail. Put --db PATH before the command.")
         s.add_argument("--after", type=int, default=0, metavar="N",
                        help="Last processed arrival_seq checkpoint, starting at 0; default %(default)s")
         s.add_argument("--limit", type=int, default=100, metavar="N",
-                       help="Messages per page, 1 to 500; default %(default)s")
+                       help="Arrivals scanned per page, before scope filtering; 1 to 500, default %(default)s")
+        s.add_argument("--scope", choices=("addressed", "all"),
+                       help="Override saved scope once; addressed summarizes only proven thread activity")
+        s.add_argument("--context", dest="context_mode", choices=("brief", "none"),
+                       help="Override saved context once; brief uses bounded local excerpts, never fetches")
         if command == "list":
             s.add_argument("--unread", action="store_true", help="Only messages without a local read mark")
+            s.add_argument("--through", type=int, metavar="N", help="Inclusive arrival_seq upper bound for replay")
+            s.add_argument("--source", metavar="SOURCE", help="Read only this source")
+            s.add_argument("--thread", metavar="ID", help="Read only this thread; pair with --source")
         elif command == "wait":
             s.add_argument("--timeout", type=float, default=1800, metavar="SECONDS",
                            help="Nonnegative, finite seconds; 0 checks once, default %(default)s. Run collection separately")
