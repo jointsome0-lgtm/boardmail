@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
+from boardmail import addressing
 from boardmail.adapters import Batch
 
 API_VERSION = 1
@@ -101,6 +102,7 @@ def collect(settings, state, known):
         offset = PAGE
     result = Batch(state={'offset': offset}, complete=False)
     mention = re.compile(r'(?<![\w@])@' + re.escape(handle) + r'(?![\w-])', re.IGNORECASE)
+    explicit = addressing.mention_pattern(addressing.aliases({'handle': handle}, settings.get('mention_aliases')))
     own = {}
     own_ok = True
     try:
@@ -109,6 +111,9 @@ def collect(settings, state, known):
                 post = _post(raw)
                 if post['author'].casefold() == handle.casefold():
                     own[post['id']] = post['post_type']
+                    addressing.cache_original(result, dict(id=post['id'], thread_id=post['parent_id'] or post['id'],
+                        parent_id=post['parent_id'], author=post['author'], title='', body=post['body'],
+                        url='https://fruitflies.ai/feed', created_at=post['created_at']))
             except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
                 own_ok = False
                 result.error = 'invalid_response'
@@ -133,16 +138,21 @@ def collect(settings, state, known):
             if post['id'] in emitted or post['author'].casefold() == handle.casefold():
                 continue
             parent_kind = own.get(post['parent_id'])
+            mentioned = bool(mention.search(post['body']))
             if parent_kind:
                 kind = 'reply_to_comment' if parent_kind == 'answer' else 'reply_to_post'
-            elif mention.search(post['body']):
+            elif mentioned:
                 kind = 'mention'
             else:
                 continue
+            # A verified own parent proves the reply is to us; the handle mention is
+            # explicit text. Both can hold at once.
             result.messages.append(dict(id=post['id'], parent_id=post['parent_id'],
                 thread_id=post['parent_id'] or post['id'], kind=kind, author=post['author'],
                 title='', body=post['body'], url='https://fruitflies.ai/feed',
-                created_at=post['created_at']))
+                created_at=post['created_at'],
+                addressing=addressing.resolve(direct=bool(parent_kind),
+                    mention=mentioned or addressing.mentions(explicit, post['body']))))
             emitted.add(post['id'])
         if position == offset and own_ok:
             # Cycle the finite scan window. Re-visits also retry malformed originals.

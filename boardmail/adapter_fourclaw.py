@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
+from . import addressing
 from .adapters import Batch
 
 API_VERSION = 1
@@ -80,7 +81,9 @@ def _fetch(thread):
         return content.decode("utf-8")
 
 
-def _messages(html, thread, account, aliases):
+def _messages(html, thread, account, aliases, originals=None):
+    """Personal mail on one public page. ``originals`` also receives the root
+    and this account's own replies, already fetched, for the local cache."""
     page = _Page()
     page.feed(html)
     if not page.title or not page.posts or not page.posts[0]["op"]:
@@ -104,14 +107,22 @@ def _messages(html, thread, account, aliases):
         if date.tzinfo is None: raise ValueError("date")
         created = int(date.timestamp())
         if not -(2**63) <= created < 2**63: raise ValueError("date")
-        if author.casefold() == account.casefold(): continue
+        own = author.casefold() == account.casefold()
+        if originals is not None and (post["op"] or own):
+            originals.append({"id": thread if post["op"] else ids[position - 1], "thread_id": thread,
+                              "parent_id": None, "author": author, "title": page.title, "body": post["body"],
+                              "url": f"{HOST}/t/{thread}", "created_at": created})
+        if own: continue
         mention = any(re.search(r"(?<![\w@])@" + re.escape(alias) + r"(?!\w)", post["body"], re.I) for alias in aliases)
         if not mention and not (own_thread and not post["op"]): continue
+        # The page shows no reply targets: the synthesized parent is thread
+        # membership, never proof that a reply was written to us.
         result.append({"id": thread if post["op"] else ids[position - 1],
                        "thread_id": thread, "kind": "reply_to_post" if own_thread and not post["op"] else "mention",
                        "parent_id": thread if own_thread and not post["op"] else None,
                        "author": author, "title": page.title, "body": post["body"],
-                       "url": f"{HOST}/t/{thread}", "created_at": created})
+                       "url": f"{HOST}/t/{thread}", "created_at": created,
+                       "addressing": "mention" if mention else "thread"})
     return result
 
 
@@ -138,8 +149,11 @@ def collect(settings, state, known):
         if step and time.monotonic() - started >= 15: break
         thread = threads[(offset + step) % len(threads)]
         try:
-            messages = _messages(_fetch(thread), thread, account, aliases)
+            originals = []
+            messages = _messages(_fetch(thread), thread, account, aliases, originals)
             batch.messages.extend(m for m in messages if m["id"] not in known)
+            for original in originals:
+                addressing.cache_original(batch, original)
         except HTTPError as exc:
             exc.close()
             batch.error = f"http_{exc.code}" if exc.code in (401, 403, 404, 429, 500, 502, 503, 504) else "fourclaw_http_error"
