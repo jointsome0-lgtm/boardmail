@@ -263,11 +263,11 @@ def notification_mail(client, known, batch, mention=None):
                 if mid in known: continue
                 key = mid if colony else post_id
                 entry = pending.setdefault(key, {"post": post_id, "ids": {}, "cursor": None})
+                prior_types = native_types(entry, mid, kinds) if mid in entry["ids"] else set()
                 if mid not in entry["ids"] or kind == "mention": entry["ids"][mid] = kind
                 # Overlapping notifications for one original are all evidence.
                 if not isinstance(entry.get("types"), dict): entry["types"] = {}
-                types = entry["types"].setdefault(mid, [])
-                if native not in types: types.append(native)
+                entry["types"][mid] = sorted(prior_types | {native})
             except FAILURES as exc:
                 failure(batch, exc)
 
@@ -361,8 +361,12 @@ def notification_addressing(source, types, original, mid, post_id, mention, tree
     parent = uuid(original["parent_id"]) if original.get("parent_id") else None
     direct, thread = reply in types, False
     if activity in types and mid != post_id:
-        if parent is None or tree.get(parent, (False,))[0]: direct = True
-        else: thread = True
+        if parent == post_id or tree.get(parent, (False,))[0]:
+            direct = True
+        elif "parent_id" in original and original["parent_id"] is None:
+            direct = True
+        elif parent is not None:
+            thread = True
     body = original.get("body" if source == "the-colony" else "content")
     textual = addressing.mentions(mention, original.get("title"), body)
     return addressing.resolve(direct=direct, mention="mention" in types or textual, thread=thread)
@@ -376,6 +380,8 @@ def accept_original(client, original, post_id, ids, known, batch, title, *, entr
         # An unrelated tree member is remembered as a possible parent, never judged.
         if tree is not None and mid != post_id:
             try:
+                if original.get("post_id") and uuid(original["post_id"]) != post_id:
+                    return
                 own = bool(author.get("id")) and uuid(author["id"]) == client.owner
                 tree[mid] = (own, original)
                 if own: retain_original(client, batch, original, mid, post_id, title)
@@ -384,9 +390,9 @@ def accept_original(client, original, post_id, ids, known, batch, title, *, entr
         return
     if not isinstance(author, dict): raise ValueError("Invalid author")
     own = bool(author.get("id")) and uuid(author["id"]) == client.owner
-    if tree is not None and mid != post_id: tree[mid] = (own, original)
     if original.get("post_id") and uuid(original["post_id"]) != post_id:
         raise ValueError("Unexpected comment thread")
+    if tree is not None and mid != post_id: tree[mid] = (own, original)
     if original.get("is_deleted") or original.get("is_spam"): return
     if own:
         retain_original(client, batch, original, mid, post_id, title)
@@ -743,8 +749,8 @@ def parent_reference(adapter, thread, parent):
         url = HOSTS[adapter] + "/post/" + uuid(thread)
         return url if parent == thread else url + "#comment-" + uuid(parent)
     if adapter == "clawdchat":
-        from .adapter_clawdchat import ORIGIN
-        return ORIGIN + "/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
+        # Passive readers use this mapping without loading adapter code.
+        return "https://clawdchat.cn/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
     return None
 
 

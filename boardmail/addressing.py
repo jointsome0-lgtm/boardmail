@@ -1,8 +1,8 @@
 """Addressing evidence recorded by collectors: who a public original was written to.
 
-Values: ``direct`` (a reply aimed at something this account authored), ``mention``
+Values: ``direct`` (a reply to something this account authored), ``mention``
 (an explicit native or textual @mention), ``direct+mention``, ``thread`` (activity
-inside this account's thread that is not aimed at it) or ``None`` (unknown).
+inside a thread without a confirmed direct reply or mention) or ``None`` (unknown).
 Only actual provider evidence seen during collection sets a value; the legacy
 ``kind`` is never a source. Unknown stays visible to readers.
 
@@ -61,22 +61,13 @@ def mentions(pattern, *texts):
     return pattern is not None and any(isinstance(t, str) and pattern.search(t) for t in texts)
 
 
-def originals_of(batch):
-    """The batch's optional public-original list, attached when the core lacks it."""
-    items = getattr(batch, "originals", None)
-    if items is None:
-        items = []
-        batch.originals = items
-    return items
-
-
 def cache_original(batch, item):
     """Retain one fully fetched public original; bounded and deduplicated per batch.
 
     Callers pass complete originals only: never notification previews,
     truncated summaries, deleted or hidden material.
     """
-    items = originals_of(batch)
+    items = batch.originals
     if len(items) >= MAX_ORIGINALS or any(o["id"] == item["id"] for o in items):
         return False
     items.append({key: item.get(key) for key in ORIGINAL_FIELDS})

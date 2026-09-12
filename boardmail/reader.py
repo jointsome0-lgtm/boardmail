@@ -21,6 +21,14 @@ def excerpt(item, budget=600):
 
 def brief(db, item):
     source, root_id, parent_id = item["source"], item["thread_id"], item["parent_id"]
+    adapter = source
+    if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+        row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
+        if row is not None:
+            adapter = row[0]
+    if adapter == "fourclaw":
+        # Its legacy parent_id is synthesized thread membership, not a reply target.
+        parent_id = None
 
     def resolve(mid):
         row = db.execute("SELECT * FROM messages WHERE source=? AND id=?", (source, mid)).fetchone()
@@ -52,11 +60,6 @@ def brief(db, item):
     exchange = {"status": "unknown", "messages": []}
     if parent_id is not None and parent["status"] != "unavailable":
         from .providers import parent_reference
-        adapter = source
-        if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
-            row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
-            if row is not None:
-                adapter = row[0]
         try:
             ref = parent_reference(adapter, root_id, parent_id)
         except (ValueError, TypeError, AttributeError):

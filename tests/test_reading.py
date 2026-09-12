@@ -186,6 +186,25 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(brief['parent'], {'id': uid(90), 'status': 'unavailable', 'reason': 'thread_mismatch'})
         self.assertEqual(brief['previous_exchange'], {'status': 'unknown', 'messages': []})
 
+    def test_fourclaw_synthesized_parent_remains_unknown_in_brief(self):
+        self.store.save('fourclaw', 'reader', [dict(mail(10), parent_id=uid(100), addressing='thread')])
+        brief = self.run_command(scope='all')['messages'][0]['brief']
+        self.assertEqual(brief['parent'], {'id': None, 'status': 'unknown'})
+
+    def test_fruitflies_reply_to_our_answer_keeps_that_answer_as_context(self):
+        from boardmail import adapter_fruitflies as fruit
+        from test_fruitflies import post
+        with patch.object(fruit, '_fetch', side_effect=[
+                [post(2, 'our answer', author='alice', parent=1, kind='answer')],
+                [post(3, 'follow-up', parent=2, kind='answer')], []]):
+            batch = fruit.collect({'account_id': 'alice'}, {}, frozenset())
+        validate(batch)
+        self.store.save_collection('fly', 'alice', 'fruitflies', 0, batch)
+        brief = self.run_command()['messages'][0]['brief']
+        self.assertEqual(brief['root']['body'], 'our answer')
+        self.assertEqual(brief['root']['status'], 'cached')
+        self.assertEqual(brief['parent']['status'], 'same_as_root')
+
     def test_cli_preferences_and_replay_use_the_documented_flags(self):
         def cli(*args):
             process = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path), *args],

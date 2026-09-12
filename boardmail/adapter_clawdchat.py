@@ -148,8 +148,10 @@ def _addressing(owner, entry, original, context, mention):
         post_author = context.get("author") if isinstance(context.get("author"), dict) else {}
         own_post = uuid(post_author["id"]) == owner if post_author.get("id") else None
         if own_post is not False:
-            if parent is None: direct = True
-            else: thread = True
+            if ("parent_id" in original and original["parent_id"] is None) or parent == entry.get("post"):
+                direct = True
+            elif parent is not None:
+                thread = True
     textual = addressing.mentions(mention, context.get("title") if entry["is_post"] else None, original.get("content"))
     return addressing.resolve(direct=direct, mention=bool(types & {"mention_post", "mention_comment"}) or textual, thread=thread)
 

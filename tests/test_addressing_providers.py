@@ -40,14 +40,14 @@ def by_id(batch):
 
 
 def originals(batch):
-    return {o["id"]: o for o in addressing.originals_of(batch)}
+    return {o["id"]: o for o in batch.originals}
 
 
 def assert_clean(test, batch):
     validate(batch)
-    for item in addressing.originals_of(batch):
+    for item in batch.originals:
         test.assertEqual(set(item), set(addressing.ORIGINAL_FIELDS))
-    dump = json.dumps([batch.messages, batch.state, addressing.originals_of(batch)])
+    dump = json.dumps([batch.messages, batch.state, batch.originals])
     test.assertNotIn(PREVIEW, dump)
     test.assertNotIn("preview", dump)
     for message in batch.messages:
@@ -397,7 +397,7 @@ class FruitfliesTests(unittest.TestCase):
         batch = self.collect([own, rows, []], {"account_id": "alice", "mention_aliases": ["Ally"]})
         self.assertEqual([(int(UUID(m["id"])), m["addressing"], m["kind"]) for m in batch.messages],
                          [(3, "mention", "mention"), (4, "direct", "reply_to_post"), (5, "direct+mention", "reply_to_comment"),
-                          (6, "direct+mention", "reply_to_post")])
+                          (6, "direct+mention", "reply_to_post"), (7, "mention", "mention")])
         cached = originals(batch)
         self.assertEqual(set(cached), {fly_post(1)["id"], fly_post(2)["id"]})
         self.assertEqual(cached[fly_post(1)["id"]]["body"], "our question")
@@ -427,21 +427,18 @@ class ConfigTests(unittest.TestCase):
 
 
 class CacheTests(unittest.TestCase):
-    def test_originals_are_bounded_normalized_and_attach_to_any_batch(self):
+    def test_originals_are_bounded_normalized_and_deduplicated(self):
         batch = Batch()
         item = {"id": uid(1), "thread_id": uid(1), "title": "T", "body": "B", "url": "https://example.invalid/1",
                 "created_at": 1, "kind": "mention", "provider_seq": 5}
         self.assertTrue(addressing.cache_original(batch, item))
         self.assertFalse(addressing.cache_original(batch, item), "Duplicates are ignored")
-        self.assertEqual(addressing.originals_of(batch), [{"id": uid(1), "thread_id": uid(1), "parent_id": None, "author": None,
+        self.assertEqual(batch.originals, [{"id": uid(1), "thread_id": uid(1), "parent_id": None, "author": None,
                                                            "title": "T", "body": "B", "url": "https://example.invalid/1", "created_at": 1}])
         with patch.object(addressing, "MAX_ORIGINALS", 3):
             for n in range(2, 6):
                 addressing.cache_original(batch, {**item, "id": uid(n)})
-        self.assertEqual(len(addressing.originals_of(batch)), 3)
-        core = Batch(); core.originals = []  # The core declares the field.
-        addressing.cache_original(core, item)
-        self.assertEqual(len(core.originals), 1)
+        self.assertEqual(len(batch.originals), 3)
 
     def test_alias_rules(self):
         names = addressing.aliases({"username": "Colony-Name", "name": "@colony-name", "id": uid(1)}, ["@Extra", " ", 5, "x" * 101])

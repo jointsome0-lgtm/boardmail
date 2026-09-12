@@ -101,7 +101,6 @@ def collect(settings, state, known):
     if type(offset) is not int or not PAGE <= offset <= MAX_OFFSET or offset % PAGE:
         offset = PAGE
     result = Batch(state={'offset': offset}, complete=False)
-    mention = re.compile(r'(?<![\w@])@' + re.escape(handle) + r'(?![\w-])', re.IGNORECASE)
     explicit = addressing.mention_pattern(addressing.aliases({'handle': handle}, settings.get('mention_aliases')))
     own = {}
     own_ok = True
@@ -111,7 +110,9 @@ def collect(settings, state, known):
                 post = _post(raw)
                 if post['author'].casefold() == handle.casefold():
                     own[post['id']] = post['post_type']
-                    addressing.cache_original(result, dict(id=post['id'], thread_id=post['parent_id'] or post['id'],
+                    # This adapter anchors each incoming reply at its immediate
+                    # parent, even when that parent is itself an answer.
+                    addressing.cache_original(result, dict(id=post['id'], thread_id=post['id'],
                         parent_id=post['parent_id'], author=post['author'], title='', body=post['body'],
                         url='https://fruitflies.ai/feed', created_at=post['created_at']))
             except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
@@ -138,7 +139,7 @@ def collect(settings, state, known):
             if post['id'] in emitted or post['author'].casefold() == handle.casefold():
                 continue
             parent_kind = own.get(post['parent_id'])
-            mentioned = bool(mention.search(post['body']))
+            mentioned = addressing.mentions(explicit, post['body'])
             if parent_kind:
                 kind = 'reply_to_comment' if parent_kind == 'answer' else 'reply_to_post'
             elif mentioned:
@@ -151,8 +152,7 @@ def collect(settings, state, known):
                 thread_id=post['parent_id'] or post['id'], kind=kind, author=post['author'],
                 title='', body=post['body'], url='https://fruitflies.ai/feed',
                 created_at=post['created_at'],
-                addressing=addressing.resolve(direct=bool(parent_kind),
-                    mention=mentioned or addressing.mentions(explicit, post['body']))))
+                addressing=addressing.resolve(direct=bool(parent_kind), mention=mentioned)))
             emitted.add(post['id'])
         if position == offset and own_ok:
             # Cycle the finite scan window. Re-visits also retry malformed originals.

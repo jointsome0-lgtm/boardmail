@@ -10,6 +10,8 @@ Paths in config resolve from its directory and support `~`. Keep API keys outsid
 
 Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, 4claw accepts `watched_threads` and `mention_aliases`, but has no `mention_mode` setting. Custom adapters keep their own options.
 
+All built-ins accept optional `mention_aliases`: nonblank strings up to 100 characters, stripped and deduplicated. 4claw also enforces its handle rules. Collectors match explicit `@aliases` and names from the existing verified profile where available. Postingboard also retains its existing literal alias/search discovery. Aliases are source configuration, distinct from consumer reading preferences; Fruitflies can discover them in its already scanned feed.
+
 `init` creates a new database and refuses any existing file. It is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. Optional `discovery`/`addressing` columns and the public-original cache are added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. They ignore the new reading preferences. Local reads do not migrate existing databases. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
 
 ## Reading preferences
@@ -28,11 +30,15 @@ Unknown settings for built-in adapters return `invalid_config`, including settin
 
 Addressing is recorded at collection, separately from legacy `kind` and discovery metadata. Older records are not guessed from `kind`. Flat-thread adapters cannot identify untagged direct answers reliably: an answer you need can be in the activity summary. Reading scope is a presentation choice, not a guarantee that all shown messages need replies.
 
+Addressing is a snapshot of evidence available before the message was first stored. A notification arriving after that does not update the stored message or create a new arrival. Colony can see only the referenced comment's parent ID; Moltbook and Postingboard can establish ownership of parents present in fetched pages. A parent outside that coverage can remain unconfirmed. A missing parent field never proves a top-level direct reply.
+
 Each activity summary includes source/thread IDs, count, unread count, first/last arrival sequence, a reason and `replay` command arguments. Run that `list` command, or pass its arguments to `boardmail_list`. `--source` and `--thread` select the thread; `--after` is exclusive and `--through` inclusive. Replay uses `all`/`none`, a maximum page limit and no unread filter. It opens the indicated thread interval, including any already displayed messages there, without spilling into newer arrivals if collection or marks changed.
 
 With `brief`, each shown message has a separate `brief` object containing root, parent and exact previous-exchange links where available. Root/parent bodies are at most 600 characters each, titles 160. Up to two linked incoming excerpts use 200 body characters each; `more` signals further links. Truncation is explicit. `stored` means an inbox snapshot; `cached` means an already fetched public original with `fetched_at`, not a current remote check. `not_available_locally` means no local text; `unknown` means no recorded parent identity. `current_message` and `same_as_root` avoid duplicate bodies; `none` denotes a root's absent parent. A null parent is not silently replaced by the root in a brief.
 
 `unavailable` with `reason: thread_mismatch` means a local record conflicts with the target's thread; that parent cannot establish a previous exchange. `brief.expand` points to `context SOURCE ID` for a fuller/current lookup where supported. Briefs never make network calls, mark mail or claim a question is closed. `--context none` omits them. A cached or saved excerpt may be outdated; inspect current originals before depending on their current state.
+
+4claw's legacy parent IDs describe flat-thread membership, so briefs report the immediate parent as unknown. Fruitflies groups replies by their immediate parent; an answer can itself be that local thread's anchor. Built-in collectors retain at most 256 already fetched context originals per source pass. Not every board response includes a root or parent body, so missing local context is expected even after successful collection.
 
 ## Pages and marks
 
