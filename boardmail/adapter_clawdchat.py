@@ -148,7 +148,8 @@ def _addressing(owner, entry, original, context, mention):
         post_author = context.get("author") if isinstance(context.get("author"), dict) else {}
         own_post = uuid(post_author["id"]) == owner if post_author.get("id") else None
         if own_post is not False:
-            if ("parent_id" in original and original["parent_id"] is None) or parent == entry.get("post"):
+            if ("parent_id" in original and original["parent_id"] is None) or (
+                    parent is not None and parent == uuid(original["post_id"])):
                 direct = True
             elif parent is not None:
                 thread = True

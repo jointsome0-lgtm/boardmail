@@ -277,7 +277,8 @@ class Store:
             selected = rows[:limit]
             result = {"messages": [self._message(r) for r in selected],
                     "next_after": selected[-1]["arrival_seq"] if selected else after,
-                    "more": len(rows)>limit, "sources": self._health(db)}
+                    "more": len(rows)>limit, "sources": self._health(db),
+                    "checkpoint_safe": not (unread or through is not None or source is not None or thread is not None)}
             return reader.present(db, result, scope=scope, context=context)
 
     def status(self, stale_after=None):

@@ -60,6 +60,16 @@ class AddressingIntegrationTests(unittest.TestCase):
             batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
         validate(batch)
         self.assertIsNone(batch.messages[0]['addressing'])
+        # The original still establishes its post, even when the notification
+        # omitted it; two absent IDs must not compare equal as a direct target.
+        client.events[0].pop('post_id')
+        with patch.object(clawd, 'Client', return_value=client):
+            batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
+        self.assertIsNone(batch.messages[0]['addressing'])
+        child['parent_id'] = uid(100)
+        with patch.object(clawd, 'Client', return_value=client):
+            batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
+        self.assertEqual(batch.messages[0]['addressing'], 'direct')
 
     def test_fruitflies_configured_alias_alone_is_an_incoming_mention(self):
         from boardmail import adapter_fruitflies as fruit

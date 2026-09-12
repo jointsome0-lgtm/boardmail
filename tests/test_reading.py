@@ -79,6 +79,17 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.store.status()['counts']['unread'], 6)
 
+    def test_filtered_views_preserve_delivery_checkpoint_and_threads_require_source(self):
+        self.save('direct', 'thread')
+        self.assertTrue(self.run_command()['checkpoint_safe'])
+        for arguments in ({'unread': True}, {'source': 'moltbook'}, {'through': 1},
+                          {'source': 'moltbook', 'thread': uid(100)}):
+            result = self.run_command(**arguments)
+            self.assertFalse(result['checkpoint_safe'])
+            self.assertEqual(result['next_action'], 'process_filtered_page_keep_delivery_checkpoint')
+        with self.assertRaisesRegex(MailError, '^invalid_arguments$'):
+            commands.execute(self.store, 'list', thread=uid(100))
+
     def test_summary_replay_survives_marks_new_arrivals_and_source_id_collisions(self):
         self.save('thread', 'thread', 'direct')
         summary = self.run_command(limit=2, unread=True)['thread_activity'][0]
@@ -90,6 +101,7 @@ class ReadingTests(unittest.TestCase):
         replay = self.run_command(**args)
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10), uid(11)])
         self.assertFalse(replay['more'])
+        self.assertFalse(replay['checkpoint_safe'])
         unread = self.run_command(unread=True, limit=1)
         self.assertEqual((unread['next_after'], unread['thread_activity'][0]['unread']), (2, 1))
 

@@ -27,7 +27,8 @@ def create_server(store, sources=None):
                            "description": "Override saved context once. Default brief adds bounded local excerpts; no network."}}
     specs = {
         "check": ("Fetch one bounded collection pass, then return a local arrival page and collection errors. "
-                  "Use for a foreground check; process messages before saving next_after, even after partial collection failure.",
+                  "Use for a foreground check; process messages AND thread_activity before saving next_after, "
+                  "even on a summary-only page or after partial collection failure.",
                   {"after": checkpoint, "limit": limit, **reading}, []),
         "settings": ("Read or explicitly save this database's reading preferences for its single consumer. "
                      "Affects check/list/wait only. With no arguments, returns defaults or saved values without writing. "
@@ -48,7 +49,9 @@ def create_server(store, sources=None):
                     "stale_after": {"type": "integer", "minimum": 0, "maximum": 2**31-1, "description": "Seconds; default 540."}}, []),
         "list": ("Read an arrival page without changing marks. Process messages AND thread_activity before saving next_after; "
                  "messages can be empty while activity advances the cursor. Drain more pages. Each summary has a bounded replay. "
-                 "unread filters local marks before scope; replay omits unread because marks can change.",
+                 "unread filters local marks before scope; replay omits unread because marks can change. "
+                 "Filtered pages have checkpoint_safe=false: retain the delivery checkpoint; paginate with the same filters. "
+                 "thread requires source.",
                  {"after": checkpoint, "limit": limit, "unread": {"type": "boolean", "default": False}, **reading,
                   "through": {"type": "integer", "minimum": 0, "maximum": 2**63-1},
                   "source": identity["source"], "thread": identity["id"]}, []),
@@ -90,6 +93,7 @@ def create_server(store, sources=None):
             "previous_exchange": {"type": "object"},
             "settings": {"type": "object"}, "reading": {"type": "object"},
             "thread_activity": {"type": "array", "items": {"type": "object"}}, "scanned": {"type": "integer"},
+            "checkpoint_safe": {"type": "boolean"},
             "collection": {"type": "object", "required": ["added", "failed", "errors"],
                            "properties": {"added": {"type": "integer"}, "failed": {"type": "boolean"},
                                           "errors": {"type": "array", "items": {"type": "object"}}}},
@@ -99,7 +103,8 @@ def create_server(store, sources=None):
     for command, (description, properties, required) in sorted(specs.items()):
         catalog["boardmail_" + command] = Tool(
             name="boardmail_" + command, description=description,
-            input_schema={"type": "object", "properties": properties, "required": required, "additionalProperties": False},
+            input_schema={"type": "object", "properties": properties, "required": required, "additionalProperties": False,
+                          **({"dependentRequired": {"thread": ["source"]}} if command == "list" else {})},
             output_schema=output_schema,
             annotations=ToolAnnotations(read_only_hint=command in ("status", "list", "show", "wait", "context"),
                                         destructive_hint=False, idempotent_hint=command in ("status", "list", "show", "wait", "context", "pause", "resume"),

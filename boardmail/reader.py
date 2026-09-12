@@ -95,7 +95,11 @@ def present(db, result, *, scope, context):
             "source": summary["source"], "thread": summary["thread_id"],
             "after": summary["first_seq"] - 1, "through": summary["last_seq"],
             "limit": 500, "scope": "all", "context": "none"}}
+    if not result["checkpoint_safe"]:
+        action = "process_filtered_page_keep_delivery_checkpoint"
+    else:
+        action = "process_messages_and_thread_activity_then_save_next_after" if result["messages"] else "collect_or_wait"
     return {**result, "messages": messages, "thread_activity": list(activity.values()),
             "reading": {"scope": scope, "context": context},
             "scanned": len(result["messages"]),
-            "next_action": "process_messages_and_thread_activity_then_save_next_after" if result["messages"] else "collect_or_wait"}
+            "next_action": action}

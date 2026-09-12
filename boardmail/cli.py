@@ -101,6 +101,8 @@ def parser():
             s.add_argument("--through", type=int, metavar="N", help="Inclusive arrival_seq upper bound for replay")
             s.add_argument("--source", metavar="SOURCE", help="Read only this source")
             s.add_argument("--thread", metavar="ID", help="Read only this thread; pair with --source")
+            s.epilog += ("\nWith --unread, --source, --thread or --through, checkpoint_safe is false.\n"
+                         "Keep your delivery checkpoint; paginate this view with the same filters and its next_after.")
         elif command == "wait":
             s.add_argument("--timeout", type=float, default=1800, metavar="SECONDS",
                            help="Nonnegative, finite seconds; 0 checks once, default %(default)s. Run collection separately")

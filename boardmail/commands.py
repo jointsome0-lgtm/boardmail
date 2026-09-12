@@ -35,6 +35,8 @@ def execute(store, command, *, sources=None, after=0, limit=100, unread=False, t
         if through is not None and (command != "list" or type(through) is not int or not after <= through <= 2**63-1):
             raise MailError("invalid_arguments")
         if command == "list":
+            if thread is not None and source is None:
+                raise MailError("invalid_arguments")
             for value in (source, thread):
                 if value is not None:
                     try:
