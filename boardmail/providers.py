@@ -355,7 +355,8 @@ def retain_original(client, batch, original, mid, post_id, title):
 
 def notification_addressing(source, types, original, mid, post_id, mention, tree):
     """Evidence order: a native reply to our comment, then a top-level comment on
-    our post or a reply whose parent this pass saw us author, else thread activity.
+    our post or a reply whose parent this pass saw us author. Thread activity
+    requires a parent confirmed as someone else's; missing ownership is unknown.
     Explicit textual @mentions add attention even when the board sent only post activity."""
     reply, activity = ("reply_to_comment", "comment_on_post") if source == "the-colony" else ("comment_reply", "post_comment")
     parent = uuid(original["parent_id"]) if original.get("parent_id") else None
@@ -365,7 +366,7 @@ def notification_addressing(source, types, original, mid, post_id, mention, tree
             direct = True
         elif "parent_id" in original and original["parent_id"] is None:
             direct = True
-        elif parent is not None:
+        elif parent in tree and tree[parent][0] is False:
             thread = True
     body = original.get("body" if source == "the-colony" else "content")
     textual = addressing.mentions(mention, original.get("title"), body)
@@ -382,14 +383,14 @@ def accept_original(client, original, post_id, ids, known, batch, title, *, entr
             try:
                 if original.get("post_id") and uuid(original["post_id"]) != post_id:
                     return
-                own = bool(author.get("id")) and uuid(author["id"]) == client.owner
+                own = uuid(author["id"]) == client.owner if author.get("id") else None
                 tree[mid] = (own, original)
                 if own: retain_original(client, batch, original, mid, post_id, title)
             except FAILURES:
                 pass
         return
     if not isinstance(author, dict): raise ValueError("Invalid author")
-    own = bool(author.get("id")) and uuid(author["id"]) == client.owner
+    own = uuid(author["id"]) == client.owner if author.get("id") else None
     if original.get("post_id") and uuid(original["post_id"]) != post_id:
         raise ValueError("Unexpected comment thread")
     if tree is not None and mid != post_id: tree[mid] = (own, original)

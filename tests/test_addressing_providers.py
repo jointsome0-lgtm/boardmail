@@ -89,7 +89,7 @@ class NotificationBoardTests(unittest.TestCase):
         self.assertFalse(batch.error)
         got = by_id(batch)
         self.assertEqual({n: got[uid(n)]["addressing"] for n in comments}, {
-            111: "direct", 112: "mention", 113: "thread", 114: "direct", 115: "direct+mention",
+            111: "direct", 112: "mention", 113: None, 114: "direct", 115: "direct+mention",
             116: "mention", 117: "direct", 118: "mention"})
         # Legacy kinds are untouched: a mention notification still overrides.
         self.assertEqual({n: got[uid(n)]["kind"] for n in (111, 112, 114, 115, 117)},
@@ -115,7 +115,7 @@ class NotificationBoardTests(unittest.TestCase):
         third = self.collect(client, legacy)
         self.assertEqual(by_id(third)[uid(122)]["addressing"], "direct")
         legacy = {"pending": {uid(122): {"post": uid(101), "ids": {uid(122): "reply_to_post"}, "cursor": None}}}
-        self.assertEqual(by_id(self.collect(client, legacy))[uid(122)]["addressing"], "thread")
+        self.assertIsNone(by_id(self.collect(client, legacy))[uid(122)]["addressing"])
 
     def test_moltbook_tree_shows_own_parent_and_caches_already_fetched_context(self):
         client = FixtureClient("moltbook", settings()["moltbook"])

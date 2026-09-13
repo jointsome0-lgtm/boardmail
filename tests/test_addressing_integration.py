@@ -1,14 +1,67 @@
 """Addressing regressions across persisted provider state and public originals."""
 from copy import deepcopy
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from boardmail import providers
 from boardmail.adapters import validate
+from boardmail.store import Store
 from examples.fixtures import FixtureClient, original, settings, uid
 
 
 class AddressingIntegrationTests(unittest.TestCase):
+    def test_unseen_parent_keeps_body_visible_before_later_notification(self):
+        for source, reply_type in (('the-colony', 'reply_to_comment'), ('moltbook', 'comment_reply')):
+            for later_type in (reply_type, 'mention'):
+                with self.subTest(source=source, later_type=later_type), tempfile.TemporaryDirectory() as directory:
+                    config = settings()[source]
+                    client = FixtureClient(source, config)
+                    client.comments = [client.comments[0]]
+                    child = client.comments[0]
+                    child['parent_id'] = uid(90)
+                    client.events = [client.events[0]]
+                    store = Store(Path(directory) / 'inbox.sqlite3')
+                    store.initialize()
+
+                    def collect():
+                        known, state, revision = store.collection_state(source, client.owner, source)
+                        batch = providers.collect(source, config, state, known, client_factory=lambda *_: client)
+                        validate(batch)
+                        return store.save_collection(source, client.owner, source, revision, batch)
+
+                    self.assertEqual(collect(), (1, False))
+                    page = store.page(scope='addressed')
+                    self.assertEqual([m['id'] for m in page['messages']], [child['id']])
+                    self.assertIsNone(page['messages'][0]['addressing'])
+                    self.assertEqual(page['thread_activity'], [])
+                    checkpoint = page['next_after']
+                    store.mark(source, child['id'], 'read')
+                    stored = store.show(source, child['id'])
+                    later = deepcopy(client.events[0])
+                    later['notification_type' if source == 'the-colony' else 'type'] = later_type
+                    client.events.insert(0, later)
+                    self.assertEqual(collect(), (0, False))
+                    self.assertEqual(store.show(source, child['id']), stored)
+                    self.assertEqual(store.page(checkpoint, scope='addressed')['scanned'], 0)
+
+    def test_moltbook_parent_without_identity_cannot_hide_nested_reply(self):
+        for author in (None, {}):
+            with self.subTest(author=author):
+                source = 'moltbook'
+                config = settings()[source]
+                client = FixtureClient(source, config)
+                child = client.comments[0]
+                child['parent_id'] = uid(90)
+                parent = original(90, 201)
+                parent['author'] = author
+                client.comments = [parent, child]
+                client.events = client.events[:1]
+                batch = providers.collect(source, config, {}, set(), client_factory=lambda *_: client)
+                validate(batch)
+                self.assertIsNone(batch.messages[0]['addressing'])
+
     def test_legacy_pending_reply_and_new_mention_keep_both_grounds(self):
         for source, root, mid in (('the-colony', 101, 111), ('moltbook', 201, 211)):
             with self.subTest(source=source):
