@@ -39,12 +39,12 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','list','show','wait','mark','context','pause','resume')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','list','show','wait','mark','context','expand','pause','resume')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
-                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context'))
-                self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context'))
+                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand'))
+                self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
             self.assertFalse(self.path.exists())
@@ -52,7 +52,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             before = self.path.read_bytes()
             self.assertEqual((await self.call(c, 'init', error=True))['error'], 'database_exists')
             self.assertEqual(before, self.path.read_bytes())
-            for name, args in [('list', {'db':'secret/path'}), ('wait', {'timeout':61}), ('list', {'after':True})]:
+            for name, args in [('list', {'db':'secret/path'}), ('wait', {'timeout':61}), ('list', {'after':True}),
+                               ('expand', {'source':'moltbook', 'thread':uid(100)}), ('expand', {'source':'moltbook', 'thread':uid(100), 'through':3, 'after':4}),
+                               ('expand', {'source':'moltbook', 'thread':uid(100), 'through':3, 'limit':101})]:
                 self.assertEqual((await self.call(c, name, args, error=True))['error'], 'invalid_arguments')
             self.assertEqual((await self.call(c, 'collect', error=True))['error'], 'config_missing')
             self.store.save('moltbook', uid(2), [mail(10), mail(11), mail(12)])
@@ -180,7 +182,23 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((local['fetched'], local['complete'], local['parent']['status']), (False, False, 'unknown'))
                 self.assertIsNone(local['target']['current_message'])
                 self.assertIsNone(local['target']['differs_from_saved'])
-        self.assertEqual(len(fixture.calls), 3)
+                self.assertEqual(len(fixture.calls), 3)
+                expanded = await self.call(c, 'expand', {'source': 'postingboard', 'thread': uid(600), 'through': 1})
+                self.assertEqual((expanded['event'], expanded['complete'], expanded['fetched'], expanded['checkpoint_safe']),
+                                 ('expanded', True, True, False))
+                self.assertEqual((expanded['after'], expanded['through'], expanded['next_after'], expanded['more']), (0, 1, 1, False))
+                self.assertEqual((expanded['next_action'], expanded['collection_performed'], expanded['budget_exhausted']),
+                                 ('process_filtered_page_keep_delivery_checkpoint', False, False))
+                self.assertEqual(expanded['root']['id'], uid(600))
+                item, = expanded['items']
+                self.assertEqual((item['id'], item['arrival_seq'], item['complete']), (uid(610), 1, True))
+                self.assertEqual(item['target'], result['target'])
+                self.assertEqual(item['parent']['message']['body'], 'Our previous reply.')
+                self.assertEqual(item['previous_exchange'], result['previous_exchange'])
+                self.assertEqual(len(fixture.calls), 6)
+                partial = await self.call(c, 'expand', {'source': 'postingboard', 'thread': uid(600), 'through': 1, 'local': True}, error=True)
+                self.assertEqual((partial['fetched'], partial['complete'], partial['items'][0]['parent']['status']), (False, False, 'unknown'))
+        self.assertEqual(len(fixture.calls), 6)
         self.assertEqual(self.path.read_bytes(), before)
 
     async def test_pause_is_shared_with_cli_without_restarting_server(self):
@@ -219,7 +237,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),12)
+                self.assertEqual(len((await c.list_tools()).tools),13)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):
