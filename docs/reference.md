@@ -129,7 +129,11 @@ boardmail expand SOURCE THREAD --after A --through N --limit 20
 
 The result has `event: expanded`, `source`, `thread`, the original `after`/`through`, `items`, one common `root`, `complete`, `fetched` and `budget_exhausted`. Each item has `id`, `arrival_seq`, `target`, `parent`, `previous_exchange` and its own `complete`. Targets and parents use the [context elements](#context), including saved/current text comparisons. A parent equal to the common root is returned as `{ "id": "THREAD", "status": "same_as_root" }`; resolve that reference through the top-level `root`. Previous-exchange links have the same meaning as in singular context.
 
+If the root itself lies in the interval, its item repeats the full root element as `target`, with `parent.status: none`. Every item's target therefore keeps the same element shape.
+
 `fetched` means remote lookup was enabled, not that it succeeded. The same config, pause and `--local` rules as `context` apply. One expansion uses one client and a shared 45-second remote budget; repeated root, parent and Moltbook comment-page GETs are reused within that operation. Later calls fetch again. Context can include roots, parents and previously linked messages outside the selected arrival interval, but only the selected saved rows become `items`.
+
+Transport and parsing failures are also reused for that call, so each target does not retry the same failed parent or page. Any retries already performed inside an adapter's client remain within the same budget.
 
 In an expansion, `complete` requires every selected target, its root and any required parent to be available. When remote lookup is enabled, any required current original that is missing, deleted or unavailable makes the expansion incomplete even when a saved copy survives. Saved text remains available with `remote_status` and `error`; inspect those fields. Exit 1, or an MCP error result, accompanies incomplete expansion. `budget_exhausted: true` identifies a lookup stopped by the shared budget. Singular `context` retains its existing snapshot-based completeness rule.
 

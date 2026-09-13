@@ -2,7 +2,6 @@
 from copy import deepcopy
 import math
 import sqlite3
-from urllib.error import HTTPError
 
 from . import config, providers, reader
 from .adapters import next_action
@@ -125,12 +124,10 @@ def element(status, message=None, *, origin=None, error=None, id=None):
 class CachedClient:
     """One command's remote reads: every distinct GET happens once, within one budget.
 
-    Responses and definite failures are memoized so repeated roots, parents and
+    Responses and failures are memoized so repeated roots, parents and
     comment pages cost no further requests. Once the budget is exhausted, later
     reads fail immediately instead of pacing or retrying against a spent deadline.
     """
-    TRANSIENT = ("budget_exhausted", "source_timeout", "network_error")
-
     def __init__(self, client):
         self.client, self.cache, self.exhausted = client, {}, False
 
@@ -144,14 +141,10 @@ class CachedClient:
                 raise MailError("budget_exhausted")
             try:
                 self.cache[key] = self.client.get(path, params, authenticated=authenticated)
-            except HTTPError as exc:
-                self.cache[key] = exc
-                raise
-            except MailError as exc:
-                if str(exc) in ("budget_exhausted", "source_timeout"):
+            except providers.FAILURES as exc:
+                if isinstance(exc, MailError) and str(exc) in ("budget_exhausted", "source_timeout"):
                     self.exhausted = True
-                if str(exc) not in self.TRANSIENT:
-                    self.cache[key] = exc
+                self.cache[key] = exc
                 raise
         value = self.cache[key]
         if isinstance(value, BaseException):
@@ -265,8 +258,8 @@ def expand(store, source, thread, after, through, limit, settings, *, client_fac
     context a singular lookup would give, through one client and one budget.
 
     The common root is returned once; a parent that is the root becomes a
-    same_as_root reference after its availability was counted. Nothing is
-    marked, fetched for an empty page, or read outside the selected rows."""
+    same_as_root reference after its availability was counted. Marks stay
+    unchanged; an empty page fetches nothing. Context can lie outside the interval."""
     adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
     if settings is not None:
         try:

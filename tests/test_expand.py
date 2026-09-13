@@ -1,5 +1,6 @@
 """Bounded thread expansion: one client, one budget, saved rows only. All data is invented."""
 from contextlib import redirect_stdout
+from http.client import HTTPException
 import io
 import json
 from pathlib import Path
@@ -8,7 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from boardmail import adapter_clawdchat, cli, commands, providers
 from boardmail.config import MailError
@@ -166,6 +167,27 @@ class ExpandTests(unittest.TestCase):
                                             sources={'fourclaw': {'adapter': 'fourclaw', 'account_id': 'demo'}})
             self.assertEqual((code, result['fetched'], result['complete'], result['items'][0]['target']['origin']), (0, False, True, 'local'))
 
+    def test_failed_shared_parent_is_attempted_once_and_can_be_retried_next_operation(self):
+        get = self.fixture.get
+        for error in (URLError('synthetic outage'), OSError('synthetic timeout'),
+                      HTTPException('synthetic failure'), ValueError('invalid JSON'), MailError('network_error')):
+            with self.subTest(error=type(error).__name__):
+                attempts = []
+                def failing(path, params=None, **kwargs):
+                    attempts.append(path)
+                    if path == '/v1/posts/' + uid(601):
+                        raise error
+                    return get(path, params, **kwargs)
+                self.fixture.get = failing
+                result, code = self.expand()
+                self.assertEqual(attempts.count('/v1/posts/' + uid(601)), 1)
+                self.assertEqual((code, result['complete'], result['budget_exhausted']), (1, False, False))
+                self.assertEqual([item['complete'] for item in result['items']], [True, False, False, True])
+                self.assertEqual(result['items'][1]['target']['message']['body'], 'Synthetic text')
+        self.fixture.get = get
+        result, code = self.expand()
+        self.assertEqual((code, result['complete']), (0, True))
+
     def test_empty_interval_and_invalid_arguments_touch_no_board(self):
         before = self.path.read_bytes()
         with patch.object(providers, 'Client', side_effect=NO_CLIENT):
@@ -248,6 +270,18 @@ class ExpandReuseTests(unittest.TestCase):
         with patch.object(providers, 'PAGE_SIZE', 1), patch.object(providers, 'Client', return_value=client):
             result, code = commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg})
         self.assertEqual((len(client.calls), result['items'][1]['target']['current_message']['body']), (5, 'Edited again.'))
+        get, attempts = client.get, []
+        def failed_page(path, params=None, **kwargs):
+            attempts.append(path)
+            if path.endswith('/comments'):
+                raise URLError('synthetic page outage')
+            return get(path, params, **kwargs)
+        client.get = failed_page
+        with patch.object(providers, 'Client', return_value=client):
+            result, code = commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg})
+        self.assertEqual(attempts, ['/posts/' + uid(201), '/posts/' + uid(201) + '/comments'])
+        self.assertEqual((code, result['complete'], len(result['items'])), (1, False, 3))
+        self.assertEqual({item['target']['error'] for item in result['items']}, {'network_error'})
 
     def test_clawdchat_shares_root_and_parents_and_rejects_relocated_originals(self):
         cfg = {'account_id': uid(1), 'adapter': 'clawdchat', 'api_key_file': Path('absent.key')}
