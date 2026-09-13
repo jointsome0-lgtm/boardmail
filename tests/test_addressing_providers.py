@@ -287,7 +287,7 @@ class ClawdChatTests(unittest.TestCase):
         self.assertFalse(batch.error)
         got = by_id(batch)
         self.assertEqual({n: got[uid(n)]["addressing"] for n in (10, 11, 12, 13, 14, 15, 100, 16)}, {
-            10: "direct", 11: "thread", 12: "direct", 13: "direct", 14: "direct+mention", 15: "mention",
+            10: "direct", 11: None, 12: "direct", 13: "direct", 14: "direct+mention", 15: "mention",
             100: "mention", 16: "mention"})
         self.assertEqual({n: got[uid(n)]["kind"] for n in (10, 12, 13, 14, 15, 100)},
                          {10: "reply_to_post", 12: "reply_to_comment", 13: "reply_to_post", 14: "reply_to_post",
@@ -347,7 +347,7 @@ class ClawdChatTests(unittest.TestCase):
                        uid(23): clawd_original(23)}
         fourth = self.collect(legacy)
         self.assertEqual({n: by_id(fourth)[uid(n)]["addressing"] for n in (21, 22, 23)},
-                         {21: "direct", 22: "thread", 23: "mention"})
+                         {21: "direct", 22: None, 23: "mention"})
 
     def test_configured_aliases_add_textual_mentions(self):
         c = self.client

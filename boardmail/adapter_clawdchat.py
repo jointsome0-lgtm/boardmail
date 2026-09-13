@@ -138,12 +138,13 @@ def _types(entry):
 
 def _addressing(owner, entry, original, context, mention):
     """``reply`` is a reply to our comment. ``comment`` is activity under a post:
-    a top-level comment on our own post is direct, a nested one under someone
-    else's comment is thread activity, and a post the board shows as not ours
-    proves nothing. Mentions are native or explicit ``@name`` in the text."""
+    a top-level comment on our own post is direct. A nested comment with unknown
+    parent ownership must remain visible even if its reply/mention notification
+    arrives after the original is stored. Mentions are native or explicit
+    ``@name`` in the text."""
     types = set(entry.get("types", ()))
     parent = uuid(original["parent_id"]) if original.get("parent_id") else None
-    direct, thread = "reply" in types, False
+    direct = "reply" in types
     if "comment" in types and not entry["is_post"]:
         post_author = context.get("author") if isinstance(context.get("author"), dict) else {}
         own_post = uuid(post_author["id"]) == owner if post_author.get("id") else None
@@ -151,10 +152,8 @@ def _addressing(owner, entry, original, context, mention):
             if ("parent_id" in original and original["parent_id"] is None) or (
                     parent is not None and parent == uuid(original["post_id"])):
                 direct = True
-            elif parent is not None:
-                thread = True
     textual = addressing.mentions(mention, context.get("title") if entry["is_post"] else None, original.get("content"))
-    return addressing.resolve(direct=direct, mention=bool(types & {"mention_post", "mention_comment"}) or textual, thread=thread)
+    return addressing.resolve(direct=direct, mention=bool(types & {"mention_post", "mention_comment"}) or textual)
 
 
 def _fetch(client, entry):
