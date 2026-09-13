@@ -8,9 +8,10 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from boardmail import providers
 from boardmail.mcp import create_server
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, settings, uid
+from examples.fixtures import FixtureClient, named, settings, uid
 from test_mail import mail
 
 try:
@@ -131,7 +132,6 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_collection_partial_success_replay_and_account_isolation(self):
         cfg = settings()
         self.store.initialize(cfg)
-        from boardmail import providers
         actual = providers.collect_all
         def factory(name, config):
             client = FixtureClient(name, config)
@@ -159,45 +159,31 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_context_returns_saved_and_current_text_without_marks(self):
         cfg = {'postingboard': settings()['postingboard']}
         self.store.initialize(cfg)
-        self.store.save('postingboard', cfg['postingboard']['account_id'], [{**mail(610), 'thread_id': uid(610)}])
+        self.store.save('postingboard', cfg['postingboard']['account_id'], [
+            {**mail(610), 'thread_id': uid(600), 'parent_id': uid(601)}, mail(611)])
+        self.store.mark('postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
         fixture = FixtureClient('postingboard', cfg['postingboard'])
-        fixture.others[uid(610)] = named(610, 610, body='Edited root text')
+        fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our previous reply.'),
+                          uid(610): named(610, 600, reply_to=601, body='Edited reply text')}
         before = self.path.read_bytes()
         with patch('boardmail.providers.Client', return_value=fixture):
             async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
                 target = {'source': 'postingboard', 'id': uid(610)}
                 result = await self.call(c, 'context', target)
                 self.assertEqual(result['target']['message']['body'], 'Synthetic text')
-                self.assertEqual(result['target']['current_message']['body'], 'Edited root text')
+                self.assertEqual(result['target']['current_message']['body'], 'Edited reply text')
                 self.assertIs(result['target']['differs_from_saved'], True)
-                local = await self.call(c, 'context', {**target, 'local': True})
-                self.assertIsNone(local['target']['current_message'])
-                self.assertIsNone(local['target']['differs_from_saved'])
-        self.assertEqual(len(fixture.calls), 1)
-        self.assertEqual(self.path.read_bytes(), before)
-
-    async def test_context_links_recorded_answers_and_reads_our_colony_parent(self):
-        from boardmail import providers
-        cfg = {'the-colony': settings()['the-colony']}
-        self.store.initialize(cfg)
-        self.store.save('the-colony', cfg['the-colony']['account_id'], [
-            mail(201), {**mail(130), 'thread_id': uid(101), 'parent_id': uid(120)}])
-        fixture = FixtureClient('the-colony', cfg['the-colony'])
-        fixture.comments += [original(120, 101, 1, colony=True, body='Our previous reply.'),
-                             {**original(130, 101, colony=True), 'parent_id': uid(120)}]
-        ref = fixture.host + '/posts/' + uid(101) + '#comment-' + uid(120)
-        self.store.mark('the-colony', uid(201), 'replied', ref=ref)
-        before = self.path.read_bytes()
-        with patch.object(providers, 'Client', return_value=fixture), patch.dict(providers.HOSTS, {'the-colony': fixture.host}):
-            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
-                result = await self.call(c, 'context', {'source': 'the-colony', 'id': uid(130)})
                 self.assertEqual(result['parent']['message']['body'], 'Our previous reply.')
                 self.assertEqual(result['previous_exchange']['status'], 'linked')
-                self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [uid(201)])
+                self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [uid(611)])
+                local = await self.call(c, 'context', {**target, 'local': True}, error=True)
+                self.assertEqual((local['fetched'], local['complete'], local['parent']['status']), (False, False, 'unknown'))
+                self.assertIsNone(local['target']['current_message'])
+                self.assertIsNone(local['target']['differs_from_saved'])
+        self.assertEqual(len(fixture.calls), 3)
         self.assertEqual(self.path.read_bytes(), before)
 
     async def test_pause_is_shared_with_cli_without_restarting_server(self):
-        from boardmail import providers
         cfg = {'moltbook': settings()['moltbook']}
         self.store.initialize(cfg)
         actual = providers.collect_all
@@ -237,7 +223,6 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):
-        from boardmail import providers
         self.store.initialize()
         started, release, second = threading.Event(), threading.Event(), threading.Event()
         calls = []

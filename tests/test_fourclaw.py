@@ -1,10 +1,13 @@
 import unittest
 import json
+from functools import partial
 from http.client import IncompleteRead
 from unittest.mock import MagicMock, patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
+from urllib.request import ProxyHandler, build_opener
 from boardmail import adapter_fourclaw as adapter
 from boardmail.adapters import validate
+from test_clawdchat import ScriptedHTTPS
 
 THREAD = "00000000-0000-4000-8000-000000000001"
 
@@ -105,7 +108,13 @@ class FourclawTests(unittest.TestCase):
         self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
 
     def test_redirects_refused(self):
-        self.assertIsNone(adapter._NoRedirect().redirect_request(None, None, 302, '', {}, 'https://evil.invalid'))
+        handler = ScriptedHTTPS([(302, b'', 'https://evil.invalid')])
+        with patch.object(adapter, 'build_opener', side_effect=partial(build_opener, ProxyHandler({}), handler)):
+            with self.assertRaises(HTTPError) as rejected:
+                adapter._fetch(THREAD)
+        self.assertEqual(rejected.exception.code, 302)
+        rejected.exception.close()
+        self.assertEqual(len(handler.requests), 1)
 
     def test_bad_thread_cannot_change_host(self):
         with patch.object(adapter, '_fetch') as fetch:

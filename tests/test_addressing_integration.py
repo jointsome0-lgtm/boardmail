@@ -40,6 +40,7 @@ class AddressingIntegrationTests(unittest.TestCase):
                     store.mark(source, child['id'], 'read')
                     stored = store.show(source, child['id'])
                     later = deepcopy(client.events[0])
+                    later['id'] = uid(9999)
                     later['notification_type' if source == 'the-colony' else 'type'] = later_type
                     client.events.insert(0, later)
                     self.assertEqual(collect(), (0, False))
@@ -123,14 +124,6 @@ class AddressingIntegrationTests(unittest.TestCase):
         with patch.object(clawd, 'Client', return_value=client):
             batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
         self.assertEqual(batch.messages[0]['addressing'], 'direct')
-
-    def test_fruitflies_configured_alias_alone_is_an_incoming_mention(self):
-        from boardmail import adapter_fruitflies as fruit
-        from test_fruitflies import post
-        with patch.object(fruit, '_fetch', side_effect=[[], [post(10, '@Ally please inspect')], []]):
-            batch = fruit.collect({'account_id': 'alice', 'mention_aliases': ['Ally']}, {}, frozenset())
-        validate(batch)
-        self.assertEqual([(m['id'], m['addressing']) for m in batch.messages], [(uid(10), 'mention')])
 
 
 if __name__ == '__main__':

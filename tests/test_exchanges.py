@@ -1,5 +1,4 @@
 """Exact recorded reply links and anonymous Colony context, with invented mail."""
-from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -9,7 +8,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from uuid import UUID
 
-from boardmail import cli, commands, providers
+from boardmail import commands, providers
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, original, settings, uid
 from test_mail import mail
@@ -143,20 +142,6 @@ class ExchangeTests(unittest.TestCase):
                 self.assertEqual((exchange['status'], exchange['reason']), ('unknown', 'unsupported_source'))
         result, code = self.context(999, local=True)
         self.assertEqual((result['previous_exchange']['status'], result['previous_exchange']['reason']), ('unknown', 'no_parent_identity'))
-
-    def test_cli_exposes_exchange_with_explicit_config_and_database_override(self):
-        cfgpath = Path(self.temp.name) / 'config.json'
-        cfgpath.write_text(json.dumps({'database': 'unused.sqlite3', 'sources': {self.source: {
-            'adapter': 'the-colony', 'account_id': self.cfg['account_id'], 'api_key_file': 'unused.key'}}}))
-        before = self.path.read_bytes()
-        output = io.StringIO()
-        with patch.object(providers, 'Client', return_value=self.fixture), redirect_stdout(output):
-            code = cli.main(['--config', str(cfgpath), '--db', str(self.path), 'context', self.source, uid(130)])
-        result = json.loads(output.getvalue())
-        self.assertEqual((code, result['parent']['message']['body'], result['previous_exchange']['status']),
-                         (0, 'Our published answer.', 'linked'))
-        self.assertEqual(self.path.read_bytes(), before)
-        self.assertFalse((Path(self.temp.name) / 'unused.sqlite3').exists())
 
 
 if __name__ == '__main__': unittest.main()

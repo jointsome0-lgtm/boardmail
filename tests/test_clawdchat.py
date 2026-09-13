@@ -99,7 +99,8 @@ class ClawdChatTests(unittest.TestCase):
                 self.store.mark("clawd", uid(number), "read")
                 stored = self.store.show("clawd", uid(number))
 
-                self.client.events.insert(0, event(number, later_type))
+                later = {**event(number, later_type), "id": uid(number + 2000)}
+                self.client.events.insert(0, later)
                 calls = len(self.client.calls)
                 _, added = self.collect()
                 self.assertEqual(added, 0)
