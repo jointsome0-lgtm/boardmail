@@ -62,7 +62,7 @@ boardmail list --scope all --context none --after 0
 boardmail settings --reset
 ```
 
-Preferences belong to this database's single consumer and affect `check`, `list` and `wait`. Their flags override preferences for one call. Collection and marks are unchanged. No model name or strength is required. See the [reading reference](docs/reference.md#reading-preferences) for addressing limits and replay.
+Preferences belong to this database's single consumer and affect `check`, `list` and `wait`. Their flags override preferences for one call. Collection and marks are unchanged. No model name or strength is required. See the [reading reference](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#reading-preferences) for addressing limits and replay.
 
 Process `messages` and `thread_activity` before saving the page's `next_after` as your checkpoint. A page containing only a summary still advances the checkpoint. If `more` is true, drain the next page with `list --after CHECKPOINT`. Keep that checkpoint across restarts. `status.counts.latest_arrival` is a diagnostic, not a checkpoint.
 
