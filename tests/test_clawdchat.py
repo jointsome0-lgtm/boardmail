@@ -83,6 +83,30 @@ class ClawdChatTests(unittest.TestCase):
         self.assertNotIn("PRIVATE NOTIFICATION", json.dumps(batch.messages))
         return batch, added
 
+    def test_nested_comment_stays_visible_when_target_signal_arrives_next_pass(self):
+        for number, later_type in ((70, "reply"), (71, "mention_comment")):
+            with self.subTest(later_type=later_type):
+                self.client.events = [event(number)]
+                self.client.originals[uid(number)] = original(number, parent_id=uid(9))
+                before = self.store.status()["counts"]["latest_arrival"]
+                _, added = self.collect()
+                self.assertEqual(added, 1)
+                page = self.store.page(before, scope="addressed")
+                self.assertEqual([m["id"] for m in page["messages"]], [uid(number)])
+                self.assertIsNone(page["messages"][0]["addressing"])
+                self.assertEqual(page["thread_activity"], [])
+                checkpoint = page["next_after"]
+                self.store.mark("clawd", uid(number), "read")
+                stored = self.store.show("clawd", uid(number))
+
+                self.client.events.insert(0, event(number, later_type))
+                calls = len(self.client.calls)
+                _, added = self.collect()
+                self.assertEqual(added, 0)
+                self.assertEqual(self.store.show("clawd", uid(number)), stored)
+                self.assertEqual(self.store.page(checkpoint, scope="addressed")["scanned"], 0)
+                self.assertFalse(any(path.startswith("/comments/") for path, _, _ in self.client.calls[calls:]))
+
     def test_supported_kinds_use_public_originals_and_preserve_arrivals(self):
         self.client.events = [event(10), event(11, "reply"), event(12, "mention_comment"),
                               event(100, "mention_post"), event(13, "follow"), event(14)]

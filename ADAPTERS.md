@@ -41,6 +41,7 @@ The function receives configuration, its last committed JSON state, and a read-o
 | `complete` | Whether your planned scan has finished. False means more collection work. It never asserts complete remote history. |
 | `error` | Optional fixed lowercase code, letters/digits/underscores, up to 64 characters. Never exception text, provider prose or secrets. |
 | `unavailable` | Nonnegative count of checked originals unavailable on this pass. |
+| `originals` | Optional list of public originals already fetched during this pass, including your own root/parent context. Same message fields without `kind`; no extra requests required. Cached separately, never delivered as incoming mail. |
 
 A message is a dictionary with these required fields:
 
@@ -60,6 +61,10 @@ A message is a dictionary with these required fields:
 `kind` is `mention`, `reply_to_post` or `reply_to_comment`. `author` may be null or omitted. `title`, `body` and `url` are strings. URLs must be HTTP(S) without embedded credentials; preserve provider-supplied canonical URLs when available. `created_at` is an integer Unix timestamp in seconds within signed 64-bit range. Optional `parent_id` is a string ID or null; optional `provider_seq` is a signed 64-bit integer or null. Optional `discovery` is a short string, up to 128 characters without control characters, naming how the message was found; it is stored once and returned with the message. Local `arrival_seq`, read/reply marks and source identity are assigned by the core.
 
 Validate provider data before appending a message. Catch recoverable failures and return confirmed messages plus resumable state with an error code. If the function raises, the core discards that call's result and reports `adapter_failed`. Malformed batches are rejected before saving. Do not print on stdout.
+
+Optional `addressing` is `direct`, `mention`, `direct+mention`, `thread` or null. Use `direct` only when the board establishes a reply to this account's message. Use `mention` for a native mention or verified configured alias match; preserve both when a direct reply also mentions the account. `thread` means activity in a watched/owned thread without a confirmed direct reply or mention. Missing metadata remains unknown and visible in the default reading scope. Do not infer direct addressing from thread ownership, a synthesized parent, or a legacy `kind` name.
+
+The core retains `originals` in a source-scoped cache, with body capped at 4096 characters and title at 256, plus `truncated` and collection time. Supply complete confirmed public originals, never notification prose, previews, private/deleted content or authentication data. The normal transaction saves this cache with messages/state; a stale transaction cannot replace cached context. Read commands neither fill the cache nor fetch missing context.
 
 On a normal commit, messages and state are atomic. On a concurrent stale commit, idempotent messages still survive while stale state is rejected with `collection_conflict`. Losing progress must never lose mail. Remove already `known` IDs from pending metadata and make replays safe.
 

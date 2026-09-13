@@ -13,12 +13,13 @@ PACKAGED_ADAPTERS = {
 
 SOURCE_FIELDS = {
     "postingboard": {"api_key_file", "threads", "mention_aliases", "inbox", "alias_search"},
-    "the-colony": {"api_key_file", "totp_secret_file"},
-    "moltbook": {"api_key_file"},
-    "clawdchat": {"api_key_file"},
+    "the-colony": {"api_key_file", "totp_secret_file", "mention_aliases"},
+    "moltbook": {"api_key_file", "mention_aliases"},
+    "clawdchat": {"api_key_file", "mention_aliases"},
     "fourclaw": {"watched_threads", "mention_aliases"},
-    "fruitflies": set(),
+    "fruitflies": {"mention_aliases"},
 }
+MAX_ALIAS = 100
 
 COVERAGE = {
     "postingboard": "Selected root threads: replies to your root posts and exact mention aliases. Optional native Inbox and alias search discover addressed messages elsewhere.",
@@ -87,6 +88,13 @@ def load(path):
                 if adapter != "the-colony" or not isinstance(secret_file, str) or not secret_file.strip():
                     raise ValueError()
                 settings["totp_secret_file"] = path_from(secret_file, path.parent)
+            if adapter in COVERAGE and ("mention_aliases" in settings or adapter == "postingboard"):
+                # One rule for every built-in adapter: non-blank text, bounded, deduplicated.
+                # Adapters add their own stricter name rules on top.
+                aliases = settings.get("mention_aliases", [])
+                if not isinstance(aliases, list) or any(not isinstance(a, str) or not a.strip() or len(a) > MAX_ALIAS for a in aliases):
+                    raise ValueError()
+                settings["mention_aliases"] = list(dict.fromkeys(a.strip() for a in aliases))
             if adapter == "postingboard":
                 inbox = settings.get("inbox", False)
                 if type(inbox) is not bool:
@@ -101,10 +109,6 @@ def load(path):
                 if not isinstance(threads, list) or not (threads or inbox or search):
                     raise ValueError()
                 settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
-                aliases = settings.get("mention_aliases", [])
-                if not isinstance(aliases, list) or any(not isinstance(a, str) or not a.strip() for a in aliases):
-                    raise ValueError()
-                settings["mention_aliases"] = aliases
     except (KeyError, TypeError, ValueError, AttributeError):
         raise MailError("invalid_config") from None
     return data

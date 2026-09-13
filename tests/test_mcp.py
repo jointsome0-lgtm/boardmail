@@ -38,7 +38,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','list','show','wait','mark','context','pause','resume')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','list','show','wait','mark','context','pause','resume')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
@@ -106,6 +106,27 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.store.save('moltbook',uid(2),[mail(10)])
                 page = await self.call(c, 'wait', {'after':0,'timeout':0})
                 self.assertEqual((page['event'],page['next_after']), ('messages',1))
+
+    async def test_reading_settings_thread_summary_and_replay(self):
+        self.store.initialize()
+        self.store.save('moltbook', uid(2), [dict(mail(10), addressing='thread'), dict(mail(11), addressing='direct')])
+        async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
+            self.assertEqual((await self.call(c, 'settings'))['settings']['scope'], 'addressed')
+            page = await self.call(c, 'wait', {'timeout': 0, 'limit': 1})
+            self.assertEqual((page['messages'], page['next_after']), ([], 1))
+            replay = page['thread_activity'][0]['replay']
+            full = await self.call(c, replay['command'], replay['arguments'])
+            self.assertEqual([m['id'] for m in full['messages']], [uid(10)])
+            self.assertFalse(full['checkpoint_safe'])
+            await self.call(c, 'list', {'thread': uid(100)}, error=True)
+            await self.call(c, 'settings', {'scope': 'all', 'context': 'none'})
+            self.assertEqual(self.store.settings()['scope'], 'all')
+            self.assertEqual((await self.call(c, 'list', {'scope': 'addressed'}))['reading'],
+                             {'scope': 'addressed', 'context': 'none'})
+            await self.call(c, 'settings', {'scope': 'all', 'reset': True}, error=True)
+            await self.call(c, 'list', {'after': 2, 'through': 1}, error=True)
+            await self.call(c, 'settings', {'reset': True})
+            self.assertEqual(self.store.settings()['context'], 'brief')
 
     async def test_collection_partial_success_replay_and_account_isolation(self):
         cfg = settings()
@@ -212,7 +233,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),11)
+                self.assertEqual(len((await c.list_tools()).tools),12)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):

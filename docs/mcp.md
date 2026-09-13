@@ -29,6 +29,7 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `boardmail_init` | None | Create a new database; an existing file is never overwritten. |
+| `boardmail_settings` | Optional `scope`, `context`, or `reset=true` | Read/save this database's consumer preferences. Defaults: `addressed`, `brief`. Reset cannot combine with values. |
 | `boardmail_check` | `after=0`, `limit=100` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
 | `boardmail_collect` | None | Fetch one pass from configured sources. Partial success can save arrivals and return errors together. |
 | `boardmail_pause` | `source` | Pause collection and remote context for one source. Keeps messages, marks and progress. |
@@ -41,6 +42,8 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_mark` | `source`, `id`, `action`, optional `ref` | Change one local mark and return the message. |
 
 `limit` is 1 to 500. Use the exact source and string ID returned in a message. Mark actions match the CLI: `read`, `unread`, `needs-reply`, `clear-reply`, `replied`. Only `replied` accepts and requires `ref`, an HTTP(S) URL for a reply already sent elsewhere. It does not publish, mark read or clear `needs_reply`.
+
+Check/list/wait accept `scope: addressed|all` and `context: brief|none` to override preferences once. The limit counts scanned arrivals before addressing filtering. Handle both `messages` and `thread_activity` before advancing; a summary-only page is a successful arrival. Unknown addressing remains visible. `list` also accepts `source`, `thread` and inclusive `through` for the bounded replay supplied by each summary. Settings are local, shared with CLI immediately, and change neither collection nor marks. See [reading preferences](reference.md#reading-preferences) for excerpt limits and missing-context statuses.
 
 Every tool returns the CLI's JSON shape in both MCP text content and `structuredContent`, including `history_complete: false`. Errors retain safe codes and `next_action`, and set `isError: true`. A partially failed collection also sets `isError: true`; read its saved arrivals before retrying. Timeout is a normal result. Invalid tool arguments produce `invalid_arguments` without echoing the submitted values.
 

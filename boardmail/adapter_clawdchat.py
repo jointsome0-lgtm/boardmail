@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from boardmail import addressing
 from boardmail.adapters import Batch
 from boardmail.config import MailError, uuid
 
@@ -121,10 +122,42 @@ def _reference(item):
         return None
     post = uuid(item["post_id"]) if item.get("post_id") else None
     mid = uuid(item["post_id"] if item["type"] == "mention_post" else item["comment_id"])
-    return {"id": mid, "post": post, "kind": kind, "is_post": item["type"] == "mention_post"}
+    return {"id": mid, "post": post, "kind": kind, "is_post": item["type"] == "mention_post", "types": [item["type"]]}
 
 
-def _original(client, entry, *, include_own=False):
+def _types(entry):
+    """Native types behind one retained reference. A reference persisted before
+    types were kept maps its kind back to the single type that produced it."""
+    types = entry.get("types")
+    if isinstance(types, list) and types and all(t in KINDS for t in types):
+        return list(dict.fromkeys(types))
+    if entry["kind"] == "mention":
+        return ["mention_post" if entry["is_post"] else "mention_comment"]
+    return [t for t, kind in KINDS.items() if kind == entry["kind"]]
+
+
+def _addressing(owner, entry, original, context, mention):
+    """``reply`` is a reply to our comment. ``comment`` is activity under a post:
+    a top-level comment on our own post is direct. A nested comment with unknown
+    parent ownership must remain visible even if its reply/mention notification
+    arrives after the original is stored. Mentions are native or explicit
+    ``@name`` in the text."""
+    types = set(entry.get("types", ()))
+    parent = uuid(original["parent_id"]) if original.get("parent_id") else None
+    direct = "reply" in types
+    if "comment" in types and not entry["is_post"]:
+        post_author = context.get("author") if isinstance(context.get("author"), dict) else {}
+        own_post = uuid(post_author["id"]) == owner if post_author.get("id") else None
+        if own_post is not False:
+            if ("parent_id" in original and original["parent_id"] is None) or (
+                    parent is not None and parent == uuid(original["post_id"])):
+                direct = True
+    textual = addressing.mentions(mention, context.get("title") if entry["is_post"] else None, original.get("content"))
+    return addressing.resolve(direct=direct, mention=bool(types & {"mention_post", "mention_comment"}) or textual)
+
+
+def _fetch(client, entry):
+    """One anonymous public request, checked against the reference it confirms."""
     path = ("/posts/" if entry["is_post"] else "/comments/") + entry["id"]
     original = client.get(path)  # Never attach credentials to public-original requests.
     if uuid(original["id"]) != entry["id"]:
@@ -143,16 +176,20 @@ def _original(client, entry, *, include_own=False):
         if obj.get("is_hidden") or obj.get("visibility", "public") != "public":
             raise MailError("original_unavailable")
     author = original["author"]
-    if uuid(author["id"]) == client.owner and not include_own:
-        return None
     body = original.get("content")
     if body is None and entry["is_post"]:
         body = ""  # Link posts may have no text body.
-    return {"id": entry["id"], "thread_id": post_id, "kind": entry["kind"],
-            "parent_id": uuid(original["parent_id"]) if original.get("parent_id") else None,
-            "author": _text(author["name"]), "title": _text(context.get("title", "Public reply")),
-            "body": _text(body), "url": _url(original.get("web_url"), path),
-            "created_at": _timestamp(original["created_at"])}
+    message = {"id": entry["id"], "thread_id": post_id, "kind": entry["kind"],
+               "parent_id": uuid(original["parent_id"]) if original.get("parent_id") else None,
+               "author": _text(author["name"]), "title": _text(context.get("title", "Public reply")),
+               "body": _text(body), "url": _url(original.get("web_url"), path),
+               "created_at": _timestamp(original["created_at"])}
+    return message, uuid(author["id"]) == client.owner, original, context
+
+
+def _original(client, entry, *, include_own=False):
+    message, own, _, _ = _fetch(client, entry)
+    return None if own and not include_own else message
 
 
 def _error(batch, exc):
@@ -194,8 +231,10 @@ def collect(settings, state, known):
     try:
         client = Client(settings)
         client.phase(5)
-        if uuid(client.get("/agents/me", authenticated=True)["id"]) != client.owner:
+        profile = client.get("/agents/me", authenticated=True)
+        if uuid(profile["id"]) != client.owner:
             raise MailError("account_mismatch")
+        mention = addressing.mention_pattern(addressing.aliases(profile, settings.get("mention_aliases")))
     except FAILURES as exc:
         batch.error = _error(batch, exc)
         batch.state = state
@@ -214,13 +253,14 @@ def collect(settings, state, known):
             if entry["kind"] not in KINDS.values() or type(entry["is_post"]) is not bool:
                 raise ValueError()
             if mid not in known:
-                pending[mid] = {"id": mid, "post": post, "kind": entry["kind"], "is_post": entry["is_post"]}
+                pending[mid] = {"id": mid, "post": post, "kind": entry["kind"], "is_post": entry["is_post"], "types": _types(entry)}
     except FAILURES as exc:
         _error(batch, exc)
         batch.state["pending"] = list(pending.values())
         return batch
 
     seen = set(known)
+    emitted = {}  # Originals confirmed in this pass: a later notification may still add evidence.
 
     def resolve(ids, seconds):
         client.phase(seconds)
@@ -230,10 +270,15 @@ def collect(settings, state, known):
             entry = pending.pop(mid)
             pending[mid] = entry  # A failed original must not monopolize retries.
             try:
-                message = _original(client, entry)
-                if message is not None:
+                message, own, original, context = _fetch(client, entry)
+                if own:
+                    # Our own published text is public context worth keeping, never inbox mail.
+                    addressing.cache_original(batch, message)
+                else:
+                    message["addressing"] = _addressing(client.owner, entry, original, context, mention)
                     batch.messages.append(message)
                     seen.add(mid)
+                    emitted[mid] = (message, entry, original, context)
                 del pending[mid]
             except FAILURES as exc:
                 if isinstance(exc, MailError) and str(exc) in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
@@ -262,7 +307,17 @@ def collect(settings, state, known):
                 for item in items:
                     try:
                         entry = _reference(item)
-                        if entry is None or entry["id"] in seen or entry["id"] in pending:
+                        if entry is None:
+                            continue
+                        retained = pending.get(entry["id"]) or (emitted[entry["id"]][1] if entry["id"] in emitted else None)
+                        if retained is not None:
+                            # A second notification for one original adds evidence, not a copy.
+                            retained["types"] = list(dict.fromkeys([*retained["types"], *entry["types"]]))
+                            if entry["id"] in emitted:
+                                message, _, original, context = emitted[entry["id"]]
+                                message["addressing"] = _addressing(client.owner, retained, original, context, mention)
+                            continue
+                        if entry["id"] in seen:
                             continue
                         if len(pending) == MAX_PENDING:
                             del pending[next(iter(pending))]

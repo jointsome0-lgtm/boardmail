@@ -12,6 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from . import addressing
 from .config import MailError, uuid
 
 HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai",
@@ -219,20 +220,40 @@ def page(client, path, key, position=None):
     return items, following if more else None
 
 
-def notification_mail(client, known, batch):
+NATIVE_KINDS = {
+    "the-colony": {"comment_on_post": "reply_to_post", "reply_to_comment": "reply_to_comment", "mention": "mention"},
+    "moltbook": {"post_comment": "reply_to_post", "comment_reply": "reply_to_comment", "mention": "mention"},
+}
+
+
+def native_types(entry, mid, kinds):
+    """Every native notification type retained for one original.
+
+    A reference persisted by an earlier collector recorded only its kind; that
+    kind came from exactly one native type, so it is restored, not guessed.
+    """
+    types = (entry.get("types") or {}).get(mid) if isinstance(entry.get("types"), dict) else None
+    if isinstance(types, list) and types and all(t in kinds for t in types):
+        return set(types)
+    return {t for t, kind in kinds.items() if kind == entry["ids"][mid]}
+
+
+def notification_mail(client, known, batch, mention=None):
     colony = client.source == "the-colony"
     state = batch.state
     pending = state.setdefault("pending", {})
     for key, entry in list(pending.items()):
         entry["ids"] = {mid: kind for mid, kind in entry["ids"].items() if mid not in known}
+        if isinstance(entry.get("types"), dict):
+            entry["types"] = {mid: t for mid, t in entry["types"].items() if mid in entry["ids"]}
         if not entry["ids"]: del pending[key]
-    kinds = ({"comment_on_post":"reply_to_post", "reply_to_comment":"reply_to_comment", "mention":"mention"}
-             if colony else {"post_comment":"reply_to_post", "comment_reply":"reply_to_comment", "mention":"mention"})
+    kinds = NATIVE_KINDS[client.source]
 
     def discover(items):
         for event in items:
             try:
-                kind = kinds.get(event.get("notification_type" if colony else "type"))
+                native = event.get("notification_type" if colony else "type")
+                kind = kinds.get(native)
                 if kind is None: continue
                 raw_post = event.get("post_id" if colony else "relatedPostId")
                 if raw_post is None: continue  # Outside addressable post/thread mail.
@@ -242,7 +263,11 @@ def notification_mail(client, known, batch):
                 if mid in known: continue
                 key = mid if colony else post_id
                 entry = pending.setdefault(key, {"post": post_id, "ids": {}, "cursor": None})
+                prior_types = native_types(entry, mid, kinds) if mid in entry["ids"] else set()
                 if mid not in entry["ids"] or kind == "mention": entry["ids"][mid] = kind
+                # Overlapping notifications for one original are all evidence.
+                if not isinstance(entry.get("types"), dict): entry["types"] = {}
+                entry["types"][mid] = sorted(prior_types | {native})
             except FAILURES as exc:
                 failure(batch, exc)
 
@@ -275,7 +300,7 @@ def notification_mail(client, known, batch):
         entry = pending.pop(key)
         pending[key] = entry
         try:
-            resolve_original(client, entry, known, batch, colony)
+            resolve_original(client, entry, known, batch, colony, mention)
         except FAILURES as exc:
             if failure(batch, exc) == "http_429": break
         if not entry["ids"]: del pending[key]
@@ -283,7 +308,7 @@ def notification_mail(client, known, batch):
     if len(pending) > MAX_PAGES: batch.complete = False
 
 
-def resolve_original(client, entry, known, batch, colony):
+def resolve_original(client, entry, known, batch, colony, mention=None):
     post_id, ids = entry["post"], entry["ids"]
     mid = next(iter(ids))
     path = (("/posts/" if mid == post_id else "/comments/")+mid) if colony else "/posts/"+post_id
@@ -298,7 +323,10 @@ def resolve_original(client, entry, known, batch, colony):
     post = raw if colony else raw["post"]
     if not colony and uuid(post["id"]) != post_id: raise ValueError("Unexpected post")
     title = text(post.get("title") or "Public reply")
-    accept_original(client, post, post_id, ids, known, batch, title)
+    tree = {}  # Moltbook comment tree seen so far: id -> (authored by us, original).
+    kinds = NATIVE_KINDS[client.source]
+    if not colony: retain_original(client, batch, post, post_id, post_id, title)
+    accept_original(client, post, post_id, ids, known, batch, title, entry=entry, kinds=kinds, mention=mention, tree=tree)
     following = None
     if not colony and ids.keys()-{post_id}:
         try:
@@ -309,26 +337,74 @@ def resolve_original(client, entry, known, batch, colony):
             raise
         for original in descendants(items, batch):
             try:
-                accept_original(client, original, post_id, ids, known, batch, title)
+                accept_original(client, original, post_id, ids, known, batch, title, entry=entry, kinds=kinds, mention=mention, tree=tree)
             except FAILURES as exc:
                 failure(batch, exc)
     entry["cursor"] = following
     if following is None: batch.unavailable += len(ids)
 
 
-def accept_original(client, original, post_id, ids, known, batch, title):
-    mid = uuid(original["id"])
-    if mid not in ids: return
-    if original.get("post_id") and uuid(original["post_id"]) != post_id:
-        raise ValueError("Unexpected comment thread")
+def retain_original(client, batch, original, mid, post_id, title):
+    """Keep a fully fetched public root, parent or own message for the local cache."""
     if original.get("is_deleted") or original.get("is_spam"): return
+    try:
+        addressing.cache_original(batch, notification_message(client, original, mid, post_id, title))
+    except FAILURES:
+        pass  # The cache never decides collection; a malformed extra is simply not kept.
+
+
+def notification_addressing(source, types, original, mid, post_id, mention, tree):
+    """Evidence order: a native reply to our comment, then a top-level comment on
+    our post or a reply whose parent this pass saw us author. Thread activity
+    requires a parent confirmed as someone else's; missing ownership is unknown.
+    Explicit textual @mentions add attention even when the board sent only post activity."""
+    reply, activity = ("reply_to_comment", "comment_on_post") if source == "the-colony" else ("comment_reply", "post_comment")
+    parent = uuid(original["parent_id"]) if original.get("parent_id") else None
+    direct, thread = reply in types, False
+    if activity in types and mid != post_id:
+        if parent == post_id or tree.get(parent, (False,))[0]:
+            direct = True
+        elif "parent_id" in original and original["parent_id"] is None:
+            direct = True
+        elif parent in tree and tree[parent][0] is False:
+            thread = True
+    body = original.get("body" if source == "the-colony" else "content")
+    textual = addressing.mentions(mention, original.get("title"), body)
+    return addressing.resolve(direct=direct, mention="mention" in types or textual, thread=thread)
+
+
+def accept_original(client, original, post_id, ids, known, batch, title, *, entry=None, kinds=None, mention=None, tree=None):
+    mid = uuid(original["id"])
     author = original.get("author")
     if author is None: author = {}
+    if mid not in ids:
+        # An unrelated tree member is remembered as a possible parent, never judged.
+        if tree is not None and mid != post_id:
+            try:
+                if original.get("post_id") and uuid(original["post_id"]) != post_id:
+                    return
+                own = uuid(author["id"]) == client.owner if author.get("id") else None
+                tree[mid] = (own, original)
+                if own: retain_original(client, batch, original, mid, post_id, title)
+            except FAILURES:
+                pass
+        return
     if not isinstance(author, dict): raise ValueError("Invalid author")
-    if author.get("id") and uuid(author["id"]) == client.owner:
+    own = uuid(author["id"]) == client.owner if author.get("id") else None
+    if original.get("post_id") and uuid(original["post_id"]) != post_id:
+        raise ValueError("Unexpected comment thread")
+    if tree is not None and mid != post_id: tree[mid] = (own, original)
+    if original.get("is_deleted") or original.get("is_spam"): return
+    if own:
+        retain_original(client, batch, original, mid, post_id, title)
         del ids[mid]
         return
-    batch.messages.append({**notification_message(client, original, mid, post_id, title), "kind": ids[mid]})
+    message = notification_message(client, original, mid, post_id, title)
+    types = native_types(entry, mid, kinds) if entry is not None and kinds else set()
+    message["addressing"] = notification_addressing(client.source, types, original, mid, post_id, mention, tree or {})
+    batch.messages.append({**message, "kind": ids[mid]})
+    if tree and message["parent_id"] in tree:
+        retain_original(client, batch, tree[message["parent_id"]][1], message["parent_id"], post_id, title)
     del ids[mid]
     known.add(mid)
 
@@ -353,7 +429,7 @@ def alias_pattern(aliases):
     return re.compile(r"(?<![\w-])(?:"+"|".join(re.escape(a) for a in aliases)+r")(?![\w-])", re.I) if aliases else None
 
 
-def postingboard_mail(client, known, batch):
+def postingboard_mail(client, known, batch, explicit=None):
     settings = client.settings
     mention = alias_pattern(settings.get("mention_aliases", []))
     state = batch.state
@@ -379,7 +455,7 @@ def postingboard_mail(client, known, batch):
             entry = pending.pop(mid)
             pending[mid] = entry  # Rotation: one failing original cannot block later ones.
             try:
-                resolve_postingboard(client, mid, entry, mention, known, batch, pending)
+                resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit)
             except FAILURES as exc:
                 code = failure(batch, exc)
                 if code == "http_429": return
@@ -394,7 +470,7 @@ def postingboard_mail(client, known, batch):
         client.deadline = time.monotonic()+SOURCE_SECONDS/3
         try:
             first = client.get(path, {"limit": 30}, authenticated=True)
-            postingboard_items(client, first, thread, mention, known, batch)
+            postingboard_items(client, first, thread, mention, known, batch, explicit=explicit)
         except HTTPError as exc:
             if exc.code == 404:
                 exc.close(); batch.unavailable += 1
@@ -407,7 +483,7 @@ def postingboard_mail(client, known, batch):
             before = cursors.get(thread)
             raw = first if before is None and first is not None else client.get(path, {"limit": 30, **({"before": before} if before is not None else {})}, authenticated=True)
             for page_number in range(MAX_PAGES):
-                following = postingboard_items(client, raw, thread, mention, known, batch, cursors=cursors)
+                following = postingboard_items(client, raw, thread, mention, known, batch, cursors=cursors, explicit=explicit)
                 if following is None:
                     cursors[thread] = None
                     break
@@ -509,7 +585,15 @@ def postingboard_post(client, post, mid, root, title, *, seq=None):
             "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"])}
 
 
-def resolve_postingboard(client, mid, entry, mention, known, batch, pending):
+def postingboard_addressing(reasons, explicit, title, body, *, direct=False, thread=False):
+    """Native Inbox reasons and explicit @aliases are evidence; a search hit alone is
+    an occurrence of a term, so it stays unknown unless the text addresses us."""
+    return addressing.resolve(direct=direct or "direct_reply" in reasons,
+                              mention="mention" in reasons or addressing.mentions(explicit, title, body),
+                              thread=thread or "reply_to_your_thread" in reasons)
+
+
+def resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit=None):
     try:
         post = client.get("/v1/posts/"+mid, authenticated=True)["post"]
     except HTTPError as exc:
@@ -521,19 +605,35 @@ def resolve_postingboard(client, mid, entry, mention, known, batch, pending):
     message = postingboard_post(client, post, mid, root, entry.get("title"), seq=entry["seq"])
     parent = message["parent_id"] or entry.get("parent")
     discovery = discovery_of(entry, client.settings, message["title"], message["body"])
-    if discovery is None or (post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner):
+    own = post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner
+    if own: addressing.cache_original(batch, message)
+    if discovery is None or own:
         kind = None
     elif discovery.startswith("search:") or "mention" in entry["reasons"] or (mention and mention.search(message["body"])):
         kind = "mention"
     else:
         kind = "reply_to_comment" if parent and parent != root else "reply_to_post"
     if kind:
-        batch.messages.append({**message, "parent_id": parent, "kind": kind, "discovery": discovery})
+        batch.messages.append({**message, "parent_id": parent, "kind": kind, "discovery": discovery,
+            "addressing": postingboard_addressing(set(entry.get("reasons", [])), explicit, message["title"], message["body"])})
         known.add(mid)
     del pending[mid]
 
 
-def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=None):
+def page_authors(client, items):
+    """IDs on one fetched page, split by whether this account wrote them.
+    Malformed rows are left to the per-item checks."""
+    ours, others = set(), set()
+    for item in items:
+        try:
+            mid = uuid(item["id"])
+            (ours if item.get("agent_id") is not None and uuid(item["agent_id"]) == client.owner else others).add(mid)
+        except FAILURES:
+            continue
+    return ours, others
+
+
+def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=None, explicit=None):
     root, replies = raw["post"], raw["replies"]
     if uuid(root["id"]) != thread: raise ValueError("Unexpected root")
     own = root.get("agent_id") is not None and uuid(root["agent_id"]) == client.owner
@@ -541,6 +641,12 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
     if not isinstance(items, list): raise ValueError("Invalid replies")
     before = cursors.get(thread) if cursors is not None else None
     pending = batch.state.get("pending", {})
+    ours, others = page_authors(client, [root, *items])
+    if "body" in root:
+        try:
+            addressing.cache_original(batch, postingboard_post(client, root, thread, thread, None))
+        except FAILURES:
+            pass  # A root that fails normalization is reported by the item loop below.
     for item in [root, *items]:
         mid = uuid(item["id"])
         seq = item["seq"]
@@ -568,14 +674,22 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                     discovery = (discovery_of(entry, client.settings, title, body) if entry else None) or "thread"
                     addressed = entry is not None and "mention" in entry["reasons"]
                     kind = "mention" if addressed or (mention and mention.search(body)) else "reply_to_post" if own and mid != thread else None
-                    if author_id == client.owner: pending.pop(mid, None)
+                    if author_id == client.owner:
+                        pending.pop(mid, None)
+                        if mid != thread: addressing.cache_original(batch, postingboard_post(client, post, mid, thread, title, seq=seq))
                     elif kind:
                         author = text(post["author"]) if post.get("author") is not None else None
                         parent = (uuid(post["reply_to_id"]) if post.get("reply_to_id") else None) or (entry or {}).get("parent")
+                        # A flat reply in our thread is thread activity. An explicit target
+                        # we authored makes it direct; a target this page never showed stays unknown.
+                        direct = parent is not None and parent in ours
+                        resolved = parent is None or parent in ours or parent in others
                         batch.messages.append({"id": mid, "thread_id": thread, "provider_seq": seq, "kind": kind,
                             "parent_id": parent, "author": author, "title": title, "body": body,
                             "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"]),
-                            "discovery": discovery})
+                            "discovery": discovery,
+                            "addressing": postingboard_addressing(set((entry or {}).get("reasons", [])), explicit, title, body,
+                                                                  direct=direct, thread=own and mid != thread and resolved)})
                         known.add(mid); pending.pop(mid, None)
         except FAILURES as exc:
             code = failure(batch, exc)
@@ -636,8 +750,8 @@ def parent_reference(adapter, thread, parent):
         url = HOSTS[adapter] + "/post/" + uuid(thread)
         return url if parent == thread else url + "#comment-" + uuid(parent)
     if adapter == "clawdchat":
-        from .adapter_clawdchat import ORIGIN
-        return ORIGIN + "/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
+        # Passive readers use this mapping without loading adapter code.
+        return "https://clawdchat.cn/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
     return None
 
 
@@ -717,9 +831,12 @@ def collect(source, settings, state, known, *, client_factory=None):
             raise MailError("account_mismatch")
     except FAILURES as exc:
         return Batch(state=state, complete=False, error=error_code(exc))
+    # Aliases come from the identity check already made; no extra profile request.
+    configured = [*settings.get("mention_aliases", []), *settings.get("alias_search", [])]
+    mention = addressing.mention_pattern(addressing.aliases(account, configured))
     try:
-        if source == "postingboard": postingboard_mail(client, known, batch)
-        else: notification_mail(client, known, batch)
+        if source == "postingboard": postingboard_mail(client, known, batch, mention)
+        else: notification_mail(client, known, batch, mention)
     except FAILURES as exc:
         failure(batch, exc)
     return batch

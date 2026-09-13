@@ -36,6 +36,8 @@ def main():
             if args.once: return 0
             continue
         for message in value["messages"]: deliver(message)
+        for activity in value.get("thread_activity", []):
+            deliver({"event": "thread_activity", **activity})
         after = value["next_after"]
         args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
         temporary = args.checkpoint.with_name(args.checkpoint.name+".tmp")
