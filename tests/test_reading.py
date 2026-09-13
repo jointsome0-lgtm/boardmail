@@ -73,11 +73,35 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(first['thread_activity'][0]['count'], 2)
         next_page = self.run_command(after=first['next_after'])
         self.assertEqual([m['addressing'] for m in next_page['messages']], ['direct', None, 'mention', 'direct+mention'])
+        self.assertEqual([m['shown_because'] for m in next_page['messages']], [
+            'direct_reply_to_your_message', 'recipient_unconfirmed_shown_by_default',
+            'mention_detected_may_be_quoted', 'direct_reply_and_mention_detected'])
+        self.assertEqual(next_page['messages'][1]['kind'], 'mention')
         all_page = self.run_command(scope='all', context_mode='none')
         self.assertEqual(len(all_page['messages']), 6)
+        self.assertEqual(all_page['messages'][0]['shown_because'],
+                         'thread_activity_without_confirmed_direct_reply_or_mention')
         self.assertFalse(any('brief' in m for m in all_page['messages']))
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.store.status()['counts']['unread'], 6)
+
+    def test_interleaved_summaries_follow_first_arrival_and_share_the_page_checkpoint(self):
+        self.store.save('moltbook', uid(2), [dict(mail(9), addressing='direct')])
+        self.store.save('moltbook', uid(2), [dict(mail(10, created=900), addressing='thread')])
+        self.store.save('moltbook', uid(2), [dict(mail(11, created=800), addressing='direct')])
+        self.store.save('the-colony', uid(1), [dict(mail(10, created=700),
+                                                  thread_id=uid(200), addressing='thread')])
+        self.store.save('moltbook', uid(2), [dict(mail(12, created=600), addressing='thread')])
+        self.store.save('moltbook', uid(2), [dict(mail(13, created=500), addressing='direct')])
+        page = self.run_command(after=1, limit=4)
+        self.assertEqual([m['arrival_seq'] for m in page['messages']], [3])
+        self.assertEqual([(s['source'], s['first_seq'], s['last_seq'], s['count'])
+                          for s in page['thread_activity']], [('moltbook', 2, 5, 2), ('the-colony', 4, 4, 1)])
+        self.assertEqual((page['scanned'], page['next_after'], page['more']), (4, 5, True))
+        self.assertEqual(page['scanned'], len(page['messages']) + sum(s['count'] for s in page['thread_activity']))
+        following = self.run_command(after=page['next_after'])
+        self.assertEqual([m['arrival_seq'] for m in following['messages']], [6])
+        self.assertFalse(following['more'])
 
     def test_filtered_views_preserve_delivery_checkpoint_and_threads_require_source(self):
         self.save('direct', 'thread')
@@ -102,6 +126,12 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10), uid(11)])
         self.assertFalse(replay['more'])
         self.assertFalse(replay['checkpoint_safe'])
+        expanded, code = commands.execute(self.store, summary['expand']['command'],
+                                           local=True, **summary['expand']['arguments'])
+        self.assertEqual(code, 1)  # Saved messages survive unavailable local context.
+        self.assertEqual([item['id'] for item in expanded['items']], [uid(10), uid(11)])
+        self.assertEqual(expanded['through'], summary['last_seq'])
+        self.assertFalse(expanded['checkpoint_safe'])
         unread = self.run_command(unread=True, limit=1)
         self.assertEqual((unread['next_after'], unread['thread_activity'][0]['unread']), (2, 1))
 
@@ -126,6 +156,8 @@ class ReadingTests(unittest.TestCase):
         result, _ = commands.execute(store, 'list')
         self.assertEqual(len(result['messages']), 2)
         self.assertTrue(all(m['addressing'] is None for m in result['messages']))
+        self.assertTrue(all(m['shown_because'] == 'recipient_unconfirmed_shown_by_default'
+                            for m in result['messages']))
         self.assertEqual(result['messages'][0]['brief']['parent']['status'], 'unknown')
         commands.execute(store, 'settings')
         commands.execute(store, 'wait', after=2, timeout=0)
@@ -230,6 +262,16 @@ class ReadingTests(unittest.TestCase):
         args = summary['replay']['arguments']
         replay = cli('list', *(part for key, value in args.items() for part in ('--'+key, str(value))))
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10)])
+        args = dict(summary['expand']['arguments'])
+        source, thread = args.pop('source'), args.pop('thread')
+        process = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
+            summary['expand']['command'], source, thread, '--local',
+            *(part for key, value in args.items() for part in ('--'+key, str(value)))],
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(process.returncode, 1)  # The fixture has no saved root or parent.
+        expanded = json.loads(process.stdout)
+        self.assertEqual([item['id'] for item in expanded['items']], [uid(10)])
+        self.assertFalse(expanded['checkpoint_safe'])
         self.assertEqual(cli('settings')['settings']['scope'], 'all')
 
 

@@ -5,6 +5,13 @@ from .config import MailError
 
 DEFAULTS = {"scope": "addressed", "context": "brief"}
 CHOICES = {"scope": ("addressed", "all"), "context": ("brief", "none")}
+SHOWN_BECAUSE = {
+    "direct": "direct_reply_to_your_message",
+    "mention": "mention_detected_may_be_quoted",
+    "direct+mention": "direct_reply_and_mention_detected",
+    "thread": "thread_activity_without_confirmed_direct_reply_or_mention",
+    None: "recipient_unconfirmed_shown_by_default",
+}
 
 
 def validate_options(scope=None, context=None):
@@ -85,6 +92,7 @@ def present(db, result, *, scope, context):
             summary["unread"] += int(item["read_at"] is None)
             summary["last_seq"] = item["arrival_seq"]
         else:
+            item["shown_because"] = SHOWN_BECAUSE[item["addressing"]]
             if context == "brief":
                 item["brief"] = brief(db, item)
             messages.append(item)
@@ -95,6 +103,9 @@ def present(db, result, *, scope, context):
             "source": summary["source"], "thread": summary["thread_id"],
             "after": summary["first_seq"] - 1, "through": summary["last_seq"],
             "limit": 500, "scope": "all", "context": "none"}}
+        summary["expand"] = {"command": "expand", "arguments": {
+            "source": summary["source"], "thread": summary["thread_id"],
+            "after": summary["first_seq"] - 1, "through": summary["last_seq"], "limit": 20}}
     if not result["checkpoint_safe"]:
         action = "process_filtered_page_keep_delivery_checkpoint"
     else:
