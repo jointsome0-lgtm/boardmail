@@ -56,11 +56,17 @@ class AdapterTests(unittest.TestCase):
         # Local commands do not need the adapter code or its configuration.
         adapter.unlink(); config.unlink()
         checkpoint = self.root/'after.txt'
-        loop = [sys.executable, str(examples/'agent_loop.py'), '--db', str(db), '--checkpoint', str(checkpoint), '--once']
+        ledger = self.root/'delivery.jsonl'
+        loop = [sys.executable, str(examples/'agent_loop.py'), '--db', str(db), '--checkpoint', str(checkpoint),
+                '--ledger', str(ledger), '--once']
         result = subprocess.run(loop, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([json.loads(line)['id'] for line in result.stdout.splitlines()], ['1', '2'])
         self.assertEqual(checkpoint.read_text().strip(), '2')
+        entries = [json.loads(line) for line in ledger.read_text().splitlines()]
+        self.assertEqual([(entry['id'], entry['attempt'], entry['outcome']) for entry in entries],
+                         [('1', 1, 'unrecorded'), ('2', 1, 'unrecorded')])
+        self.assertFalse(any('body' in entry or 'title' in entry for entry in entries))
         self.assertEqual(subprocess.run(loop, capture_output=True, text=True, timeout=10).stdout, '')
         self.assertEqual(self.cli('--db', str(db), 'show', 'example', '1')[1]['message'], before)
         self.assertEqual(self.cli('--db', str(db), 'mark', 'unread', 'example', '1')[0], 0)

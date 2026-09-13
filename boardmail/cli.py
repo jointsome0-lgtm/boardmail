@@ -132,6 +132,27 @@ def parser():
                          "Use --local for stored context only. With --db alone, context stays local;\n"
                          "add --config before context to enable remote reads.\n"
                          "Exit 1 with complete: false means incomplete context; inspect target, parent and root.")
+    s = sub.add_parser("expand", help="Read every saved message of one thread interval with current context",
+                       description="Expand one bounded interval of a saved thread: each selected message with its "
+                                   "target, parent and previous exchange, plus the common root once. Marks nothing.",
+                       epilog="Example: boardmail expand SOURCE THREAD --through 120 --after 100\n"
+                              "Copy source, thread and bounds from a thread_activity summary; through is inclusive.\n"
+                              "Later arrivals and mark changes never enter the interval; checkpoint_safe is false,\n"
+                              "so keep your delivery checkpoint. Retry incomplete pages with the same bounds;\n"
+                              "continue with --after next_after and the same --through while more is true.\n"
+                              "One remote budget covers the whole page; repeated originals are read once.\n"
+                              "A parent equal to the root is returned as {id, status: same_as_root}.\n"
+                              "Exit 1 with complete: false means some current original is not confirmed;\n"
+                              "saved text stays in each target. Configured Postingboard/Colony/Moltbook/ClawdChat\n"
+                              "sources fetch current originals unless --local is given or the source is paused.")
+    s.add_argument("source", metavar="SOURCE", help="Source name returned in a message")
+    s.add_argument("thread", metavar="THREAD", help="Exact thread_id from a Boardmail result")
+    s.add_argument("--through", type=int, required=True, metavar="N", help="Inclusive arrival_seq upper bound")
+    s.add_argument("--after", type=int, default=0, metavar="N",
+                   help="Exclusive arrival_seq lower bound; default %(default)s")
+    s.add_argument("--limit", type=int, default=commands.EXPAND_LIMIT, metavar="N",
+                   help="Saved messages per page; 1 to 100, default %(default)s")
+    s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
     return p
 
 
@@ -140,7 +161,7 @@ def run(args):
     # enables remote context lookups unless --local is given.
     needed = args.command in ("collect", "check") or args.db is None or (
         args.config is not None and (args.command in ("pause", "resume") or
-                                    args.command == "context" and not args.local))
+                                    args.command in ("context", "expand") and not args.local))
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])
     options = {key: value for key, value in vars(args).items() if key not in ("config", "db", "command")}

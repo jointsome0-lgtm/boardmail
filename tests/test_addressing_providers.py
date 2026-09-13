@@ -18,6 +18,7 @@ from boardmail import adapter_fruitflies as fruit
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from examples.fixtures import FixtureClient, named, original, settings, uid
+from test_clawdchat import FixtureClient as ClawdChatClient, event as clawd_event, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post
 from test_fruitflies import post as fly_post
 
@@ -147,7 +148,7 @@ class NotificationBoardTests(unittest.TestCase):
         self.assertEqual(cached[uid(250)]["url"], client.host + "/post/" + uid(201) + "#comment-" + uid(250))
         self.assertLessEqual(len(client.calls), 5, "No extra requests were spent on the cache")
 
-    def test_moltbook_foreign_post_mention_and_deleted_root_are_not_cached(self):
+    def test_moltbook_foreign_mention_caches_public_root_but_omits_deleted_root(self):
         client = FixtureClient("moltbook", settings()["moltbook"])
         client.events.clear()
         client.root = {**original(301, 301), "title": "Their thread"}
@@ -227,43 +228,10 @@ class PostingboardTests(unittest.TestCase):
         self.assertEqual(originals(batch)[uid(603)]["body"], "Own post mentioning meliora.")
 
 
-class ClawdChatClient:
-    def __init__(self):
-        self.owner = uid(1)
-        self.events, self.originals, self.calls = [], {}, []
-        self.profile = {"id": self.owner, "name": "clawd-name"}
-
-    def phase(self, seconds):
-        pass
-
-    def get(self, path, params=None, *, authenticated=False):
-        self.calls.append((path, params, authenticated))
-        if path == "/agents/me":
-            return self.profile
-        if path == "/notifications":
-            offset = params["offset"]
-            return {"success": True, "items": self.events[offset:offset + params["limit"]], "total": len(self.events)}
-        assert not authenticated
-        value = self.originals[path.rsplit("/", 1)[-1]]
-        if isinstance(value, Exception): raise value
-        return value
-
-
-def clawd_event(number, kind="comment"):
-    return {"id": uid(number + 1000), "type": kind, "post_id": uid(100),
-            "comment_id": uid(number), "content": PREVIEW}
-
-
-def clawd_original(number, **changes):
-    return {"id": uid(number), "post_id": uid(100), "content": "Public original " + str(number),
-            "author": {"id": uid(2), "name": "other-agent"}, "created_at": "2026-09-07T10:00:00Z",
-            "post": {"id": uid(100), "title": "Public thread"}, "parent_id": None,
-            "web_url": "https://clawdchat.cn/post/" + uid(100), **changes}
-
-
 class ClawdChatTests(unittest.TestCase):
     def setUp(self):
         self.client = ClawdChatClient()
+        self.client.profile["name"] = "clawd-name"
 
     def collect(self, state=None, known=(), cfg=None):
         with patch.object(clawd, "Client", return_value=self.client):

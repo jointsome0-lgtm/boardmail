@@ -4,7 +4,7 @@ For the first run, use the [README](../README.md). For a consumer loop, use the 
 
 ## Configuration and upgrades
 
-The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local commands need no config when `--db` is supplied; an explicit `--config` also enables remote `context` unless `--local` is given.
+The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local commands need no config when `--db` is supplied; an explicit `--config` also enables remote `context` and `expand` unless `--local` is given.
 
 Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook and ClawdChat compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
 
@@ -18,23 +18,27 @@ All built-ins accept optional `mention_aliases`: nonblank strings up to 100 char
 
 `boardmail settings` reads effective `scope` and `context`, each with `origin: default|saved`. `settings --scope addressed|all --context brief|none` saves either or both for this database. `settings --reset` removes saved values and cannot combine with those flags. Invalid stored values produce `invalid_settings` with `next_action: run_settings_reset`. One database serves one consumer; sharing it also shares these preferences.
 
-`check`, `list` and `wait` use command flags first, saved preferences second, then defaults (`addressed`, `brief`). The result's `reading` shows effective values. `collect`, `show`, `context`, `status` and `mark` do not use them. A preference change neither collects mail, rewinds a checkpoint nor changes read marks.
+`check`, `list` and `wait` use command flags first, saved preferences second, then defaults (`addressed`, `brief`). The result's `reading` shows effective values. `collect`, `show`, `context`, `expand`, `status` and `mark` do not use them. A preference change neither collects mail, rewinds a checkpoint nor changes read marks.
 
-| Addressing | Default addressed view |
-| --- | --- |
-| `direct` | Body shown; the adapter established a reply to this account's message. |
-| `mention` | Body shown as an attention candidate, including possible quotes. |
-| `direct+mention` | Body shown with both grounds preserved. |
-| `thread` | Body summarized in `thread_activity`. Thread membership does not establish its recipient. |
-| null | Unknown; body shown conservatively, including older/custom-adapter records. |
+| Addressing | `shown_because` on a displayed message | Meaning |
+| --- | --- | --- |
+| `direct` | `direct_reply_to_your_message` | The adapter established a reply to this account's message. |
+| `mention` | `mention_detected_may_be_quoted` | A mention was detected; it can occur inside a quote. |
+| `direct+mention` | `direct_reply_and_mention_detected` | Both grounds are preserved. |
+| `thread` | `thread_activity_without_confirmed_direct_reply_or_mention` | Displayed under `all`, summarized under `addressed`. Thread membership does not establish its recipient. |
+| null | `recipient_unconfirmed_shown_by_default` | Recipient unknown; shown conservatively, including older/custom-adapter records. |
 
 Addressing is recorded at collection, separately from legacy `kind` and discovery metadata. Older records are not guessed from `kind`. Flat-thread adapters cannot identify untagged direct answers reliably: an answer you need can be in the activity summary. Reading scope is a presentation choice, not a guarantee that all shown messages need replies.
+
+`shown_because` explains inclusion in this page; it neither changes the saved record nor measures confidence. A legacy `kind: "mention"` with `addressing: null` still has an unconfirmed recipient. Decide whether to act from the message and its context. A reading preference or inclusion reason never creates a reply obligation.
 
 Addressing is a snapshot of evidence available before the message was first stored. A notification arriving after that does not update the stored message or create a new arrival. Colony can see only the referenced comment's parent ID; Moltbook and Postingboard can establish ownership of parents present in fetched pages. A parent outside that coverage can remain unconfirmed. A missing parent field never proves a top-level direct reply.
 
 Colony and ClawdChat nested comments without confirmed parent ownership remain unknown and visible. Moltbook classifies a nested comment as thread activity only when the fetched tree identifies its parent as someone else's comment. A missing parent or missing author identity remains unknown. A later direct-reply or mention notification can arrive on another collection pass, so generic activity alone must not hide the body. Late evidence does not rewrite the stored snapshot, marks or arrival number.
 
 Each activity summary includes source/thread IDs, count, unread count, first/last arrival sequence, a reason and `replay` command arguments. Run that `list` command, or pass its arguments to `boardmail_list`. `--source` and `--thread` select the thread; `--after` is exclusive and `--through` inclusive. Replay uses `all`/`none`, a maximum page limit and no unread filter. It opens the indicated thread interval, including any already displayed messages there, without spilling into newer arrivals if collection or marks changed.
+
+The summary also supplies `expand.command` and `expand.arguments` for the same interval with full context, using a page limit of 20. Run `expand SOURCE THREAD --after A --through N --limit 20`, or pass those arguments to `boardmail_expand`. The [expansion contract](#expand-a-thread-interval) defines pagination and incomplete lookups. `replay` remains a local read without context requests.
 
 `--thread` requires `--source`. A view narrowed by `--unread`, `--source`, `--thread` or `--through` has `checkpoint_safe: false` and `next_action: process_filtered_page_keep_delivery_checkpoint`. Its `next_after` is for pagination of that view, never a replacement for the delivery checkpoint. If `more` is true, repeat the same filters with the returned value as `after`. Unfiltered delivery pages have `checkpoint_safe: true`; `scope` and `context` do not change that because summaries account for the omitted bodies.
 
@@ -49,6 +53,10 @@ With `brief`, each shown message has a separate `brief` object containing root, 
 Commands return one JSON object, except `--help`. JSON escapes non-ASCII characters so the output remains readable by JSON parsers under non-UTF-8 stdout encodings.
 
 `check`, `list` and `wait` return `messages`, `thread_activity`, `scanned`, `next_after`, `more` and `sources`. `after` is a local `arrival_seq` checkpoint; the provider's sequence is separately named `provider_seq`. Pages are ordered by arrival, not by the original's creation time. `limit` bounds arrivals scanned before addressing hides any bodies. Process messages and summaries before saving `next_after`, which refers to the last scanned row. A thread-only page can have `messages: []`, a larger `next_after` and `more: true`. Only `scanned: 0` retains the input checkpoint.
+
+`messages` is ordered by increasing `arrival_seq`; `thread_activity` by increasing `first_seq`. Summaries group rows by source and thread, so their intervals can overlap. Concatenating the two arrays does not restore global arrival order. Every displayed arrival and each summary's `first_seq` and `last_seq` lie in `(after, next_after]`. The page accounts for every selected row: `scanned == len(messages) + sum(summary.count)`. These local rules are the same for every adapter, regardless of the provider's cursor or ordering.
+
+For example, a page after 41 can scan thread A at 42, a direct reply at 43, thread B at 44 and thread A at 45. It returns one message at 43 and two summaries in the order A then B. A spans 42 through 45 with count 2; B spans 44 through 44 with count 1. `scanned` is 4 and `next_after` is 45. Handle the message and both summaries before saving 45, including any decision to retain a summary's replay arguments for later. Neither handling just the message nor reading only one summary completes this page.
 
 `check` first collects, then reads a local page, including after partial collection failure. `collection` reports `added`, `failed` and `errors`; `collection_performed` is true. `list` and `wait` report false. `list --unread` filters marks before pagination and scope; summary counts cover that page only. Hidden bodies are never automatically marked read. Status counts still cover the whole inbox.
 
@@ -111,6 +119,26 @@ Alternate schemes, hosts and trailing slashes do not match. A previously recorde
 
 Local or paused reads can find a link even when the parent text is unavailable. Invalid parent identity prevents linkage. These links reflect earlier `mark replied` assertions; they do not prove authorship, close questions or change `needs_reply`.
 
+## Expand a thread interval
+
+```sh
+boardmail expand SOURCE THREAD --after A --through N --limit 20
+```
+
+`through` is required; `after` defaults to 0. The page limit is 1 to 100, default 20. Expansion selects saved messages from this source and thread in `(after, through]`, ordered by arrival, regardless of read marks or reading preferences. New arrivals above `through` stay outside the interval. It does not collect notifications, discover additional inbox messages, change marks or write to the database.
+
+The result has `event: expanded`, `source`, `thread`, the original `after`/`through`, `items`, one common `root`, `complete`, `fetched` and `budget_exhausted`. Each item has `id`, `arrival_seq`, `target`, `parent`, `previous_exchange` and its own `complete`. Targets and parents use the [context elements](#context), including saved/current text comparisons. A parent equal to the common root is returned as `{ "id": "THREAD", "status": "same_as_root" }`; resolve that reference through the top-level `root`. Previous-exchange links have the same meaning as in singular context.
+
+If the root itself lies in the interval, its item repeats the full root element as `target`, with `parent.status: none`. Every item's target therefore keeps the same element shape.
+
+`fetched` means remote lookup was enabled, not that it succeeded. The same config, pause and `--local` rules as `context` apply. One expansion uses one client and a shared 45-second remote budget; repeated root, parent and Moltbook comment-page GETs are reused within that operation. Later calls fetch again. Context can include roots, parents and previously linked messages outside the selected arrival interval, but only the selected saved rows become `items`.
+
+Transport and parsing failures are also reused for that call, so each target does not retry the same failed parent or page. Any retries already performed inside an adapter's client remain within the same budget.
+
+In an expansion, `complete` requires every selected target, its root and any required parent to be available. When remote lookup is enabled, any required current original that is missing, deleted or unavailable makes the expansion incomplete even when a saved copy survives. Saved text remains available with `remote_status` and `error`; inspect those fields. Exit 1, or an MCP error result, accompanies incomplete expansion. `budget_exhausted: true` identifies a lookup stopped by the shared budget. Singular `context` retains its existing snapshot-based completeness rule.
+
+`next_after` and `more` paginate selected saved rows, including rows whose lookup failed. Continue with `after=next_after` and the same `through` to visit later rows. Retry an incomplete page with its original `after` and `through` to retry those originals. Every expansion has `checkpoint_safe: false` and `collection_performed: false`; its cursor never replaces the delivery checkpoint. An empty interval makes no remote request, returns no items with `complete: true`, `more: false` and unchanged `next_after`; its root is `unknown` because no context was requested.
+
 ## Source health and pause
 
 `status` reports `last_ok_age`, `stale_after`, `backlog_pending` and source status. The default freshness threshold is 540 seconds. `--stale-after` changes it for that read. `--require-fresh` exits 1 when an active source is unknown, errored or stale. Without it, reading those states succeeds.
@@ -153,7 +181,7 @@ Pagination uses returned cursors and counts top-level comment roots, including t
 | Code | Meaning |
 | --- | --- |
 | 0 | Successful command, or `wait` returned messages. |
-| 1 | Partial collection failure, failed required freshness, or incomplete context. Saved messages may still be available. |
+| 1 | Partial collection failure, failed required freshness, or incomplete context/expansion. Saved messages may still be available. |
 | 2 | Invalid arguments/config, unsupported or corrupt local state, or invalid local operation. |
 | 3 | Wait timeout, including an immediate empty check. |
 | 4 | Wait cancelled. |
@@ -181,4 +209,22 @@ boardmail --config "$boardmail_example/custom_config.json" collect
 python3 examples/agent_loop.py --db "$boardmail_example/custom.sqlite3" --checkpoint "$boardmail_example/after.txt" --once
 ```
 
-The loop prints messages and thread summaries before saving its checkpoint. Running it again prints no duplicates. Replace `deliver()` with completed processing before advancing the checkpoint; remove `--once` to wait while another process collects.
+The loop prints messages and thread summaries before saving its checkpoint. A completed run followed by another run prints no duplicates. An interruption before the checkpoint can replay completed work. Replace `deliver()` with completed processing before advancing the checkpoint; remove `--once` to wait while another process collects.
+
+### Observe a consumer
+
+The example accepts an optional local JSONL ledger. It records delivery attempts, the effective scope/context and characters delivered to the handler. It stores no message titles or bodies and sends nothing elsewhere:
+
+```sh
+python3 examples/agent_loop.py --db "$boardmail_example/custom.sqlite3" --checkpoint "$boardmail_example/after-observed.txt" --ledger "$boardmail_example/delivery.jsonl" --once
+python3 examples/agent_loop.py --ledger "$boardmail_example/delivery.jsonl" --summarize
+python3 examples/agent_loop.py --ledger "$boardmail_example/delivery.jsonl" --record-outcome SOURCE ID --outcome resolved --ref https://example.org/evidence
+```
+
+Replace `SOURCE ID` with a delivered message's exact identity. The default handler prints and returns `unrecorded`. A custom handler can return `acted`, `resolved`, `escalated` or `ignored` after establishing that outcome. The separate `--record-outcome` command appends an explicit assertion against the message's latest delivery attempt; its optional evidence reference is stored without being fetched. Neither output, a local read mark nor `replied` automatically counts as resolution.
+
+`delivered_chars` counts Unicode characters in the message's title/body and included brief root, parent and previous-exchange title/body text. It excludes metadata, JSON syntax and summary bodies that were never delivered. It measures text passed to this handler, not tokens, actual reading, elapsed time, fatigue or comprehension. Additional context opened outside the example is not counted.
+
+The summary distinguishes unique `(source, id)` messages, delivery attempts, summary attempts and outcomes. Replays add attempts and delivered characters; an `unrecorded` replay never erases an earlier explicit outcome. Outcome counts use the latest explicit assertion per message, with `unrecorded` retained for messages without one. `by_reading` groups observations by the settings used for each delivery; a message can occur in several groups, so their unique-message and outcome counts are not additive. These observations do not establish a causal benefit from a reading preference.
+
+Use one writer for the example's ledger and checkpoint. The ledger is flushed before advancing the checkpoint. A handler or ledger error keeps the preceding checkpoint, so replay remains possible; external actions still need their own idempotency or verified readback. Ledger-only commands neither read the inbox nor alter Boardmail marks.

@@ -346,6 +346,9 @@ class ContextTests(unittest.TestCase):
 
     def test_cli_context_with_explicit_config_keeps_the_database_override(self):
         root = Path(self.temp.name)
+        self.store.save('postingboard', self.cfg['account_id'], [mail(603)])
+        self.store.mark('postingboard', uid(603), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        before = self.path.read_bytes()
         (root/'example.key').write_text('synthetic-key')
         (root/'config.json').write_text(json.dumps({'database': 'other.sqlite3', 'sources': {'postingboard': {
             'account_id': self.cfg['account_id'], 'api_key_file': 'example.key', 'threads': [uid(600)]}}}))
@@ -358,11 +361,14 @@ class ContextTests(unittest.TestCase):
         self.assertEqual((code, result['fetched'], result['parent']['status'], result['target']['origin']), (0, True, 'available', 'local'))
         self.assertEqual(result['target']['current_message']['body'], '@sample-agent nested reply.')
         self.assertIs(result['target']['differs_from_saved'], True)
+        self.assertEqual(result['previous_exchange']['status'], 'linked')
+        self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [uid(603)])
         code, result = run('--local')
         self.assertEqual((code, result['fetched'], result['parent']['status']), (1, False, 'unknown'))
         self.assertIsNone(result['target']['current_message'])
         self.assertIsNone(result['target']['differs_from_saved'])
         self.assertFalse((root/'other.sqlite3').exists())
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_cli_context_reads_local_records_offline(self):
         self.store.save('postingboard', self.cfg['account_id'], [{**mail(600), 'thread_id': uid(600), 'kind': 'reply_to_post'}])
