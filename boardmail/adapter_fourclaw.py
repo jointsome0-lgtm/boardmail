@@ -9,8 +9,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-from . import addressing
+from . import addressing, subscriptions
 from .adapters import Batch
+from .config import MailError
 
 API_VERSION = 1
 HOST = "https://www.4claw.org"
@@ -81,9 +82,11 @@ def _fetch(thread):
         return content.decode("utf-8")
 
 
-def _messages(html, thread, account, aliases, originals=None):
+def _messages(html, thread, account, aliases, originals=None, subscribed=False):
     """Personal mail on one public page. ``originals`` also receives the root
-    and this account's own replies, already fetched, for the local cache."""
+    and this account's own replies, already fetched, for the local cache.
+    A subscribed page also yields every other author's reply as thread activity;
+    the page shows no reply targets, so their recipient stays unknown."""
     page = _Page()
     page.feed(html)
     if not page.title or not page.posts or not page.posts[0]["op"]:
@@ -114,15 +117,18 @@ def _messages(html, thread, account, aliases, originals=None):
                               "url": f"{HOST}/t/{thread}", "created_at": created})
         if own: continue
         mention = any(re.search(r"(?<![\w@])@" + re.escape(alias) + r"(?!\w)", post["body"], re.I) for alias in aliases)
-        if not mention and not (own_thread and not post["op"]): continue
+        personal = own_thread and not post["op"]
+        activity = subscribed and not post["op"] and not personal and not mention
+        if not mention and not personal and not activity: continue
         # The page shows no reply targets: the synthesized parent is thread
         # membership, never proof that a reply was written to us.
         result.append({"id": thread if post["op"] else ids[position - 1],
-                       "thread_id": thread, "kind": "reply_to_post" if own_thread and not post["op"] else "mention",
-                       "parent_id": thread if own_thread and not post["op"] else None,
+                       "thread_id": thread, "kind": "reply_to_post" if personal else "thread_activity" if activity else "mention",
+                       "parent_id": thread if personal else None,
                        "author": author, "title": page.title, "body": post["body"],
                        "url": f"{HOST}/t/{thread}", "created_at": created,
-                       "addressing": "mention" if mention else "thread"})
+                       "addressing": "mention" if mention else "thread" if personal else None,
+                       **({"discovery": "subscription"} if activity else {})})
     return result
 
 
@@ -130,15 +136,20 @@ def collect(settings, state, known):
     """One round-robin window, including failures, with constant-size progress."""
     try:
         account = settings["account_id"]
-        threads = settings["watched_threads"]
+        threads = settings.get("watched_threads", [])  # Missing or empty for a subscription-only setup.
         aliases = settings.get("mention_aliases", [account])
         if not isinstance(account, str) or not re.fullmatch(r"[A-Za-z0-9_]{2,64}", account): raise ValueError()
-        if not isinstance(threads, list) or not 1 <= len(threads) <= 100: raise ValueError()
+        if not isinstance(threads, list) or len(threads) > 100: raise ValueError()
         if not all(isinstance(t, str) and str(UUID(t)) == t for t in threads): raise ValueError()
         threads = list(dict.fromkeys(threads))
         if not isinstance(aliases, list) or len(aliases) > 20: raise ValueError()
         if not all(isinstance(a, str) and re.fullmatch(r"[A-Za-z0-9_]{2,64}", a) for a in aliases): raise ValueError()
-    except (KeyError, ValueError, TypeError, AttributeError):
+        selected = subscriptions.selected(settings)
+        # Subscribed roots join the bounded rotation; the cap of 100 applies to configured pages only.
+        configured = set(threads)
+        threads = list(dict.fromkeys([*threads, *selected]))
+        if not threads: raise ValueError()
+    except (KeyError, ValueError, TypeError, AttributeError, MailError):
         return Batch(state=state, complete=False, error="invalid_config")
     offset = state.get("next_thread", 0)
     if type(offset) is not int or not 0 <= offset < len(threads): offset = 0
@@ -150,7 +161,10 @@ def collect(settings, state, known):
         thread = threads[(offset + step) % len(threads)]
         try:
             originals = []
-            messages = _messages(_fetch(thread), thread, account, aliases, originals)
+            messages = _messages(_fetch(thread), thread, account, aliases, originals, subscribed=thread in selected)
+            if thread not in configured:
+                for message in messages:
+                    message["discovery"] = "subscription"
             batch.messages.extend(m for m in messages if m["id"] not in known)
             for original in originals:
                 addressing.cache_original(batch, original)

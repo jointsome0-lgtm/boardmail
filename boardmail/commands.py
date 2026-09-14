@@ -34,6 +34,28 @@ def execute(store, command, *, sources=None, after=0, limit=None, unread=False, 
             scope=None, context_mode=None, reset=False, through=None, thread=None):
     if limit is None:
         limit = EXPAND_LIMIT if command == "expand" else 100
+    if command in ("subscribe", "unsubscribe", "subscriptions"):
+        if source is not None:
+            try:
+                config.identifier(source)
+            except (ValueError, TypeError, AttributeError):
+                raise MailError("invalid_arguments") from None
+        if command == "subscriptions":
+            return {"event": "subscriptions", "subscriptions": store.subscriptions(source),
+                    "history": "available", "collection_performed": False,
+                    "next_action": "subscribe_or_collect"}, 0
+        if source is None:
+            raise MailError("invalid_arguments")
+        try:
+            thread = config.uuid(thread)
+        except (ValueError, TypeError, AttributeError):
+            raise MailError("invalid_thread_id") from None
+        subscribed = command == "subscribe"
+        changed = store.set_subscription(source, thread, subscribed, (sources or {}).get(source))
+        return {"event": "subscribed" if subscribed else "unsubscribed", "source": source,
+                "thread": thread, "subscribed": subscribed, "changed": changed,
+                "history": "available", "collection_performed": False,
+                "next_action": "collect_then_read_messages_and_thread_activity" if subscribed else "read_saved_mail_or_collect"}, 0
     if command == "expand":
         if (type(after) is not int or type(through) is not int or type(limit) is not int
                 or not 0 <= after <= through <= 2**63-1 or not 1 <= limit <= 100):

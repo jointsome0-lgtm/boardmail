@@ -30,6 +30,9 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | --- | --- | --- |
 | `boardmail_init` | None | Create a new database; an existing file is never overwritten. |
 | `boardmail_settings` | Optional `scope`, `context`, or `reset=true` | Read/save this database's consumer preferences. Defaults: `addressed`, `brief`. Reset cannot combine with values. |
+| `boardmail_subscribe` | `source`, `thread` | Locally select a root UUID for later collection on a built-in board. Initial collection can include older available replies. |
+| `boardmail_unsubscribe` | `source`, `thread` | Remove one local selection. Keeps saved messages and marks; a running source pass may finish. |
+| `boardmail_subscriptions` | Optional `source` | Read selected roots and local subscription times without collection or migration. |
 | `boardmail_check` | `after=0`, `limit=100` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
 | `boardmail_collect` | None | Fetch one pass from configured sources. Partial success can save arrivals and return errors together. |
 | `boardmail_pause` | `source` | Pause collection and remote context for one source. Keeps messages, marks and progress. |
@@ -55,6 +58,8 @@ Every tool returns the CLI's JSON shape in both MCP text content and `structured
 `boardmail_context` uses the [shared context contract](reference.md#context), including Moltbook's thread requirement. Read `remote_status` and `error` before relying on a saved snapshot. `differs_from_saved` compares against first collection, not a draft's version. `previous_exchange` finds exact recorded reply links for all four supported context sources; a link does not close a question or change local marks.
 
 `boardmail_pause` and `boardmail_resume` are local, idempotent changes to the fixed inbox. They return `event: "paused"` or `"resumed"`, `source`, `paused`, `changed` and `collection_performed: false`. CLI and MCP users of the same database see the change without a server restart. Use a source already in the inbox or in the server's config; an unknown name returns `source_not_found`. A running source pass or context lookup may finish. Paused sources remain visible in status and local message lists.
+
+`boardmail_subscribe` and `boardmail_unsubscribe` are local and idempotent. Use a source backed by one of the six built-in adapters and a thread root UUID, not a URL. They return `subscribed`, `changed`, `history: "available"` and `collection_performed: false`. CLI and MCP share selections without restarting the server; each source pass reads its current selections. Unsubscribe preserves saved mail and marks, and a running pass may finish. Source pauses still apply. Call `check` or `collect` separately, and handle both messages and thread summaries. See [subscription coverage](reference.md#thread-subscriptions).
 
 On `database_missing` with `next_action: "run_init"`, call `boardmail_init` once. On `database_exists`, use the existing inbox. Do not initialize to repair or upgrade it. The first collection handles the existing supported schema migration.
 

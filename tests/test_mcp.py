@@ -2,6 +2,7 @@
 import asyncio
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import threading
@@ -39,11 +40,11 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','list','show','wait','mark','context','expand','pause','resume')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','list','show','wait','mark','context','expand','pause','resume')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
-                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand'))
+                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions'))
                 self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
@@ -130,6 +131,37 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             await self.call(c, 'list', {'after': 2, 'through': 1}, error=True)
             await self.call(c, 'settings', {'reset': True})
             self.assertEqual(self.store.settings()['context'], 'brief')
+
+    async def test_cli_and_live_mcp_share_subscriptions_without_restart(self):
+        cfg = {'postingboard': {**settings()['postingboard'], 'threads': []}}
+        self.store.initialize(cfg)
+        snapshots = []
+
+        def client(adapter, runtime):
+            snapshots.append(list(runtime['subscriptions']))
+            return FixtureClient(adapter, runtime)
+
+        def cli(command):
+            result = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
+                                     command, 'postingboard', uid(302)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return json.loads(result.stdout)
+
+        with patch.object(providers, 'Client', side_effect=client):
+            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+                self.assertEqual((await self.call(c, 'subscriptions'))['subscriptions'], [])
+                self.assertTrue((await asyncio.to_thread(cli, 'subscribe'))['changed'])
+                selected = await self.call(c, 'subscriptions', {'source': 'postingboard'})
+                self.assertEqual(selected['subscriptions'][0]['thread'], uid(302))
+                target = {'source': 'postingboard', 'thread': uid(302)}
+                self.assertFalse((await self.call(c, 'subscribe', target))['changed'])
+                page = await self.call(c, 'check')
+                self.assertEqual(([m['id'] for m in page['messages']], page['thread_activity'][0]['count']), ([uid(314)], 1))
+                self.assertFalse((await self.call(c, 'unsubscribe', target))['subscribed'])
+                self.assertEqual(self.store.subscriptions(), [])
+                self.assertEqual((await self.call(c, 'collect'))['added'], 0)
+                self.assertEqual([m['id'] for m in (await self.call(c, 'list', {'scope': 'all'}))['messages']], [uid(314), uid(315)])
+        self.assertEqual(snapshots, [[uid(302)], []])
 
     async def test_collection_partial_success_replay_and_account_isolation(self):
         cfg = settings()
@@ -237,7 +269,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),13)
+                self.assertEqual(len((await c.list_tools()).tools),16)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):
