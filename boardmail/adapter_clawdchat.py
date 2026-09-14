@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from boardmail import addressing
+from boardmail import addressing, subscriptions
 from boardmail.adapters import Batch
 from boardmail.config import MailError, uuid
 
@@ -19,6 +19,10 @@ MAX_PENDING = 256
 MAX_REQUESTS = 40
 MAX_RESPONSE_BYTES = 1024 * 1024
 SOURCE_SECONDS = 45
+SUBSCRIPTION_REQUESTS = 10   # Reserved for subscribed threads when any exist.
+SUBSCRIPTION_SECONDS = 11
+COMMENT_PAGE = 20
+MAX_PENDING_PARENTS = 20
 KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
          "mention_post": "mention", "mention_comment": "mention"}
 
@@ -39,6 +43,7 @@ class Client:
         self.end = time.monotonic() + SOURCE_SECONDS
         self.deadline = self.end
         self.requests = 0
+        self.limit = MAX_REQUESTS
         self.opener = build_opener(NoRedirect())
 
     def phase(self, seconds):
@@ -59,7 +64,7 @@ class Client:
             headers["Authorization"] = "Bearer " + self.key
         for attempt in range(3):  # At most two retries, all inside this phase's budget.
             remaining = self.deadline - time.monotonic()
-            if remaining <= 0 or self.requests >= MAX_REQUESTS:
+            if remaining <= 0 or self.requests >= self.limit:
                 raise MailError("budget_exhausted")
             self.requests += 1
             request = Request(ORIGIN + "/api/v1" + path + ("?" + urlencode(params) if params else ""), headers=headers)
@@ -259,6 +264,14 @@ def collect(settings, state, known):
         batch.state["pending"] = list(pending.values())
         return batch
 
+    selected = subscriptions.selected(settings)
+    if isinstance(state.get("subscriptions"), dict):
+        batch.state["subscriptions"] = json.loads(json.dumps(state["subscriptions"]))
+    subscriptions.progress(batch.state, selected)
+    if selected:
+        # Notification work keeps most of the pass; a busy queue cannot spend the reserve.
+        client.limit = MAX_REQUESTS - SUBSCRIPTION_REQUESTS
+    resolve_seconds = 12 if selected else 15
     seen = set(known)
     emitted = {}  # Originals confirmed in this pass: a later notification may still add evidence.
 
@@ -291,7 +304,7 @@ def collect(settings, state, known):
                         break
         return True
 
-    if resolve(list(pending)[:8], 15):
+    if resolve(list(pending)[:8], resolve_seconds):
         fresh = []
         # Always inspect the head. The second request resumes an independent sweep.
         for page_offset in dict.fromkeys((0, batch.state["offset"])):
@@ -337,7 +350,142 @@ def collect(settings, state, known):
                 if code == "http_429":
                     break
         if batch.error != "http_429":
-            resolve(fresh[:8], 15)
+            resolve(fresh[:8], resolve_seconds)
     batch.state["pending"] = list(pending.values())
+    if selected and batch.error != "http_429":
+        client.limit = MAX_REQUESTS
+        client.phase(SUBSCRIPTION_SECONDS)
+        _subscribed(client, selected, batch, seen, mention)
     batch.complete = batch.complete and not pending and batch.state["offset"] == 0
     return batch
+
+
+def _node(client, node, post_id, title):
+    """Normalize one listed comment like a direct fetch would; None when not public."""
+    mid = uuid(node["id"])
+    if uuid(node["post_id"]) != post_id:
+        raise ValueError()
+    if node.get("is_deleted") or node.get("is_hidden") or node.get("visibility", "public") != "public":
+        return None, None
+    author = node["author"]
+    own = uuid(author["id"]) == client.owner
+    message = {"id": mid, "thread_id": post_id, "kind": "thread_activity",
+               "parent_id": uuid(node["parent_id"]) if node.get("parent_id") else None,
+               "author": _text(author["name"]), "title": title, "body": _text(node["content"]),
+               "url": _url(node.get("web_url"), "/comments/" + mid), "created_at": _timestamp(node["created_at"])}
+    return message, own
+
+
+def _walk(client, nodes, pending, seen_ids):
+    """Flatten a listed tree; queue parents whose replies were cut by depth or paging,
+    with the parent's ownership so a later pass can still address its children."""
+    stack = list(nodes)
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            raise ValueError()
+        yield node
+        replies = node.get("replies") or []
+        if not isinstance(replies, list):
+            raise ValueError()
+        if node.get("has_more_replies") and len(pending) < MAX_PENDING_PARENTS and node.get("id") not in seen_ids:
+            author = node.get("author") if isinstance(node.get("author"), dict) else {}
+            own = uuid(author["id"]) == client.owner if author.get("id") else None
+            pending.append([uuid(node["id"]), len(replies), own])
+        seen_ids.add(node.get("id"))
+        stack.extend(replies)
+
+
+def _scan(client, root, progress, batch, seen, mention):
+    """One subscribed thread: root as context, top-level pages, then parents whose
+    replies were cut. A cut-off pass still delivers what it listed; the saved
+    position resumes next pass. Returns False when cut short."""
+    message, root_own, _, _ = _fetch(client, {"id": root, "post": root, "is_post": True, "kind": "mention"})
+    addressing.cache_original(batch, message)
+    title = message["title"]
+    path = "/posts/" + root + "/comments"
+    nodes, tree = [], {root: root_own}
+    pending = [p for p in progress.get("pending", []) if isinstance(p, list) and len(p) == 3] if isinstance(progress.get("pending"), list) else []
+    for parent, _, own in pending:
+        tree.setdefault(parent, own)
+    skip = progress.get("skip") if type(progress.get("skip")) is int and progress.get("skip") >= 0 else 0
+    listed, complete, interrupted = set(), False, None
+    try:
+        while True:
+            progress["skip"], progress["pending"] = skip, pending
+            raw = client.get(path, {"max_depth": 20, "limit": COMMENT_PAGE, "skip": skip, "sort": "new"})
+            top, total = raw["comments"], raw["total"]
+            if not isinstance(top, list) or type(total) is not int or not 0 <= total < 2**63:
+                raise ValueError()
+            nodes.extend(_walk(client, top, pending, listed))
+            skip += len(top)
+            if not top or skip >= total:
+                skip = 0
+                break
+        # Parents whose replies were cut: one bounded page each, resumed across passes.
+        while pending:
+            parent, offset, own = pending[0]
+            progress["skip"], progress["pending"] = skip, pending
+            raw = client.get(path, {"parent_id": parent, "max_depth": 20, "limit": COMMENT_PAGE, "skip": offset})
+            children, total = raw["comments"], raw["total"]
+            if not isinstance(children, list) or type(total) is not int:
+                raise ValueError()
+            nodes.extend(_walk(client, children, pending, listed))
+            pending.pop(0)
+            if children and offset + len(children) < total and len(pending) < MAX_PENDING_PARENTS:
+                pending.append([parent, offset + len(children), own])
+        complete = True
+    except FAILURES as exc:
+        interrupted = exc
+    progress["skip"], progress["pending"] = skip, pending
+    normalized = []
+    for node in nodes:
+        try:
+            item, own = _node(client, node, root, title)
+        except FAILURES:
+            _error(batch, MailError("invalid_response"))
+            continue
+        if item is None:
+            continue
+        tree[item["id"]] = own
+        normalized.append((item, own))
+    for item, own in normalized:
+        if own:
+            addressing.cache_original(batch, item)
+            continue
+        if item["id"] in seen:
+            continue
+        parent = tree.get(item["parent_id"] or root)
+        textual = addressing.mentions(mention, item["body"])
+        item["addressing"] = addressing.resolve(direct=parent is True, mention=textual, thread=parent is False)
+        item["discovery"] = "subscription"
+        batch.messages.append(item)
+        seen.add(item["id"])
+    if interrupted is not None:
+        raise interrupted
+    return complete
+
+
+def _subscribed(client, selected, batch, seen, mention):
+    entry = batch.state["subscriptions"]
+    resume = None
+    for root in subscriptions.rotation(entry, selected):
+        progress = entry["roots"].setdefault(root, {})
+        try:
+            if not _scan(client, root, progress, batch, seen, mention):
+                resume = root
+                break
+        except FAILURES as exc:
+            code = str(exc) if isinstance(exc, MailError) else "invalid_response"
+            if code in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
+                progress.clear()
+                batch.unavailable += 1
+                continue
+            _error(batch, exc)
+            if code in ("http_429", "budget_exhausted"):
+                resume = root
+                break
+        resume = None
+    subscriptions.advance(entry, selected, resume)
+    if resume is not None:
+        batch.complete = False

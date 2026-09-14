@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from . import addressing
+from . import addressing, subscriptions
 from .config import MailError, uuid
 
 HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai",
@@ -308,6 +308,114 @@ def notification_mail(client, known, batch, mention=None):
     if len(pending) > MAX_PAGES: batch.complete = False
 
 
+def subscription_mail(client, known, batch, mention):
+    """Other-author activity in subscribed Colony/Moltbook threads, after notification work.
+
+    One extra source budget covers all subscribed roots in rotation, so a slow or
+    unavailable root cannot starve the next one. Each complete pass rereads a
+    thread from its head, so a comment missed by shifting pages is found later.
+    """
+    colony = client.source == "the-colony"
+    roots = subscriptions.selected(client.settings)
+    entry = subscriptions.progress(batch.state, roots)
+    if not roots: return
+    end = time.monotonic()+SOURCE_SECONDS
+    client.deadline = end
+    resume = None
+    for root in subscriptions.rotation(entry, roots):
+        if time.monotonic() >= end:
+            batch.complete, resume = False, root
+            break
+        progress = entry["roots"].setdefault(root, {})
+        try:
+            if not scan_thread(client, root, progress, known, batch, mention, colony):
+                batch.complete, resume = False, root
+                break
+        except HTTPError as exc:
+            if exc.code in (403, 404, 410):
+                exc.close(); batch.unavailable += 1
+                continue
+            if failure(batch, exc) == "http_429":
+                resume = root
+                break
+        except FAILURES as exc:
+            code = failure(batch, exc)
+            if code in ("http_429", "budget_exhausted"):
+                resume = root
+                break
+        resume = None
+    subscriptions.advance(entry, roots, resume)
+    if resume is not None: batch.complete = False
+
+
+def scan_thread(client, root, progress, known, batch, mention, colony):
+    """Read one subscribed thread's public root and comments from the head.
+
+    Nothing mid-thread is persisted: a cut-off pass delivers what it read and the
+    next pass rereads from the head, so parents seen on earlier pages keep their
+    ownership. Returns False when the read was cut short."""
+    raw = client.get("/posts/"+root)
+    post = raw if colony else raw["post"]
+    if uuid(post["id"]) != root: raise ValueError("Unexpected thread")
+    if post.get("is_deleted") or post.get("is_spam"):
+        batch.unavailable += 1
+        return True
+    title = text(post.get("title") or "Public reply")
+    author = post.get("author") if isinstance(post.get("author"), dict) else {}
+    root_own = uuid(author["id"]) == client.owner if author.get("id") else None
+    retain_original(client, batch, post, root, root, title)  # The root is context, never inbox mail.
+    originals, path, complete, interrupted = [], "/posts/"+root+"/comments", False, None
+    try:
+        if colony:
+            for number in range(1, MAX_PAGES+1):
+                page_raw = client.get(path, {"limit": PAGE_SIZE, "page": number})
+                items, more = page_raw["items"], page_raw["has_more"]
+                if not isinstance(items, list) or type(more) is not bool: raise ValueError("Invalid page")
+                originals.extend(items)
+                if not more or not items:
+                    complete = True
+                    break
+        else:
+            position, visited = None, set()
+            for _ in range(MAX_PAGES):
+                items, following = page(client, path, "comments", position)
+                originals.extend(descendants(items, batch))
+                if following is None:
+                    complete = True
+                    break
+                if following["cursor"] in visited: raise MailError("pagination_no_progress")
+                visited.add(following["cursor"])
+                position = following
+    except FAILURES as exc:
+        interrupted = exc
+    tree = {root: root_own}
+    for original in originals:
+        try:
+            author = original.get("author") if isinstance(original.get("author"), dict) else {}
+            tree[uuid(original["id"])] = uuid(author["id"]) == client.owner if author.get("id") else None
+        except FAILURES as exc:
+            failure(batch, exc)
+    for original in originals:
+        try:
+            mid = uuid(original["id"])
+            if original.get("post_id") and uuid(original["post_id"]) != root: continue
+            if original.get("is_deleted") or original.get("is_spam"): continue
+            if tree.get(mid) is True:
+                retain_original(client, batch, original, mid, root, title)
+                continue
+            if mid in known or mid == root: continue
+            message = notification_message(client, original, mid, root, title)
+            parent = tree.get(message["parent_id"] or root)
+            body = original.get("body" if colony else "content")
+            message["addressing"] = addressing.resolve(direct=parent is True, mention=addressing.mentions(mention, body), thread=parent is False)
+            batch.messages.append({**message, "kind": "thread_activity", "discovery": "subscription"})
+            known.add(mid)
+        except FAILURES as exc:
+            failure(batch, exc)
+    if interrupted is not None: raise interrupted
+    return complete
+
+
 def resolve_original(client, entry, known, batch, colony, mention=None):
     post_id, ids = entry["post"], entry["ids"]
     mid = next(iter(ids))
@@ -462,7 +570,13 @@ def postingboard_mail(client, known, batch, explicit=None):
                 if code == "budget_exhausted": break
         if pending: batch.complete = False
     cursors = state.setdefault("threads", {})
-    for thread in settings["threads"]:
+    subscribed = subscriptions.selected(settings)
+    entry = subscriptions.progress(state, subscribed)
+    for root in [r for r in cursors if r not in settings["threads"] and r not in subscribed]:
+        del cursors[root]  # Progress of a dropped subscription; configured roots keep theirs.
+    for root in subscribed:
+        entry["roots"].setdefault(root, {})
+    for thread in dict.fromkeys([*settings["threads"], *subscribed]):
         path = "/v1/posts/"+thread
         end = time.monotonic()+SOURCE_SECONDS
         first = None
@@ -470,7 +584,8 @@ def postingboard_mail(client, known, batch, explicit=None):
         client.deadline = time.monotonic()+SOURCE_SECONDS/3
         try:
             first = client.get(path, {"limit": 30}, authenticated=True)
-            postingboard_items(client, first, thread, mention, known, batch, explicit=explicit)
+            postingboard_items(client, first, thread, mention, known, batch, explicit=explicit,
+                               subscribed=thread in subscribed)
         except HTTPError as exc:
             if exc.code == 404:
                 exc.close(); batch.unavailable += 1
@@ -483,7 +598,8 @@ def postingboard_mail(client, known, batch, explicit=None):
             before = cursors.get(thread)
             raw = first if before is None and first is not None else client.get(path, {"limit": 30, **({"before": before} if before is not None else {})}, authenticated=True)
             for page_number in range(MAX_PAGES):
-                following = postingboard_items(client, raw, thread, mention, known, batch, cursors=cursors, explicit=explicit)
+                following = postingboard_items(client, raw, thread, mention, known, batch, cursors=cursors, explicit=explicit,
+                                               subscribed=thread in subscribed)
                 if following is None:
                     cursors[thread] = None
                     break
@@ -633,7 +749,7 @@ def page_authors(client, items):
     return ours, others
 
 
-def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=None, explicit=None):
+def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=None, explicit=None, subscribed=False):
     root, replies = raw["post"], raw["replies"]
     if uuid(root["id"]) != thread: raise ValueError("Unexpected root")
     own = root.get("agent_id") is not None and uuid(root["agent_id"]) == client.owner
@@ -671,9 +787,12 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                     # A watched page can supply the full original of a pending discovery
                     # candidate; its retained reason completes that discovery here.
                     entry = pending.get(mid)
-                    discovery = (discovery_of(entry, client.settings, title, body) if entry else None) or "thread"
                     addressed = entry is not None and "mention" in entry["reasons"]
-                    kind = "mention" if addressed or (mention and mention.search(body)) else "reply_to_post" if own and mid != thread else None
+                    kind = ("mention" if addressed or (mention and mention.search(body)) else "reply_to_post" if own and mid != thread
+                            else "thread_activity" if subscribed and mid != thread else None)
+                    # A subscribed foreign root delivers its other-author replies as thread activity.
+                    discovery = (discovery_of(entry, client.settings, title, body) if entry else None) or (
+                        "subscription" if kind == "thread_activity" else "thread")
                     if author_id == client.owner:
                         pending.pop(mid, None)
                         if mid != thread: addressing.cache_original(batch, postingboard_post(client, post, mid, thread, title, seq=seq))
@@ -689,7 +808,7 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                             "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"]),
                             "discovery": discovery,
                             "addressing": postingboard_addressing(set((entry or {}).get("reasons", [])), explicit, title, body,
-                                                                  direct=direct, thread=own and mid != thread and resolved)})
+                                                                  direct=direct, thread=(own or subscribed) and mid != thread and resolved)})
                         known.add(mid); pending.pop(mid, None)
         except FAILURES as exc:
             code = failure(batch, exc)
@@ -836,7 +955,10 @@ def collect(source, settings, state, known, *, client_factory=None):
     mention = addressing.mention_pattern(addressing.aliases(account, configured))
     try:
         if source == "postingboard": postingboard_mail(client, known, batch, mention)
-        else: notification_mail(client, known, batch, mention)
+        else:
+            notification_mail(client, known, batch, mention)
+            if batch.error != "http_429":
+                subscription_mail(client, known, batch, mention)
     except FAILURES as exc:
         failure(batch, exc)
     return batch

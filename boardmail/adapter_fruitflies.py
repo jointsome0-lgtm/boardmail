@@ -9,14 +9,16 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-from boardmail import addressing
+from boardmail import addressing, subscriptions
 from boardmail.adapters import Batch
+from boardmail.config import MailError
 
 API_VERSION = 1
 BASE = 'https://api.fruitflies.ai/v1/feed'
 PAGE = 100
 MAX_OFFSET = 100000
 MAX_BYTES = 2 * 1024 * 1024
+MAX_MEMBERS = 200  # Remembered members per subscribed root, oldest dropped first.
 
 
 class FetchError(Exception):
@@ -97,10 +99,18 @@ def collect(settings, state, known):
     if not isinstance(handle, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', handle):
         return Batch(state={}, complete=False, error='invalid_config')
     handle = handle.lower()
+    try:
+        selected = subscriptions.selected(settings)
+    except MailError:
+        return Batch(state={}, complete=False, error='invalid_config')
     offset = state.get('offset', PAGE)
     if type(offset) is not int or not PAGE <= offset <= MAX_OFFSET or offset % PAGE:
         offset = PAGE
     result = Batch(state={'offset': offset}, complete=False)
+    if isinstance(state.get('subscriptions'), dict):
+        result.state['subscriptions'] = json.loads(json.dumps(state['subscriptions']))
+    entry = subscriptions.progress(result.state, selected)
+    seen_posts = {}  # Every parsed row of this pass, own and foreign, as parent evidence.
     explicit = addressing.mention_pattern(addressing.aliases({'handle': handle}, settings.get('mention_aliases')))
     own = {}
     own_ok = True
@@ -108,6 +118,7 @@ def collect(settings, state, known):
         for raw in _fetch({'agent': handle, 'limit': PAGE, 'offset': 0}):
             try:
                 post = _post(raw)
+                seen_posts[post['id']] = post
                 if post['author'].casefold() == handle.casefold():
                     own[post['id']] = post['post_type']
                     # This adapter anchors each incoming reply at its immediate
@@ -136,6 +147,7 @@ def collect(settings, state, known):
                 result.unavailable += 1
                 result.error = 'invalid_response'
                 continue
+            seen_posts[post['id']] = post
             if post['id'] in emitted or post['author'].casefold() == handle.casefold():
                 continue
             parent_kind = own.get(post['parent_id'])
@@ -159,4 +171,46 @@ def collect(settings, state, known):
             end = len(rows) < PAGE or offset >= MAX_OFFSET
             result.state['offset'] = PAGE if end else offset + PAGE
             result.complete = end and result.error is None
+    if selected:
+        _subscribed(result, entry, selected, seen_posts, emitted, handle, explicit)
     return result
+
+
+def _subscribed(result, entry, selected, seen_posts, emitted, handle, explicit):
+    """Thread activity for subscribed roots, inferred from immediate parents only.
+
+    The feed is newest-first and gives no thread lookup, so ancestry is rebuilt
+    from every row of this pass plus a bounded memory of members found earlier.
+    A post whose parent was never seen stays outside the subscription."""
+    for root in selected:
+        progress = entry['roots'].setdefault(root, {})
+        members = {mid: own for mid, own in progress.get('members', {}).items()
+                   if isinstance(mid, str) and own in (True, False, None)} if isinstance(progress.get('members'), dict) else {}
+        root_post = seen_posts.get(root)
+        if root_post is not None:
+            members[root] = root_post['author'].casefold() == handle.casefold()
+        elif root not in members:
+            members[root] = None  # Root author unknown until its row is seen.
+        changed = True
+        while changed:
+            changed = False
+            for post in seen_posts.values():
+                parent = post['parent_id']
+                if parent in members and post['id'] not in members:
+                    members[post['id']] = post['author'].casefold() == handle.casefold()
+                    changed = True
+        for post in seen_posts.values():
+            mid = post['id']
+            if mid == root or mid not in members or mid in emitted or members[mid]:
+                continue
+            ownership = members.get(post['parent_id'])
+            result.messages.append(dict(id=mid, parent_id=post['parent_id'], thread_id=root, kind='thread_activity',
+                author=post['author'], title='', body=post['body'], url='https://fruitflies.ai/feed',
+                created_at=post['created_at'], discovery='subscription',
+                addressing=addressing.resolve(direct=ownership is True,
+                                              mention=addressing.mentions(explicit, post['body']), thread=ownership is False)))
+            emitted.add(mid)
+        if len(members) > MAX_MEMBERS:
+            keep = [mid for mid in members if mid != root][-(MAX_MEMBERS - 1):]
+            members = {root: members[root], **{mid: members[mid] for mid in keep}}
+        progress['members'] = members
