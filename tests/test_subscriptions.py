@@ -78,7 +78,7 @@ class SubscriptionTests(unittest.TestCase):
                     store.prepare_collection()
                     with store.connect(write=True) as db:
                         db.execute('DROP TABLE subscriptions')
-                saved = store.page()
+                saved = store.page()['messages']
                 before = path.read_bytes()
                 self.assertEqual(store.subscriptions(), [])
                 self.assertEqual(store.status()['subscriptions'], [])
@@ -91,7 +91,7 @@ class SubscriptionTests(unittest.TestCase):
                     commands.execute(store, 'subscribe' if active else 'unsubscribe', source='moltbook',
                                      thread=uid(100), sources={'moltbook': {'account_id': uid(2)}})
                     self.assertEqual(len(Store(path).subscriptions()), int(active))
-                    self.assertEqual(store.page(), saved)
+                    self.assertEqual(store.page()['messages'], saved)
                     with store.connect() as db:
                         self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], version)
 
