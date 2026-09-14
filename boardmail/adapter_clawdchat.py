@@ -414,7 +414,8 @@ def _progress(progress):
     skip = skip if type(skip) is int and skip >= 0 else 0
     pending = []
     if isinstance(progress.get("pending"), list):
-        for entry in progress["pending"][:MAX_PENDING_PARENTS]:
+        # The queue can also hold its retained parent page after queuing children.
+        for entry in progress["pending"][:MAX_PENDING_PARENTS + 1]:
             try:
                 if (isinstance(entry, list) and len(entry) == 3 and uuid(entry[0]) == entry[0]
                         and type(entry[1]) is int and entry[1] >= 0 and entry[2] in (True, False, None)

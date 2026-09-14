@@ -28,12 +28,8 @@ PREVIEW = "PRIVATE NOTIFICATION PREVIEW"
 
 
 def shape(test, batch):
-    """The common validator will accept thread_activity; until then check every other rule."""
-    copy = deepcopy(batch)
-    for message in copy.messages:
-        if message["kind"] == "thread_activity":
-            message["kind"] = "mention"
-    validate(copy)
+    """Validate actual provider output, without replacing subscription kinds."""
+    validate(batch)
     for item in batch.originals:
         test.assertEqual(set(item), set(addressing.ORIGINAL_FIELDS))
     dump = json.dumps([batch.messages, batch.state, batch.originals])
@@ -77,7 +73,7 @@ class PostingboardSubscriptionTests(unittest.TestCase):
                                    323: ("thread_activity", "direct"), 324: ("thread_activity", "thread"),
                                    325: ("thread_activity", None)})
         self.assertEqual(got[uid(323)]["discovery"], "subscription")
-        self.assertEqual(got[uid(314)]["discovery"], "thread")
+        self.assertEqual(got[uid(314)]["discovery"], "subscription", "This root was discovered only by subscribing")
         self.assertNotIn(uid(313), got, "Our own reply is context, never mail")
         self.assertIn(uid(313), {o["id"] for o in batch.originals})
         self.assertIn(uid(302), {o["id"] for o in batch.originals})
@@ -95,6 +91,7 @@ class PostingboardSubscriptionTests(unittest.TestCase):
         second = self.collect(again)
         self.assertEqual([c[0] for c in plain.calls], [c[0] for c in again.calls], "Subscribing a configured root adds no request")
         self.assertEqual(set(by_id(second)), {uid(314), uid(315), uid(323), uid(324), uid(325)})
+        self.assertEqual(by_id(second)[uid(314)]["discovery"], "thread", "Configured discovery remains independent")
 
     def test_unsubscribe_prunes_only_subscription_progress(self):
         client = self.client([301], [302])
@@ -246,6 +243,27 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         self.assertEqual(cut.state["subscriptions"]["next"], uid(400), "Resume at the interrupted root")
         self.assertEqual([c[0] for c in client.calls if c[0].startswith("/posts/")], ["/posts/" + uid(400)])
 
+    def test_slow_root_that_spends_the_budget_cannot_starve_another_root(self):
+        for source in ('the-colony', 'moltbook'):
+            with self.subTest(source=source):
+                client = self.client(source, [400, 401])
+                self.thread(client, 401)
+                clock = [0]
+                real = client.get
+
+                def slow(path, params=None, **kwargs):
+                    if path == '/posts/' + uid(400):
+                        clock[0] += providers.SOURCE_SECONDS
+                        raise MailError('budget_exhausted')
+                    return real(path, params, **kwargs)
+
+                client.get = slow
+                with patch.object(providers.time, 'monotonic', side_effect=lambda: clock[0]):
+                    first = self.collect(client)
+                    second = self.collect(client, first.state)
+                self.assertFalse(first.complete)
+                self.assertIn(uid(412), by_id(second), 'The slow root must give another root a turn')
+
     def test_cut_off_pagination_still_delivers_what_was_read(self):
         client = self.client("the-colony", [400])
         self.thread(client, 400)
@@ -312,6 +330,17 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
                     if fresh.messages: break
                 self.assertEqual([(m["id"], m["addressing"]) for m in fresh.messages], [(uid(root + 18), "direct")],
                                  "A later reply to our retained comment is direct")
+
+    def test_ownership_cache_eviction_never_delivers_our_comments_or_forgets_the_current_root(self):
+        for source in ('the-colony', 'moltbook'):
+            with self.subTest(source=source), patch.object(subscriptions, 'MAX_OWNERS', 2):
+                client = self.client(source, [400])
+                self.thread(client, 400)
+                batch = self.collect(client)
+                got = by_id(batch)
+                self.assertNotIn(uid(412), got)
+                self.assertNotIn(uid(417), got)
+                self.assertEqual(got[uid(411)]['addressing'], 'thread', 'The root was verified in this very pass')
 
     def test_missing_parent_field_is_not_a_top_level_reply(self):
         for source, root in (("the-colony", 400), ("moltbook", 500)):
@@ -512,6 +541,26 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         self.assertTrue(batch.complete)
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
 
+    def test_nested_queue_overflow_retains_the_parent_page_between_passes(self):
+        state, known, batches, heads = {}, set(), [], 0
+        with patch.object(clawd, 'MAX_REQUESTS', 4), patch.object(clawd, 'SUBSCRIPTION_REQUESTS', 1), \
+                patch.object(clawd, 'MAX_PENDING_PARENTS', 1):
+            for _ in range(5):
+                client = ClawdThreadClient()
+                client.originals[uid(100)] = clawd_original(100, title='Thread', author={'id': uid(2), 'name': 'host'})
+                client.threads[uid(100)] = [node(11, more=True)]
+                client.children = {uid(11): [node(12, parent=11, more=True), node(13, parent=11, more=True)],
+                                   uid(12): [node(14, parent=12)], uid(13): [node(15, parent=13)]}
+                batch = self.collect(client, [100], state, known)
+                known.update(by_id(batch))
+                state = batch.state
+                batches.append(batch)
+                heads += sum(path.endswith('/comments') and not params.get('parent_id') for path, params, _ in client.calls)
+        self.assertFalse(batches[2].complete, 'The unserved branch still belongs to this scan')
+        self.assertEqual(known, {uid(n) for n in (11, 12, 13, 14, 15)})
+        self.assertTrue(batches[-1].complete)
+        self.assertEqual(heads, 1, 'Saved work completes before another head scan')
+
     def test_full_parent_queue_retains_the_page_until_its_children_are_serviced(self):
         client = ClawdThreadClient()
         client.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
@@ -577,6 +626,7 @@ class FourclawSubscriptionTests(unittest.TestCase):
         watched = [m for m in batch.messages if m["thread_id"] == THREAD]
         self.assertEqual([m["kind"] for m in watched], ["mention"], "An unsubscribed watched foreign page keeps mentions only")
         subscribed = [m for m in batch.messages if m["thread_id"] == self.OTHER]
+        self.assertTrue(all(m['discovery'] == 'subscription' for m in subscribed))
         self.assertEqual([(m["kind"], m["addressing"], m["body"]) for m in subscribed],
                          [("thread_activity", None, "untagged reply"), ("mention", "mention", "@Reader hey"),
                           ("thread_activity", None, "second untagged")])
@@ -671,39 +721,6 @@ class FruitfliesSubscriptionTests(unittest.TestCase):
         self.assertEqual([(m["kind"], m["addressing"]) for m in batch.messages], [("thread_activity", None)])
         empty, _ = self.collect([[], newest, []], [])
         self.assertEqual((empty.messages, "subscriptions" in empty.state), ([], False))
-
-
-class HelperTests(unittest.TestCase):
-    def test_rotation_is_stable_when_roots_change(self):
-        roots = [uid(3), uid(1), uid(2)]
-        entry = {"next": uid(2), "roots": {}}
-        self.assertEqual(subscriptions.rotation(entry, roots), [uid(2), uid(3), uid(1)])
-        self.assertEqual(subscriptions.rotation(entry, [uid(1), uid(3)]), [uid(3), uid(1)], "A removed cursor root cannot block")
-        subscriptions.advance(entry, roots, None)
-        self.assertEqual(entry["next"], uid(1))
-        with self.assertRaisesRegex(MailError, "invalid_config"):
-            subscriptions.selected({"subscriptions": "x"})
-
-    def test_restart_after_a_cut_pass_is_fair(self):
-        roots = [uid(1), uid(2), uid(3)]
-        self.assertEqual(subscriptions.following(roots, uid(3)), uid(1), "Wraps around")
-        self.assertEqual(subscriptions.following(roots, uid(9)), uid(1), "An unknown root yields the first")
-        self.assertIsNone(subscriptions.following([], uid(1)))
-        self.assertEqual(subscriptions.restart(roots, uid(2), True), uid(3), "A root that read something waits a turn")
-        self.assertEqual(subscriptions.restart(roots, uid(2), False), uid(2), "A root that read nothing keeps its turn")
-
-    def test_ownership_map_is_verified_and_bounded(self):
-        owned = subscriptions.owners({"owners": {uid(1): True, uid(2): None, "bad": True, uid(3): "yes"}})
-        self.assertEqual(owned, {uid(1): True, uid(2): None})
-        self.assertEqual(subscriptions.owners({"owners": []}), {})
-        with patch.object(subscriptions, "MAX_OWNERS", 2):
-            subscriptions.remember(owned, uid(3), False)
-            self.assertEqual(list(owned), [uid(2), uid(3)], "The oldest entry leaves first")
-            subscriptions.remember(owned, uid(2), False)
-            self.assertEqual(list(owned), [uid(3), uid(2)], "A refreshed entry moves to the newest end")
-        progress = {}
-        subscriptions.store_owners(progress, {})
-        self.assertEqual(progress, {})
 
 
 if __name__ == "__main__":

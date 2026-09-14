@@ -46,7 +46,7 @@ With `brief`, each shown message has a separate `brief` object containing root, 
 
 `unavailable` with `reason: thread_mismatch` means a local record conflicts with the target's thread; that parent cannot establish a previous exchange. `brief.expand` points to `context SOURCE ID` for a fuller/current lookup where supported. Briefs never make network calls, mark mail or claim a question is closed. `--context none` omits them. A cached or saved excerpt may be outdated; inspect current originals before depending on their current state.
 
-4claw's legacy parent IDs describe flat-thread membership, so briefs report the immediate parent as unknown. Fruitflies groups replies by their immediate parent; an answer can itself be that local thread's anchor. Built-in collectors retain at most 256 already fetched context originals per source pass. Not every board response includes a root or parent body, so missing local context is expected even after successful collection.
+4claw's legacy parent IDs describe flat-thread membership, so briefs report the immediate parent as unknown. Fruitflies groups ordinary replies by their immediate parent; an answer can itself be that local thread's anchor. Activity discovered only through a subscription uses the selected root instead. Built-in collectors retain at most 256 already fetched context originals per source pass. Not every board response includes a root or parent body, so missing local context is expected even after successful collection.
 
 ## Thread subscriptions
 
@@ -196,9 +196,11 @@ Budgets are checked between requests and response chunks, not strict wall-clock 
 
 ### Moltbook
 
-Use the source in the [combined config](../examples/config.json). Authentication uses exactly `www.moltbook.com`. Discovery reads retained `post_comment`, `comment_reply` and `mention` notifications, skipping those without a post reference, then checks anonymous originals. The post-comment shape has live verification; reply/mention variants remain provisional. The [API guide](https://www.moltbook.com/skill.md) was checked on 7 September 2026; test fixtures are synthetic.
+Use the source in the [combined config](../examples/config.json). Authentication uses exactly `www.moltbook.com`. Discovery reads retained `post_comment`, `comment_reply` and `mention` notifications, skipping those without a post reference, then checks anonymous originals. The post-comment shape has live verification; reply/mention variants remain provisional. The [API guide](https://www.moltbook.com/skill.md) and anonymous comment pagination were checked on 14 September 2026; test fixtures are synthetic.
 
-Pagination uses returned cursors and counts top-level comment roots, including their nested replies. A rejected saved cursor resets to the head for retry. Missing originals count as `unavailable`; this does not establish permanent deletion. New comment links include the `#comment-ID` fragment described above. Existing saved URLs keep their earlier form; a jump to the exact comment in the web UI has not been verified.
+For subscribed roots, one additional 45-second budget follows anonymous comment pages after notification work. Each root saves its cursor between passes, and roots take turns after a spent budget. A cycle reads at most 100 top-level pages, then starts from the head on a later pass. A bounded map retains the ownership of 400 fetched comments per root; a parent outside it stays unknown.
+
+Pagination uses returned cursors and counts top-level comment roots, including their nested replies. A rejected saved cursor resets to the head for retry. Missing originals count as `unavailable`; this does not establish permanent deletion. New comment links include the `#comment-ID` fragment described above. Listed subscription comments without an explicit parent field keep unknown addressing. Existing saved URLs keep their earlier form; a jump to the exact comment in the web UI has not been verified.
 
 ## Exit codes
 

@@ -146,6 +146,7 @@ def collect(settings, state, known):
         if not all(isinstance(a, str) and re.fullmatch(r"[A-Za-z0-9_]{2,64}", a) for a in aliases): raise ValueError()
         selected = subscriptions.selected(settings)
         # Subscribed roots join the bounded rotation; the cap of 100 applies to configured pages only.
+        configured = set(threads)
         threads = list(dict.fromkeys([*threads, *selected]))
         if not threads: raise ValueError()
     except (KeyError, ValueError, TypeError, AttributeError, MailError):
@@ -161,6 +162,9 @@ def collect(settings, state, known):
         try:
             originals = []
             messages = _messages(_fetch(thread), thread, account, aliases, originals, subscribed=thread in selected)
+            if thread not in configured:
+                for message in messages:
+                    message["discovery"] = "subscription"
             batch.messages.extend(m for m in messages if m["id"] not in known)
             for original in originals:
                 addressing.cache_original(batch, original)

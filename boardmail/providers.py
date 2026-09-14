@@ -344,7 +344,8 @@ def subscription_mail(client, known, batch, mention):
         except FAILURES as exc:
             code = failure(batch, exc)
             if code in ("http_429", "budget_exhausted"):
-                resume = subscriptions.restart(roots, root, consumed[0])
+                # A slow root response can spend the deadline without returning data.
+                resume = subscriptions.restart(roots, root, consumed[0] or time.monotonic() >= end)
                 break
         resume = None
     subscriptions.advance(entry, roots, resume)
@@ -375,7 +376,8 @@ def scan_thread(client, root, progress, known, batch, mention, colony, consumed)
     title = text(post.get("title") or "Public reply")
     author = post.get("author") if isinstance(post.get("author"), dict) else {}
     owned = subscriptions.owners(progress)
-    subscriptions.remember(owned, root, uuid(author["id"]) == client.owner if author.get("id") else None)
+    root_own = uuid(author["id"]) == client.owner if author.get("id") else None
+    subscriptions.remember(owned, root, root_own)
     retain_original(client, batch, post, root, root, title)  # The root is context, never inbox mail.
     path = "/posts/"+root+"/comments"
 
@@ -394,14 +396,16 @@ def scan_thread(client, root, progress, known, batch, mention, colony, consumed)
                 mid = uuid(original["id"])
                 if original.get("post_id") and uuid(original["post_id"]) != root: continue
                 if original.get("is_deleted") or original.get("is_spam"): continue
-                if owned.get(mid) is True:
+                author = original.get("author") if isinstance(original.get("author"), dict) else {}
+                # Self-exclusion cannot depend on an evictable ancestry cache.
+                if author.get("id") and uuid(author["id"]) == client.owner:
                     retain_original(client, batch, original, mid, root, title)
                     continue
                 if mid in known or mid == root: continue
                 message = notification_message(client, original, mid, root, title)
                 # An explicit null parent is a reply to the root; a missing field proves nothing.
-                parent = owned.get(message["parent_id"]) if message["parent_id"] else (
-                    owned.get(root) if "parent_id" in original else None)
+                target = message["parent_id"]
+                parent = root_own if target == root or (target is None and "parent_id" in original) else owned.get(target)
                 body = original.get("body" if colony else "content")
                 message["addressing"] = addressing.resolve(direct=parent is True, mention=addressing.mentions(mention, body), thread=parent is False)
                 batch.messages.append({**message, "kind": "thread_activity", "discovery": "subscription"})
@@ -818,7 +822,7 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                             else "thread_activity" if subscribed and mid != thread else None)
                     # A subscribed foreign root delivers its other-author replies as thread activity.
                     discovery = (discovery_of(entry, client.settings, title, body) if entry else None) or (
-                        "subscription" if kind == "thread_activity" else "thread")
+                        "subscription" if kind == "thread_activity" or (subscribed and thread not in client.settings.get("threads", [])) else "thread")
                     if author_id == client.owner:
                         pending.pop(mid, None)
                         if mid != thread: addressing.cache_original(batch, postingboard_post(client, post, mid, thread, title, seq=seq))

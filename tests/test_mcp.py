@@ -10,7 +10,6 @@ import unittest
 from unittest.mock import patch
 
 from boardmail import providers
-from boardmail.adapters import Batch
 from boardmail.mcp import create_server
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, settings, uid
@@ -134,36 +133,35 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.store.settings()['context'], 'brief')
 
     async def test_cli_and_live_mcp_share_subscriptions_without_restart(self):
-        cfg = {'moltbook': settings()['moltbook']}
+        cfg = {'postingboard': {**settings()['postingboard'], 'threads': []}}
         self.store.initialize(cfg)
         snapshots = []
 
-        def collect(adapter, runtime, state, known, **kwargs):
+        def client(adapter, runtime):
             snapshots.append(list(runtime['subscriptions']))
-            return Batch(messages=[dict(mail(10), kind='thread_activity', addressing='thread')]
-                         if runtime['subscriptions'] else [])
+            return FixtureClient(adapter, runtime)
 
         def cli(command):
             result = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
-                                     command, 'moltbook', uid(100)], capture_output=True, text=True, timeout=10)
+                                     command, 'postingboard', uid(302)], capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return json.loads(result.stdout)
 
-        with patch.object(providers, 'collect', side_effect=collect):
+        with patch.object(providers, 'Client', side_effect=client):
             async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
                 self.assertEqual((await self.call(c, 'subscriptions'))['subscriptions'], [])
                 self.assertTrue((await asyncio.to_thread(cli, 'subscribe'))['changed'])
-                selected = await self.call(c, 'subscriptions', {'source': 'moltbook'})
-                self.assertEqual(selected['subscriptions'][0]['thread'], uid(100))
-                target = {'source': 'moltbook', 'thread': uid(100)}
+                selected = await self.call(c, 'subscriptions', {'source': 'postingboard'})
+                self.assertEqual(selected['subscriptions'][0]['thread'], uid(302))
+                target = {'source': 'postingboard', 'thread': uid(302)}
                 self.assertFalse((await self.call(c, 'subscribe', target))['changed'])
                 page = await self.call(c, 'check')
-                self.assertEqual((page['messages'], page['thread_activity'][0]['count']), ([], 1))
+                self.assertEqual(([m['id'] for m in page['messages']], page['thread_activity'][0]['count']), ([uid(314)], 1))
                 self.assertFalse((await self.call(c, 'unsubscribe', target))['subscribed'])
                 self.assertEqual(self.store.subscriptions(), [])
                 self.assertEqual((await self.call(c, 'collect'))['added'], 0)
-                self.assertEqual((await self.call(c, 'list', {'scope': 'all'}))['messages'][0]['id'], uid(10))
-        self.assertEqual(snapshots, [[uid(100)], []])
+                self.assertEqual([m['id'] for m in (await self.call(c, 'list', {'scope': 'all'}))['messages']], [uid(314), uid(315)])
+        self.assertEqual(snapshots, [[uid(302)], []])
 
     async def test_collection_partial_success_replay_and_account_isolation(self):
         cfg = settings()
