@@ -37,6 +37,7 @@ def next_action(error):
     if error == "database_exists": return "use_existing_database_do_not_overwrite"
     if error == "source_not_found": return "check_source_name_in_status_or_config"
     if error == "subscriptions_unsupported": return "use_a_builtin_board_adapter"
+    if error == "subscription_config_required": return "rerun_with_config_to_identify_source_adapter"
     if error == "invalid_thread_id": return "use_a_thread_uuid_from_a_message_or_board"
     if error == "invalid_settings": return "run_settings_reset"
     if error in ("unsupported_database", "local_state_error"): return "inspect_database_do_not_delete"

@@ -83,8 +83,13 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertEqual(store.subscriptions(), [])
                 self.assertEqual(store.status()['subscriptions'], [])
                 self.assertEqual(path.read_bytes(), before)
+                if version == 1:
+                    with self.assertRaisesRegex(config.MailError, 'subscription_config_required'):
+                        store.set_subscription('moltbook', uid(100), True)
+                    self.assertEqual(path.read_bytes(), before)
                 for active in (False, True, True, False):
-                    commands.execute(store, 'subscribe' if active else 'unsubscribe', source='moltbook', thread=uid(100))
+                    commands.execute(store, 'subscribe' if active else 'unsubscribe', source='moltbook',
+                                     thread=uid(100), sources={'moltbook': {'account_id': uid(2)}})
                     self.assertEqual(len(Store(path).subscriptions()), int(active))
                     self.assertEqual(store.page(), saved)
                     with store.connect() as db:
@@ -118,6 +123,32 @@ class SubscriptionTests(unittest.TestCase):
             with self.assertRaisesRegex(config.MailError, expected):
                 commands.execute(self.store, 'subscribe', sources=sources, source='research', thread=uid(100))
             self.assertEqual(self.path.read_bytes(), before)
+
+    def test_source_without_recorded_adapter_requires_config_and_recovers_before_collection(self):
+        for source in ('colony', 'moltbook'):
+            with self.subTest(source=source):
+                self.path = self.root / f'{source}.sqlite3'
+                self.store = Store(self.path)
+                self.store.initialize()
+                sources = {source: {'account_id': uid(1), 'adapter': 'the-colony',
+                                    'api_key_file': str(self.root / 'unused.key')}}
+                self.store.set_paused(source, True, sources[source])
+                before = self.path.read_bytes()
+                code, result = self.cli('subscribe', source, uid(100))
+                self.assertEqual((code, result.get('error'), result.get('next_action')),
+                                 (2, 'subscription_config_required', 'rerun_with_config_to_identify_source_adapter'))
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertEqual(self.store.subscriptions(), [])
+                cfg = self.root / f'{source}.json'
+                cfg.write_text(json.dumps({'database': str(self.path), 'sources': sources}))
+                self.assertEqual(self.cli('--config', cfg, 'subscribe', source, uid(100))[0], 0)
+                self.assertTrue(self.store.is_paused(source))
+                self.assertFalse(self.cli('subscribe', source, uid(100))[1]['changed'])
+                self.store.set_paused(source, False)
+                with patch.object(providers, 'collect', return_value=Batch()) as collect:
+                    self.assertFalse(collect_all(self.store, sources)['failed'])
+                    self.assertEqual(collect.call_args.args[0], 'the-colony')
+                    self.assertEqual(collect.call_args.args[1]['subscriptions'], [uid(100)])
 
     def test_every_builtin_gets_current_source_selections_and_pause_still_applies(self):
         sources = {f'board{n}': {'account_id': uid(n), 'adapter': adapter}

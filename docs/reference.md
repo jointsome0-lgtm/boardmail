@@ -58,6 +58,8 @@ boardmail unsubscribe SOURCE THREAD
 
 `SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions. Custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
 
+With `--db` alone, the source's adapter must already be recorded in the database. Otherwise the command returns `subscription_config_required` without changes; rerun as `boardmail --db PATH --config CONFIG subscribe SOURCE THREAD` (or `unsubscribe`). This can occur on an older database or after pausing a newly configured source before its first collection. The config supplies the adapter identity without a remote request.
+
 Subscription commands make no remote request. A source pass takes a snapshot of the current selections when it starts. CLI and MCP share selections in this database without a server restart or config edit. The source must still be present in the collector's config. Source pauses and account/adapter identity checks apply. Subscribe neither resumes a source nor verifies that the remote root exists.
 
 The first collection imports available history within the adapter's bounds. It has no creation-date cutoff and does not automatically mark messages read. Later passes add unseen message IDs; they do not update the first saved snapshot. A subscription can therefore make older replies arrive now. `history: "available"` names this policy; every result still has `history_complete: false`.

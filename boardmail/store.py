@@ -150,7 +150,9 @@ class Store:
                 if progress is not None and progress["adapter"] != adapter:
                     raise MailError("adapter_mismatch")
             else:
-                adapter = progress["adapter"] if progress is not None else source
+                if progress is None:
+                    raise MailError("subscription_config_required")
+                adapter = progress["adapter"]
             if adapter not in COVERAGE:
                 raise MailError("subscriptions_unsupported")
             if subscribed:
