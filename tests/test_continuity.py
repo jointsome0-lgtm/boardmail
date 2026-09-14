@@ -44,6 +44,78 @@ class DiscoveryTests(unittest.TestCase):
         _, state, _ = Store(self.path).collection_state('postingboard', self.cfg['account_id'], 'postingboard')
         return state
 
+    def test_empty_inbox_pages_keep_a_checkpoint_for_the_next_collection(self):
+        cfg = {**self.cfg, 'threads': []}
+        get, afters = self.fixture.get, []
+        def deleted_pages(path, params=None, **kw):
+            if path == '/v1/inbox':
+                afters.append(params['after'])
+                if params['after'] in (0, 750):
+                    checkpoint = 750 if params['after'] == 0 else 751
+                    return {'items': [], 'resume_after': checkpoint, 'next_after': checkpoint,
+                            'skipped_deleted_items': 1}
+            return get(path, params, **kw)
+        self.fixture.get = deleted_pages
+        with patch.object(providers, 'MAX_PAGES', 2):
+            result = self.collect(cfg)
+        self.assertEqual(afters, [0, 750])
+        self.assertEqual(result['added'], 0)
+        self.assertIsNone(result['sources'][0]['error'])
+        self.assertTrue(result['sources'][0]['backlog_pending'])
+        self.assertEqual(self.state()['inbox_after'], 751)
+
+        afters.clear()
+        result = self.collect(cfg)
+        self.assertEqual((afters, result['added'], result['failed']), ([751], 2, False))
+        self.assertEqual(self.state()['inbox_after'], 754)
+        self.assertEqual(self.store.show('postingboard', uid(501))['body'],
+                         '@sample-agent please confirm.')
+        self.store.mark('postingboard', uid(501), 'read')
+        saved = self.store.show('postingboard', uid(501))
+        afters.clear()
+        self.assertEqual(self.collect(cfg)['added'], 0)
+        self.assertEqual(afters, [754])
+        self.assertEqual(self.state()['inbox_after'], 754)
+        self.assertEqual(self.store.show('postingboard', uid(501)), saved)
+
+    def test_failure_after_an_empty_inbox_page_preserves_its_checkpoint(self):
+        cfg = {**self.cfg, 'threads': []}
+        get, afters, failing = self.fixture.get, [], True
+        def deleted_then_failed(path, params=None, **kw):
+            if path == '/v1/inbox':
+                afters.append(params['after'])
+                if params['after'] == 0:
+                    return {'items': [], 'resume_after': 750, 'next_after': 750,
+                            'skipped_deleted_items': 1}
+                if failing: raise http(503)
+            return get(path, params, **kw)
+        self.fixture.get = deleted_then_failed
+        result = self.collect(cfg)
+        self.assertEqual((afters, result['added'], result['sources'][0]['error']),
+                         ([0, 750], 0, 'http_503'))
+        self.assertEqual(self.state()['inbox_after'], 750)
+        failing = False; afters.clear()
+        result = self.collect(cfg)
+        self.assertEqual((afters, result['added'], result['failed']), ([750], 2, False))
+        self.assertEqual(self.state()['inbox_after'], 754)
+
+    def test_invalid_empty_inbox_continuation_does_not_save_a_checkpoint(self):
+        cfg = {**self.cfg, 'threads': []}
+        get = self.fixture.get
+        for following in (0, -1, True, '750', 751, 2**63):
+            with self.subTest(following=following):
+                calls = []
+                def invalid_page(path, params=None, **kw):
+                    if path == '/v1/inbox':
+                        calls.append(params['after'])
+                        return {'items': [], 'resume_after': 750, 'next_after': following}
+                    return get(path, params, **kw)
+                self.fixture.get = invalid_page
+                result = self.collect(cfg)
+                self.assertEqual((calls, result['added'], result['sources'][0]['error']),
+                                 ([0], 0, 'pagination_no_progress'))
+                self.assertNotIn('inbox_after', self.state())
+
     def test_timed_out_original_survives_restart_and_rediscovery_keeps_one_record(self):
         get, slow = self.fixture.get, {uid(501), uid(502)}
         def timing_out(path, params=None, **kw):

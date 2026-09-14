@@ -658,7 +658,7 @@ def forward_pages(client, path, params, state, key, batch, record):
         if newest is None and not items: newest = cursor
         if type(newest) is not int or not cursor <= newest < 2**63: raise ValueError("Invalid checkpoint")
         following = raw["next_after"]
-        if following is not None and (type(following) is not int or following <= cursor or not items):
+        if following is not None and (type(following) is not int or not cursor < following <= newest):
             raise MailError("pagination_no_progress")
         state[key] = newest
         if following is None: return
