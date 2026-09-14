@@ -701,7 +701,8 @@ class FruitfliesSubscriptionTests(unittest.TestCase):
                          {6: ("thread_activity", "thread", self.ROOT), 7: ("thread_activity", "thread", self.ROOT),
                           13: ("reply_to_comment", "direct", str(UUID(int=12)))})
         members = batch.state["subscriptions"]["roots"][self.ROOT]["members"]
-        self.assertEqual(members, {self.ROOT: False, str(UUID(int=12)): True, str(UUID(int=13)): False,
+        self.assertEqual({mid: value[0] for mid, value in members.items()},
+                         {self.ROOT: False, str(UUID(int=12)): True, str(UUID(int=13)): False,
                                    str(UUID(int=6)): False, str(UUID(int=7)): False})
         self.assertNotIn(str(UUID(int=61)), members, "Another root's activity is not a member")
         # Next pass: only a new descendant is visible, its ancestry comes from memory.
@@ -721,6 +722,29 @@ class FruitfliesSubscriptionTests(unittest.TestCase):
         self.assertEqual([(m["kind"], m["addressing"]) for m in batch.messages], [("thread_activity", None)])
         empty, _ = self.collect([[], newest, []], [])
         self.assertEqual((empty.messages, "subscriptions" in empty.state), ([], False))
+
+    def test_newest_members_survive_older_history_before_a_later_child_arrives(self):
+        def dated(n, minute, parent=50, author="other"):
+            return {**fly_post(n, parent=parent, author=author, kind="answer" if parent else "post"),
+                    "created_at": f"2026-09-07T10:{minute:02d}:00Z"}
+
+        with patch.object(fruit, "MAX_MEMBERS", 4):
+            first, requests = self.collect([[], [dated(n, n) for n in range(16, 11, -1)],
+                                            [dated(50, 0, parent=None)]], [self.ROOT])
+            self.assertEqual(requests, 3)
+            self.assertEqual(set(by_id(first)), {str(UUID(int=n)) for n in range(12, 17)})
+            # A restart sees only older historical members, not the recent parents.
+            second, requests = self.collect([[], [], [dated(n, n) for n in range(11, 8, -1)]],
+                                            [self.ROOT], json.loads(json.dumps(first.state)), set(by_id(first)))
+            self.assertEqual(requests, 3)
+            # The recent parent is absent from every current page. Retained ancestry
+            # must recognize its child; older history must not have displaced it.
+            third, requests = self.collect([[], [dated(100, 20, parent=16), dated(101, 21)], []],
+                                           [self.ROOT], json.loads(json.dumps(second.state)),
+                                           set(by_id(first)) | set(by_id(second)))
+            self.assertEqual(requests, 3)
+        self.assertEqual({m["id"]: (m["thread_id"], m["addressing"]) for m in third.messages},
+                         {str(UUID(int=n)): (self.ROOT, "thread") for n in (100, 101)})
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ BASE = 'https://api.fruitflies.ai/v1/feed'
 PAGE = 100
 MAX_OFFSET = 100000
 MAX_BYTES = 2 * 1024 * 1024
-MAX_MEMBERS = 200  # Remembered members per subscribed root, oldest dropped first.
+MAX_MEMBERS = 200  # Root plus the newest recognized members by creation time.
 
 
 class FetchError(Exception):
@@ -184,26 +184,28 @@ def _subscribed(result, entry, selected, seen_posts, emitted, handle, explicit):
     A post whose parent was never seen stays outside the subscription."""
     for root in selected:
         progress = entry['roots'].setdefault(root, {})
-        members = {mid: own for mid, own in progress.get('members', {}).items()
-                   if isinstance(mid, str) and own in (True, False, None)} if isinstance(progress.get('members'), dict) else {}
+        members = {mid: value for mid, value in progress.get('members', {}).items()
+                   if isinstance(mid, str) and isinstance(value, list) and len(value) == 2
+                   and value[0] in (True, False, None)
+                   and (value[1] is None or type(value[1]) is int)} if isinstance(progress.get('members'), dict) else {}
         root_post = seen_posts.get(root)
         if root_post is not None:
-            members[root] = root_post['author'].casefold() == handle.casefold()
+            members[root] = [root_post['author'].casefold() == handle.casefold(), root_post['created_at']]
         elif root not in members:
-            members[root] = None  # Root author unknown until its row is seen.
+            members[root] = [None, None]  # Root author unknown until its row is seen.
         changed = True
         while changed:
             changed = False
             for post in seen_posts.values():
                 parent = post['parent_id']
                 if parent in members and post['id'] not in members:
-                    members[post['id']] = post['author'].casefold() == handle.casefold()
+                    members[post['id']] = [post['author'].casefold() == handle.casefold(), post['created_at']]
                     changed = True
         for post in seen_posts.values():
             mid = post['id']
-            if mid == root or mid not in members or mid in emitted or members[mid]:
+            if mid == root or mid not in members or mid in emitted or members[mid][0]:
                 continue
-            ownership = members.get(post['parent_id'])
+            ownership = members.get(post['parent_id'], [None, None])[0]
             result.messages.append(dict(id=mid, parent_id=post['parent_id'], thread_id=root, kind='thread_activity',
                 author=post['author'], title='', body=post['body'], url='https://fruitflies.ai/feed',
                 created_at=post['created_at'], discovery='subscription',
@@ -211,6 +213,8 @@ def _subscribed(result, entry, selected, seen_posts, emitted, handle, explicit):
                                               mention=addressing.mentions(explicit, post['body']), thread=ownership is False)))
             emitted.add(mid)
         if len(members) > MAX_MEMBERS:
-            keep = [mid for mid in members if mid != root][-(MAX_MEMBERS - 1):]
+            keep = sorted((mid for mid in members if mid != root),
+                          key=lambda mid: (members[mid][1] is not None, members[mid][1] or 0, mid),
+                          reverse=True)[:MAX_MEMBERS - 1]
             members = {root: members[root], **{mid: members[mid] for mid in keep}}
         progress['members'] = members
