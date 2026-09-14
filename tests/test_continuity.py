@@ -51,8 +51,8 @@ class DiscoveryTests(unittest.TestCase):
             if path == '/v1/inbox':
                 afters.append(params['after'])
                 if params['after'] in (0, 750):
-                    checkpoint = 750 if params['after'] == 0 else 751
-                    return {'items': [], 'resume_after': checkpoint, 'next_after': checkpoint,
+                    following = 750 if params['after'] == 0 else 751
+                    return {'items': [], 'resume_after': 754, 'next_after': following,
                             'skipped_deleted_items': 1}
             return get(path, params, **kw)
         self.fixture.get = deleted_pages
@@ -85,7 +85,7 @@ class DiscoveryTests(unittest.TestCase):
             if path == '/v1/inbox':
                 afters.append(params['after'])
                 if params['after'] == 0:
-                    return {'items': [], 'resume_after': 750, 'next_after': 750,
+                    return {'items': [], 'resume_after': 754, 'next_after': 750,
                             'skipped_deleted_items': 1}
                 if failing: raise http(503)
             return get(path, params, **kw)
@@ -98,6 +98,31 @@ class DiscoveryTests(unittest.TestCase):
         result = self.collect(cfg)
         self.assertEqual((afters, result['added'], result['failed']), ([750], 2, False))
         self.assertEqual(self.state()['inbox_after'], 754)
+
+    def test_unfinished_nonempty_inbox_page_resumes_from_its_continuation(self):
+        cfg = {**self.cfg, 'threads': []}
+        get, afters = self.fixture.get, []
+        def split_page(path, params=None, **kw):
+            raw = get(path, params, **kw)
+            if path == '/v1/inbox':
+                afters.append(params['after'])
+                if params['after'] == 0:
+                    raw['items'] = [item for item in raw['items'] if item['id'] == uid(501)]
+                    raw['resume_after'], raw['next_after'] = 754, 753
+            return raw
+        self.fixture.get = split_page
+        with patch.object(providers, 'MAX_PAGES', 1):
+            result = self.collect(cfg)
+        self.assertEqual((result['added'], result['failed'], self.state()['inbox_after']),
+                         (1, False, 753))
+        self.assertTrue(result['sources'][0]['backlog_pending'])
+        self.store.mark('postingboard', uid(501), 'read')
+        saved = self.store.show('postingboard', uid(501))
+        result = self.collect(cfg)
+        self.assertEqual((afters, result['added'], result['failed']), ([0, 753], 1, False))
+        self.assertEqual(self.state()['inbox_after'], 754)
+        self.assertEqual(self.store.status()['counts']['total'], 2)
+        self.assertEqual(self.store.show('postingboard', uid(501)), saved)
 
     def test_invalid_empty_inbox_continuation_does_not_save_a_checkpoint(self):
         cfg = {**self.cfg, 'threads': []}

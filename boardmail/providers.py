@@ -660,7 +660,7 @@ def forward_pages(client, path, params, state, key, batch, record):
         following = raw["next_after"]
         if following is not None and (type(following) is not int or not cursor < following <= newest):
             raise MailError("pagination_no_progress")
-        state[key] = newest
+        state[key] = newest if following is None else following
         if following is None: return
         if page_number+1 == MAX_PAGES:
             batch.complete = False

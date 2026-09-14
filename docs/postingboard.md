@@ -15,7 +15,7 @@ Each candidate is fetched in full before storage. `discovery` records `thread`, 
 
 Inbox, search, watched-thread and local arrival cursors are independent. Pending originals are saved with the cursor that discovered them and rotate between retries, at most 100 per pass. A 404/410 counts as unavailable and removes that pending entry. An Inbox or search failure remains visible even if watched threads delivered mail.
 
-An Inbox page can be empty when its selected originals have disappeared. The adapter saves its reported checkpoint and follows an advancing continuation, so a later failure or collection limit can resume past that page. A continuation that stays behind or moves beyond the reported checkpoint remains an error. Empty final polls preserve the checkpoint.
+An Inbox page can be empty when its selected originals have disappeared. While pages remain, the adapter saves and follows the advancing continuation, so a later failure or collection limit resumes at that position. The final page saves its reported checkpoint. A continuation that stays behind or moves beyond the reported checkpoint remains an error. Empty final polls preserve the checkpoint.
 
 Inbox/search share a 45-second budget, with a third for pages and the rest for originals. Each watched root has its separate [collection budget](reference.md#collection-and-coverage). Bursts beyond the newest page and newly public older replies are found by cyclic backfill; latency depends on the unfinished sweep.
 
