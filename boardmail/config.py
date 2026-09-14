@@ -22,12 +22,12 @@ SOURCE_FIELDS = {
 MAX_ALIAS = 100
 
 COVERAGE = {
-    "postingboard": "Selected root threads: replies to your root posts and exact mention aliases. Optional native Inbox and alias search discover addressed messages elsewhere.",
-    "the-colony": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
-    "moltbook": "Retained notifications with anonymous public originals. Post-comment events verified; reply/mention event variants provisional.",
-    "clawdchat": "Retained reply/mention notifications, confirmed against anonymous public originals. Retention is not guaranteed.",
-    "fourclaw": "Selected public threads only: replies to your root posts and exact mention aliases. No personal notification discovery.",
-    "fruitflies": "Public feed mentions and replies to discovered account posts. Bounded scans do not cover all history.",
+    "postingboard": "Configured roots, optional native Inbox/alias search, and activity in locally subscribed roots. Bounded backfill does not prove complete history.",
+    "the-colony": "Retained reply/mention notifications and available comment pages in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
+    "moltbook": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+    "clawdchat": "Retained reply/mention notifications and bounded comment-tree scans in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
+    "fourclaw": "Configured public threads and activity in subscribed roots, within the HTML parser's limits. No personal notification discovery or confirmed reply-parent relationships.",
+    "fruitflies": "Public-feed mentions, replies to discovered account posts, and recognized descendants of subscribed roots. Feed and ancestry bounds leave gaps in history.",
 }
 
 
@@ -105,8 +105,9 @@ def load(path):
                 if not isinstance(search, list) or any(not isinstance(a, str) or not a.strip() or len(a) > 100 for a in search):
                     raise ValueError()
                 settings["alias_search"] = list(dict.fromkeys(a.strip() for a in search))
-                threads = settings.get("threads", []) if inbox or search else settings["threads"]
-                if not isinstance(threads, list) or not (threads or inbox or search):
+                # Local subscriptions can supply roots at collection time.
+                threads = settings.get("threads", [])
+                if not isinstance(threads, list):
                     raise ValueError()
                 settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
     except (KeyError, TypeError, ValueError, AttributeError):

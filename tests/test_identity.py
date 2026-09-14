@@ -58,7 +58,7 @@ class IdentityTests(unittest.TestCase):
         for source, cfg in settings().items():
             for profile, error in (({'id': uid(99)}, 'account_mismatch'), ({}, 'invalid_response')):
                 with self.subTest(source=source, profile=profile), tempfile.TemporaryDirectory() as folder:
-                    cfg = {**cfg, 'adapter': source}
+                    cfg = {**cfg, 'adapter': source, 'api_key_file': Path(folder) / 'alias.key'}
                     store = Store(Path(folder) / 'mail.sqlite3'); store.initialize({'alias': cfg})
                     state = {'threads': {uid(301): 20}, 'discovery': {'offset': 100}, 'pending': {}}
                     store.prepare_collection()
@@ -73,7 +73,7 @@ class IdentityTests(unittest.TestCase):
                     client.get = get
                     good = settings()['postingboard']
                     result = providers.collect_all(store, {'alias': cfg, 'good': {**good, 'adapter': 'postingboard'}},
-                        client_factory=lambda adapter, conf: client if conf is cfg else FixtureClient(adapter, conf))
+                        client_factory=lambda adapter, conf: client if conf['api_key_file'] == cfg['api_key_file'] else FixtureClient(adapter, conf))
                     self.assertEqual(result['errors'], [{'source': 'alias', 'error': error,
                         'next_action': 'restore_source_identity_or_use_a_new_source' if error == 'account_mismatch' else 'retry_collect'}])
                     self.assertGreater(result['added'], 0)

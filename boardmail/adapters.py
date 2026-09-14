@@ -36,6 +36,8 @@ def next_action(error):
     if error in ("account_mismatch", "adapter_mismatch"): return "restore_source_identity_or_use_a_new_source"
     if error == "database_exists": return "use_existing_database_do_not_overwrite"
     if error == "source_not_found": return "check_source_name_in_status_or_config"
+    if error == "subscriptions_unsupported": return "use_a_builtin_board_adapter"
+    if error == "invalid_thread_id": return "use_a_thread_uuid_from_a_message_or_board"
     if error == "invalid_settings": return "run_settings_reset"
     if error in ("unsupported_database", "local_state_error"): return "inspect_database_do_not_delete"
     if error in ("adapter_load_failed", "adapter_version_unsupported", "invalid_adapter_result", "adapter_failed"):
@@ -74,7 +76,7 @@ def validate(batch):
                 raise ValueError()
             url.port  # Validate a supplied port as well as the host.
         for item in batch.messages:
-            if item["kind"] not in ("mention", "reply_to_post", "reply_to_comment"):
+            if item["kind"] not in ("mention", "reply_to_post", "reply_to_comment", "thread_activity"):
                 raise ValueError()
             if item.get("addressing") not in (None, "direct", "mention", "direct+mention", "thread"):
                 raise ValueError()
@@ -92,6 +94,10 @@ def collect_all(store, sources, *, client_factory=None):
         adapter = str(settings.get("adapter", source))
         try:
             known, state, revision = store.collection_state(source, settings["account_id"], adapter)
+            if adapter in LEGACY_ADAPTERS or adapter in PACKAGED_ADAPTERS:
+                # Runtime selections are independent of the MCP operator's fixed config.
+                # A pass keeps its snapshot; unsubscribe does not cancel in-flight work.
+                settings = {**settings, "subscriptions": [item["thread"] for item in store.subscriptions(source)]}
             if adapter in LEGACY_ADAPTERS:
                 from . import providers
                 batch = providers.collect(adapter, settings, state, known, client_factory=client_factory)

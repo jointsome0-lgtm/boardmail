@@ -21,6 +21,10 @@ ORIGINALS_SCHEMA = """CREATE TABLE IF NOT EXISTS originals (
     source TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL,
     fetched_at INTEGER NOT NULL, PRIMARY KEY (source,id))"""
 
+SUBSCRIPTIONS_SCHEMA = """CREATE TABLE IF NOT EXISTS subscriptions (
+    source TEXT NOT NULL, thread_id TEXT NOT NULL, subscribed_at INTEGER NOT NULL,
+    PRIMARY KEY (source,thread_id))"""
+
 
 class Store:
     def __init__(self, path):
@@ -65,6 +69,7 @@ class Store:
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             db.execute(PROGRESS_SCHEMA)
             db.execute(ORIGINALS_SCHEMA)
+            db.execute(SUBSCRIPTIONS_SCHEMA)
             for source, settings in (sources or {}).items():
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
@@ -113,7 +118,53 @@ class Store:
             if "addressing" not in self._columns(db):
                 db.execute("ALTER TABLE messages ADD COLUMN addressing TEXT")
             db.execute(ORIGINALS_SCHEMA)
+            db.execute(SUBSCRIPTIONS_SCHEMA)
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    @staticmethod
+    def _subscriptions(db, source=None):
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscriptions'").fetchone():
+            return []
+        return [dict(row) for row in db.execute(
+            "SELECT source,thread_id AS thread,subscribed_at FROM subscriptions" +
+            (" WHERE source=?" if source is not None else "") + " ORDER BY source,thread_id",
+            (source,) if source is not None else ())]
+
+    def subscriptions(self, source=None):
+        """Read local selections, including on older databases, without migration."""
+        with self.connect() as db:
+            return self._subscriptions(db, source)
+
+    def set_subscription(self, source, thread, subscribed, settings=None):
+        """An explicit local write; no remote baseline or automatic read marks."""
+        with self.connect(write=True) as db:
+            row = db.execute("SELECT account_id FROM sources WHERE source=?", (source,)).fetchone()
+            if row is None and settings is None:
+                raise MailError("source_not_found")
+            progress = None
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='adapter_state'").fetchone():
+                progress = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
+            if settings is not None:
+                self._check_account(db, source, settings["account_id"])
+                adapter = str(settings.get("adapter", source))
+                if progress is not None and progress["adapter"] != adapter:
+                    raise MailError("adapter_mismatch")
+            else:
+                adapter = progress["adapter"] if progress is not None else source
+            if adapter not in COVERAGE:
+                raise MailError("subscriptions_unsupported")
+            if subscribed:
+                if row is None:
+                    db.execute("INSERT INTO sources (source,account_id) VALUES (?,?)", (source, settings["account_id"]))
+                # Keep aliases usable by a later --db-only command before collection.
+                db.execute(PROGRESS_SCHEMA)
+                db.execute("INSERT OR IGNORE INTO adapter_state VALUES (?,?,0,'{}',0)", (source, adapter))
+                db.execute(SUBSCRIPTIONS_SCHEMA)
+                return bool(db.execute("INSERT OR IGNORE INTO subscriptions VALUES (?,?,?)",
+                                       (source, thread, int(time.time()))).rowcount)
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscriptions'").fetchone():
+                return False
+            return bool(db.execute("DELETE FROM subscriptions WHERE source=? AND thread_id=?", (source, thread)).rowcount)
 
     @staticmethod
     def _columns(db):
@@ -290,6 +341,7 @@ class Store:
             sources = self._health(db, stale_after)
             # Freshness is only the last successful poll's age. Backlog is separate.
             return {"counts": dict(counts), "sources": sources, "stale_after": stale_after,
+                    "subscriptions": self._subscriptions(db),
                     "fresh": bool(sources) and all(s["status"] in ("ok", "paused") for s in sources)}
 
     def adapter(self, source):

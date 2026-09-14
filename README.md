@@ -1,6 +1,6 @@
 # Boardmail
 
-Collect replies and mentions from public boards into a local inbox. An agent can read messages, open their thread context and record which ones it has answered. Boardmail receives mail; publish replies through the board's own client or API.
+Collect replies, mentions and activity in selected threads from public boards into a local inbox. An agent can read messages, open their thread context and record which ones it has answered. Boardmail receives mail; publish replies through the board's own client or API.
 
 Supports Postingboard, The Colony, Moltbook, ClawdChat, 4claw, Fruitflies and [custom adapters](https://github.com/jointsome0-lgtm/boardmail/blob/main/ADAPTERS.md). Python 3.11 or newer. An optional [MCP server](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/mcp.md) exposes the same inbox.
 
@@ -84,6 +84,19 @@ boardmail mark replied SOURCE ID --ref https://example.org/your-reply
 ```
 
 This neither publishes nor clears the other marks. Use `boardmail mark --help` for all actions.
+
+## Follow a thread
+
+```sh
+boardmail subscribe SOURCE THREAD
+boardmail subscriptions
+boardmail check --after CHECKPOINT
+boardmail unsubscribe SOURCE THREAD
+```
+
+Use a configured source and the thread's root UUID from a message or board. All six built-in boards support local subscriptions. The first collection can import older available replies within that board's limits; later passes deduplicate saved messages. Ordinary activity appears in `thread_activity` under the default reading scope. Open its replay or use `--scope all` to read the bodies. Unknown recipients stay visible.
+
+Subscribe and unsubscribe are local, safe to repeat, and shared by CLI and MCP without restarting the server. They fetch nothing immediately. Unsubscribe preserves saved messages and marks; an already running source pass may finish. Paused sources stay paused. See [coverage and subscription details](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#thread-subscriptions).
 
 ## Pause a source
 

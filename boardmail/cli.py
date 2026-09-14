@@ -63,6 +63,23 @@ def parser():
     s.add_argument("--scope", choices=("addressed", "all"), help="Default scope for check/list/wait")
     s.add_argument("--context", dest="context_mode", choices=("brief", "none"), help="Default local context for check/list/wait")
     s.add_argument("--reset", action="store_true", help="Restore defaults; cannot combine with other settings flags")
+    for command, summary in (("subscribe", "Collect activity in a selected thread"),
+                             ("unsubscribe", "Stop subscription collection for a selected thread")):
+        s = sub.add_parser(command, help=summary,
+                           description=summary + ". Local and idempotent; changes later collection passes.",
+                           epilog=f"Example: boardmail {command} SOURCE THREAD\n"
+                                  "Use a source with a built-in adapter and the root UUID from a message or board.\n"
+                                  "The first collection can import older available replies within the provider's limits.\n"
+                                  "Ordinary activity is summarized in addressed scope; unknown recipients remain visible.\n"
+                                  "Unsubscribe preserves saved mail and marks; an in-flight source pass may finish.\n"
+                                  "Source pauses still apply. Run collect/check separately; this command makes no requests.")
+        s.add_argument("source", metavar="SOURCE", help="Source using a built-in adapter, from status or config")
+        s.add_argument("thread", metavar="THREAD", help="Selected root UUID; not a message URL")
+    s = sub.add_parser("subscriptions", help="List local thread subscriptions",
+                       description="Read selected threads without collection, migration or marking mail.",
+                       epilog="Examples:\n  boardmail subscriptions\n  boardmail subscriptions --source SOURCE\n"
+                              "Subscriptions are shared by CLI and MCP clients of this database; changes need no MCP restart.")
+    s.add_argument("--source", metavar="SOURCE", help="Show only this source's subscriptions")
     for command, summary in (("pause", "Stop collection and remote context for one source"),
                              ("resume", "Enable a source for the next collection")):
         s = sub.add_parser(command, help=summary, description=summary + ". Keeps messages and progress.",
@@ -160,7 +177,7 @@ def run(args):
     # Local reads need no config when --db is supplied; an explicit config still
     # enables remote context lookups unless --local is given.
     needed = args.command in ("collect", "check") or args.db is None or (
-        args.config is not None and (args.command in ("pause", "resume") or
+        args.config is not None and (args.command in ("pause", "resume", "subscribe", "unsubscribe") or
                                     args.command in ("context", "expand") and not args.local))
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])

@@ -48,6 +48,30 @@ With `brief`, each shown message has a separate `brief` object containing root, 
 
 4claw's legacy parent IDs describe flat-thread membership, so briefs report the immediate parent as unknown. Fruitflies groups replies by their immediate parent; an answer can itself be that local thread's anchor. Built-in collectors retain at most 256 already fetched context originals per source pass. Not every board response includes a root or parent body, so missing local context is expected even after successful collection.
 
+## Thread subscriptions
+
+```sh
+boardmail subscribe SOURCE THREAD
+boardmail subscriptions --source SOURCE
+boardmail unsubscribe SOURCE THREAD
+```
+
+`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions. Custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
+
+Subscription commands make no remote request. A source pass takes a snapshot of the current selections when it starts. CLI and MCP share selections in this database without a server restart or config edit. The source must still be present in the collector's config. Source pauses and account/adapter identity checks apply. Subscribe neither resumes a source nor verifies that the remote root exists.
+
+The first collection imports available history within the adapter's bounds. It has no creation-date cutoff and does not automatically mark messages read. Later passes add unseen message IDs; they do not update the first saved snapshot. A subscription can therefore make older replies arrive now. `history: "available"` names this policy; every result still has `history_complete: false`.
+
+`subscribe` and `unsubscribe` are idempotent. Their result has `event: subscribed|unsubscribed`, `source`, `thread`, `subscribed`, `changed` and `collection_performed: false`. `subscriptions` lists `source`, `thread` and `subscribed_at` (local Unix seconds), ordered by source and root; its optional source filter makes no request. `status` includes the same complete list. Subscriptions are local selections, not remote board follows.
+
+Other-author activity discovered through a subscription can have `kind: "thread_activity"` and `discovery: "subscription"`. Addressing remains separate: verified direct replies and mentions are shown; confirmed ordinary thread activity is summarized under `addressed` and shown under `all`. Unknown recipients remain visible. In particular, 4claw's pages do not establish reply targets, so its subscription can deliver every reply body even under `addressed`. The root and your own messages supply context where available rather than incoming subscription mail.
+
+Unsubscribe removes the selection for future source passes, preserving saved messages, marks and delivery checkpoints. An already running pass can finish its snapshot. Independent notifications, mention discovery and configured threads continue to apply. Re-subscribing deduplicates existing records by source and ID. Per-root subscription progress is pruned during later collection; unrelated provider progress is retained.
+
+The selection table is added by `init`, collection or an explicit subscribe operation. Reading an older supported database, including `subscriptions` and `status`, does not migrate it. Explicit local selection changes preserve its schema version and existing mail. Use version 0.8.0 or later for subscription collection; earlier collectors ignore the selections.
+
+Coverage follows each provider's public interface; see the [source guides](../README.md#install-and-configure). 4claw uses bounded public HTML pages. Fruitflies recognizes descendants only through parent IDs in its bounded feed scans and retained ancestry; unseen ancestry can leave gaps. Neither an empty subscription pass nor a completed provider scan proves complete remote history.
+
 ## Pages and marks
 
 Commands return one JSON object, except `--help`. JSON escapes non-ASCII characters so the output remains readable by JSON parsers under non-UTF-8 stdout encodings.
@@ -164,7 +188,7 @@ Use a longer interval when required by a provider. A 429 stops the affected pass
 
 Sources commit confirmed messages, health and progress together. A failed request preserves confirmed arrivals and resumable progress. A failed check with no messages or changed progress updates health without advancing the checkpoint revision, so it cannot invalidate a concurrent collector's progress. Concurrent collectors may duplicate requests, but stale progress cannot overwrite newer progress; this reports `collection_conflict`. Collection does not call a model or acknowledge remote notifications.
 
-Discovery uses watched threads or retained notifications, depending on the [source setup](../README.md#install-and-configure). There is no creation-date cutoff. Only confirmed originals enter the inbox; notification prose is not stored as a message body. Saved bodies remain snapshots after edits or deletions. Provider retention, moderation, changing pages and errors limit coverage; empty or successful collection does not prove completeness.
+Discovery uses watched threads, retained notifications or local subscriptions, depending on the [source setup](../README.md#install-and-configure). There is no creation-date cutoff. Only confirmed originals enter the inbox; notification prose is not stored as a message body. Saved bodies remain snapshots after edits or deletions. Provider retention, moderation, changing pages and errors limit coverage; empty or successful collection does not prove completeness.
 
 For Postingboard, Colony and Moltbook, requests use fixed HTTPS hosts and refuse redirects. Each Postingboard root and each Colony/Moltbook source has a 45-second budget: up to one third for fresh discovery, the rest for backfill or unresolved originals. Notification passes read their head plus at most one deeper page and attempt at most 100 pending originals. Moltbook advances one comment page per attempt. Postingboard checks 30 newest replies and backfills up to 100 pages per pass. Pending items rotate, so one failure does not hold every later item behind it.
 

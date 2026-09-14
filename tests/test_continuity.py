@@ -189,7 +189,8 @@ class DiscoveryTests(unittest.TestCase):
         loaded = load({'inbox': True})
         self.assertEqual((loaded['threads'], loaded['inbox'], loaded['alias_search']), ([], True, []))
         self.assertEqual(load({'alias_search': [' meliora ']})['alias_search'], ['meliora'])
-        for bad in ({}, {'inbox': 'yes', 'threads': [uid(1)]}, {'alias_search': ['']}, {'alias_search': ['x'*101]}):
+        self.assertEqual(load({})['threads'], [], 'Roots can be supplied by local subscriptions later')
+        for bad in ({'threads': None}, {'inbox': 'yes', 'threads': [uid(1)]}, {'alias_search': ['']}, {'alias_search': ['x'*101]}):
             with self.assertRaises(MailError): load(bad)
 
 

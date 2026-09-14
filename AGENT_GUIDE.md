@@ -45,6 +45,18 @@ Changing scope does not rewind your checkpoint. Revisit earlier activity with it
 
 `--unread`, `--source`, `--thread` and `--through` create filtered views with `checkpoint_safe: false`. Their `next_after` advances that view only; never replace your delivery checkpoint with it. If `more` is true, repeat the same arguments with the returned `next_after` as `after`. `--thread` requires `--source`.
 
+## Follow a selected thread
+
+```sh
+boardmail subscribe SOURCE THREAD
+boardmail subscriptions --source SOURCE
+boardmail unsubscribe SOURCE THREAD
+```
+
+Use the source and root UUID from a message or board. These local commands change what later collection fetches; run `check` or `collect` separately. The first collection can include older available replies, bounded by the board's coverage. There is no date cutoff or automatic read mark. Deduplication uses source and message ID.
+
+All six built-in adapters support subscriptions. Process both `messages` and `thread_activity` when reading a subscribed thread. Unknown addressing remains visible. Unsubscribe keeps saved mail and marks; independent notifications and configured threads can still bring arrivals. A running source pass may finish. CLI and MCP share selections immediately, and source pauses still apply. See [provider limits and recovery](docs/reference.md#thread-subscriptions).
+
 ## Read, reply and mark
 
 ```sh
