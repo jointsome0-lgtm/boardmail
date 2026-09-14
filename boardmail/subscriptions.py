@@ -3,11 +3,14 @@
 The core supplies ``settings["subscriptions"]`` as root IDs selected locally.
 Providers keep per-root progress under ``state["subscriptions"]`` only while a
 root stays subscribed; ordinary notification and configured-thread progress is
-never touched here.
+never touched here. A root that consumes its pass keeps its own position and
+the next pass starts at the following root, so one slow thread cannot starve
+the others.
 """
 from .config import MailError, uuid
 
 STATE_KEY = "subscriptions"
+MAX_OWNERS = 400  # Retained ownership of fetched comments per root, oldest dropped first.
 
 
 def selected(settings):
@@ -44,8 +47,18 @@ def rotation(entry, roots):
     return ordered[index:] + ordered[:index]
 
 
+def following(roots, root):
+    """The root after ``root`` in sorted order, wrapping; the first when it is unknown."""
+    ordered = sorted(roots)
+    if not ordered:
+        return None
+    if root not in ordered:
+        return ordered[0]
+    return ordered[(ordered.index(root) + 1) % len(ordered)]
+
+
 def advance(entry, roots, resume):
-    """Remember where the next pass starts: the interrupted root, or the one after the last."""
+    """Remember where the next pass starts: the given root, or the first after a full pass."""
     ordered = sorted(roots)
     if not ordered:
         entry["next"] = None
@@ -53,3 +66,40 @@ def advance(entry, roots, resume):
         entry["next"] = resume
     else:
         entry["next"] = ordered[0]
+
+
+def restart(roots, root, consumed):
+    """Where the next pass starts after ``root`` was cut short: the root itself when it
+    had not yet read anything, otherwise the following one, so it waits one turn."""
+    return following(roots, root) if consumed else root
+
+
+def owners(progress):
+    """The saved ownership map of a root, verified as ``id -> True/False/None``."""
+    saved = progress.get("owners")
+    if not isinstance(saved, dict):
+        return {}
+    kept = {}
+    for key, value in saved.items():
+        try:
+            if value in (True, False, None) and uuid(key) == key:
+                kept[key] = value
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return kept
+
+
+def remember(owned, key, value):
+    """Record fetched ownership; the oldest entry leaves when the map is full."""
+    if key in owned:
+        del owned[key]
+    owned[key] = value
+    while len(owned) > MAX_OWNERS:
+        del owned[next(iter(owned))]
+
+
+def store_owners(progress, owned):
+    if owned:
+        progress["owners"] = owned
+    else:
+        progress.pop("owners", None)

@@ -311,9 +311,10 @@ def notification_mail(client, known, batch, mention=None):
 def subscription_mail(client, known, batch, mention):
     """Other-author activity in subscribed Colony/Moltbook threads, after notification work.
 
-    One extra source budget covers all subscribed roots in rotation, so a slow or
-    unavailable root cannot starve the next one. Each complete pass rereads a
-    thread from its head, so a comment missed by shifting pages is found later.
+    One extra source budget covers the subscribed roots in rotation. A root cut
+    short keeps its own page position; the next pass starts at the following root
+    when it had already read something this pass, so one slow thread waits a turn
+    instead of starving the rest. An unavailable root is skipped, never blocking.
     """
     colony = client.source == "the-colony"
     roots = subscriptions.selected(client.settings)
@@ -327,93 +328,117 @@ def subscription_mail(client, known, batch, mention):
             batch.complete, resume = False, root
             break
         progress = entry["roots"].setdefault(root, {})
+        consumed = [False]
         try:
-            if not scan_thread(client, root, progress, known, batch, mention, colony):
-                batch.complete, resume = False, root
+            if not scan_thread(client, root, progress, known, batch, mention, colony, consumed):
+                batch.complete, resume = False, subscriptions.restart(roots, root, consumed[0])
                 break
         except HTTPError as exc:
             if exc.code in (403, 404, 410):
                 exc.close(); batch.unavailable += 1
+                progress.clear()
                 continue
             if failure(batch, exc) == "http_429":
-                resume = root
+                resume = subscriptions.restart(roots, root, consumed[0])
                 break
         except FAILURES as exc:
             code = failure(batch, exc)
             if code in ("http_429", "budget_exhausted"):
-                resume = root
+                resume = subscriptions.restart(roots, root, consumed[0])
                 break
         resume = None
     subscriptions.advance(entry, roots, resume)
     if resume is not None: batch.complete = False
 
 
-def scan_thread(client, root, progress, known, batch, mention, colony):
-    """Read one subscribed thread's public root and comments from the head.
+def clear_position(progress):
+    for key in ("page", "cursor", "pages"):
+        progress.pop(key, None)
 
-    Nothing mid-thread is persisted: a cut-off pass delivers what it read and the
-    next pass rereads from the head, so parents seen on earlier pages keep their
-    ownership. Returns False when the read was cut short."""
+
+def scan_thread(client, root, progress, known, batch, mention, colony, consumed):
+    """Read one subscribed thread's public root, then comments from its saved position.
+
+    Every page is delivered as soon as it is read and the position after it is
+    saved, so a thread longer than one pass advances page by page and a finished
+    cycle restarts at the head to find later activity. Parent ownership comes from
+    the comments this root has fetched (a bounded map kept in its state); a parent
+    never fetched stays unknown. Returns False when the pass was cut short."""
     raw = client.get("/posts/"+root)
+    consumed[0] = True
     post = raw if colony else raw["post"]
     if uuid(post["id"]) != root: raise ValueError("Unexpected thread")
     if post.get("is_deleted") or post.get("is_spam"):
         batch.unavailable += 1
+        progress.clear()
         return True
     title = text(post.get("title") or "Public reply")
     author = post.get("author") if isinstance(post.get("author"), dict) else {}
-    root_own = uuid(author["id"]) == client.owner if author.get("id") else None
+    owned = subscriptions.owners(progress)
+    subscriptions.remember(owned, root, uuid(author["id"]) == client.owner if author.get("id") else None)
     retain_original(client, batch, post, root, root, title)  # The root is context, never inbox mail.
-    originals, path, complete, interrupted = [], "/posts/"+root+"/comments", False, None
+    path = "/posts/"+root+"/comments"
+
+    def deliver(originals):
+        originals = list(originals)
+        for original in originals:  # Ownership first: a parent usually precedes its replies.
+            try:
+                if original.get("post_id") and uuid(original["post_id"]) != root: continue
+                author = original.get("author") if isinstance(original.get("author"), dict) else {}
+                subscriptions.remember(owned, uuid(original["id"]),
+                                       uuid(author["id"]) == client.owner if author.get("id") else None)
+            except FAILURES as exc:
+                failure(batch, exc)
+        for original in originals:
+            try:
+                mid = uuid(original["id"])
+                if original.get("post_id") and uuid(original["post_id"]) != root: continue
+                if original.get("is_deleted") or original.get("is_spam"): continue
+                if owned.get(mid) is True:
+                    retain_original(client, batch, original, mid, root, title)
+                    continue
+                if mid in known or mid == root: continue
+                message = notification_message(client, original, mid, root, title)
+                # An explicit null parent is a reply to the root; a missing field proves nothing.
+                parent = owned.get(message["parent_id"]) if message["parent_id"] else (
+                    owned.get(root) if "parent_id" in original else None)
+                body = original.get("body" if colony else "content")
+                message["addressing"] = addressing.resolve(direct=parent is True, mention=addressing.mentions(mention, body), thread=parent is False)
+                batch.messages.append({**message, "kind": "thread_activity", "discovery": "subscription"})
+                known.add(mid)
+            except FAILURES as exc:
+                failure(batch, exc)
+
     try:
-        if colony:
-            for number in range(1, MAX_PAGES+1):
+        for _ in range(MAX_PAGES):
+            if colony:
+                number = progress.get("page") if type(progress.get("page")) is int and progress.get("page") >= 1 else 1
                 page_raw = client.get(path, {"limit": PAGE_SIZE, "page": number})
                 items, more = page_raw["items"], page_raw["has_more"]
                 if not isinstance(items, list) or type(more) is not bool: raise ValueError("Invalid page")
-                originals.extend(items)
-                if not more or not items:
-                    complete = True
-                    break
-        else:
-            position, visited = None, set()
-            for _ in range(MAX_PAGES):
+                deliver(items)
+                done = not more or not items or number >= MAX_PAGES
+                if done: clear_position(progress)
+                else: progress["page"] = number+1
+            else:
+                cursor, pages = progress.get("cursor"), progress.get("pages")
+                position = {"cursor": cursor} if isinstance(cursor, str) and cursor else None
+                pages = pages if position and type(pages) is int and pages >= 0 else 0
                 items, following = page(client, path, "comments", position)
-                originals.extend(descendants(items, batch))
-                if following is None:
-                    complete = True
-                    break
-                if following["cursor"] in visited: raise MailError("pagination_no_progress")
-                visited.add(following["cursor"])
-                position = following
-    except FAILURES as exc:
-        interrupted = exc
-    tree = {root: root_own}
-    for original in originals:
-        try:
-            author = original.get("author") if isinstance(original.get("author"), dict) else {}
-            tree[uuid(original["id"])] = uuid(author["id"]) == client.owner if author.get("id") else None
-        except FAILURES as exc:
-            failure(batch, exc)
-    for original in originals:
-        try:
-            mid = uuid(original["id"])
-            if original.get("post_id") and uuid(original["post_id"]) != root: continue
-            if original.get("is_deleted") or original.get("is_spam"): continue
-            if tree.get(mid) is True:
-                retain_original(client, batch, original, mid, root, title)
-                continue
-            if mid in known or mid == root: continue
-            message = notification_message(client, original, mid, root, title)
-            parent = tree.get(message["parent_id"] or root)
-            body = original.get("body" if colony else "content")
-            message["addressing"] = addressing.resolve(direct=parent is True, mention=addressing.mentions(mention, body), thread=parent is False)
-            batch.messages.append({**message, "kind": "thread_activity", "discovery": "subscription"})
-            known.add(mid)
-        except FAILURES as exc:
-            failure(batch, exc)
-    if interrupted is not None: raise interrupted
-    return complete
+                deliver(descendants(items, batch))
+                done = following is None or pages+1 >= MAX_PAGES
+                if done: clear_position(progress)
+                else: progress["cursor"], progress["pages"] = following["cursor"], pages+1
+            subscriptions.store_owners(progress, owned)
+            if done: return True
+        return False
+    except (HTTPError, MailError) as exc:
+        # A saved position the board no longer accepts restarts at the head next pass.
+        if (isinstance(exc, HTTPError) and exc.code in (400, 404, 410)) or str(exc) == "pagination_no_progress":
+            clear_position(progress)
+        raise
+    finally:
+        subscriptions.store_owners(progress, owned)
 
 
 def resolve_original(client, entry, known, batch, colony, mention=None):
@@ -572,11 +597,12 @@ def postingboard_mail(client, known, batch, explicit=None):
     cursors = state.setdefault("threads", {})
     subscribed = subscriptions.selected(settings)
     entry = subscriptions.progress(state, subscribed)
-    for root in [r for r in cursors if r not in settings["threads"] and r not in subscribed]:
+    configured = settings.get("threads") or []  # Missing or empty for a subscription-only setup.
+    for root in [r for r in cursors if r not in configured and r not in subscribed]:
         del cursors[root]  # Progress of a dropped subscription; configured roots keep theirs.
     for root in subscribed:
         entry["roots"].setdefault(root, {})
-    for thread in dict.fromkeys([*settings["threads"], *subscribed]):
+    for thread in dict.fromkeys([*configured, *subscribed]):
         path = "/v1/posts/"+thread
         end = time.monotonic()+SOURCE_SECONDS
         first = None

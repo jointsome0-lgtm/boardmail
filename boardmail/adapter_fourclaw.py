@@ -136,19 +136,20 @@ def collect(settings, state, known):
     """One round-robin window, including failures, with constant-size progress."""
     try:
         account = settings["account_id"]
-        threads = settings["watched_threads"]
+        threads = settings.get("watched_threads", [])  # Missing or empty for a subscription-only setup.
         aliases = settings.get("mention_aliases", [account])
         if not isinstance(account, str) or not re.fullmatch(r"[A-Za-z0-9_]{2,64}", account): raise ValueError()
-        if not isinstance(threads, list) or not 1 <= len(threads) <= 100: raise ValueError()
+        if not isinstance(threads, list) or len(threads) > 100: raise ValueError()
         if not all(isinstance(t, str) and str(UUID(t)) == t for t in threads): raise ValueError()
         threads = list(dict.fromkeys(threads))
         if not isinstance(aliases, list) or len(aliases) > 20: raise ValueError()
         if not all(isinstance(a, str) and re.fullmatch(r"[A-Za-z0-9_]{2,64}", a) for a in aliases): raise ValueError()
         selected = subscriptions.selected(settings)
+        # Subscribed roots join the bounded rotation; the cap of 100 applies to configured pages only.
+        threads = list(dict.fromkeys([*threads, *selected]))
+        if not threads: raise ValueError()
     except (KeyError, ValueError, TypeError, AttributeError, MailError):
         return Batch(state=state, complete=False, error="invalid_config")
-    # Subscribed roots join the bounded rotation; the configured cap is unchanged.
-    threads = list(dict.fromkeys([*threads, *selected]))
     offset = state.get("next_thread", 0)
     if type(offset) is not int or not 0 <= offset < len(threads): offset = 0
     batch = Batch(complete=False)

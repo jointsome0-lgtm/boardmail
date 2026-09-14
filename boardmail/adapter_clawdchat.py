@@ -23,6 +23,7 @@ SUBSCRIPTION_REQUESTS = 10   # Reserved for subscribed threads when any exist.
 SUBSCRIPTION_SECONDS = 11
 COMMENT_PAGE = 20
 MAX_PENDING_PARENTS = 20
+MAX_SERVED = 200            # Parents a retained page may queue before it is consumed with an error.
 KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
          "mention_post": "mention", "mention_comment": "mention"}
 
@@ -376,68 +377,125 @@ def _node(client, node, post_id, title):
     return message, own
 
 
-def _walk(client, nodes, pending, seen_ids):
-    """Flatten a listed tree; queue parents whose replies were cut by depth or paging,
-    with the parent's ownership so a later pass can still address its children."""
-    stack = list(nodes)
+def _walk(client, nodes, pending, served, out):
+    """Flatten a listed tree into ``out``. A node whose replies were cut by depth or
+    paging is queued once, with its ownership, so a later pass can still address its
+    children; ``served`` remembers what this unit already queued. Returns True when
+    the queue was full for some node, so the caller retains the unit instead of
+    silently dropping that branch."""
+    stack, queued, full = list(nodes), {entry[0] for entry in pending}, False
     while stack:
         node = stack.pop()
         if not isinstance(node, dict):
             raise ValueError()
-        yield node
+        out.append(node)
         replies = node.get("replies") or []
         if not isinstance(replies, list):
             raise ValueError()
-        if node.get("has_more_replies") and len(pending) < MAX_PENDING_PARENTS and node.get("id") not in seen_ids:
-            author = node.get("author") if isinstance(node.get("author"), dict) else {}
-            own = uuid(author["id"]) == client.owner if author.get("id") else None
-            pending.append([uuid(node["id"]), len(replies), own])
-        seen_ids.add(node.get("id"))
+        if node.get("has_more_replies"):
+            parent = uuid(node["id"])
+            if parent not in queued and parent not in served:
+                if len(pending) < MAX_PENDING_PARENTS:
+                    author = node.get("author") if isinstance(node.get("author"), dict) else {}
+                    own = uuid(author["id"]) == client.owner if author.get("id") else None
+                    pending.append([parent, len(replies), own])
+                    queued.add(parent)
+                    served.append(parent)
+                else:
+                    full = True
         stack.extend(replies)
+    return full
+
+
+def _progress(progress):
+    """Saved position of one root, verified: head offset, cycle phase, parent queue and
+    the parents each retained unit already queued."""
+    skip = progress.get("skip")
+    skip = skip if type(skip) is int and skip >= 0 else 0
+    pending = []
+    if isinstance(progress.get("pending"), list):
+        for entry in progress["pending"][:MAX_PENDING_PARENTS]:
+            try:
+                if (isinstance(entry, list) and len(entry) == 3 and uuid(entry[0]) == entry[0]
+                        and type(entry[1]) is int and entry[1] >= 0 and entry[2] in (True, False, None)
+                        and entry[0] not in {e[0] for e in pending}):
+                    pending.append([entry[0], entry[1], entry[2]])
+            except (ValueError, TypeError, AttributeError):
+                continue
+    served = {}
+    if isinstance(progress.get("served"), dict):
+        for unit, ids in progress["served"].items():
+            if isinstance(ids, list) and all(isinstance(i, str) for i in ids):
+                served[unit] = list(ids)[:MAX_SERVED]
+    return skip, progress.get("done") is True, pending, served
 
 
 def _scan(client, root, progress, batch, seen, mention):
-    """One subscribed thread: root as context, top-level pages, then parents whose
-    replies were cut. A cut-off pass still delivers what it listed; the saved
-    position resumes next pass. Returns False when cut short."""
+    """One subscribed thread: root as context, then saved parent work, then top-level
+    pages from the saved offset. Every listing read is delivered at once and the
+    position after it is saved, so a long thread advances across passes and a
+    finished cycle restarts at the head for later activity. When the parent queue
+    is full the current page boundary is retained until its queued children are
+    serviced, so no deep branch is dropped. Raises when cut short."""
     message, root_own, _, _ = _fetch(client, {"id": root, "post": root, "is_post": True, "kind": "mention"})
     addressing.cache_original(batch, message)
     title = message["title"]
     path = "/posts/" + root + "/comments"
-    nodes, tree = [], {root: root_own}
-    pending = [p for p in progress.get("pending", []) if isinstance(p, list) and len(p) == 3] if isinstance(progress.get("pending"), list) else []
+    skip, done, pending, served = _progress(progress)
+    tree = {root: root_own}
     for parent, _, own in pending:
         tree.setdefault(parent, own)
-    skip = progress.get("skip") if type(progress.get("skip")) is int and progress.get("skip") >= 0 else 0
-    listed, complete, interrupted = set(), False, None
+    nodes, interrupted = [], None
+
+    def save():
+        progress.clear()
+        progress["skip"], progress["pending"] = skip, pending
+        if done:
+            progress["done"] = True
+        if served:
+            progress["served"] = served
+
+    def retained(full, unit):
+        """Whether an overflowing unit can wait; beyond the bound it is consumed with an explicit error."""
+        if full and sum(len(ids) for ids in served.values()) <= MAX_SERVED:
+            return True
+        if full:
+            _error(batch, MailError("pending_overflow"))
+        served.pop(unit, None)
+        return False
+
     try:
         while True:
-            progress["skip"], progress["pending"] = skip, pending
+            save()
+            if pending:
+                parent, offset, own = pending[0]
+                raw = client.get(path, {"parent_id": parent, "max_depth": 20, "limit": COMMENT_PAGE, "skip": offset})
+                children, total = raw["comments"], raw["total"]
+                if not isinstance(children, list) or type(total) is not int:
+                    raise ValueError()
+                pending.pop(0)
+                full = _walk(client, children, pending, served.setdefault(parent, []), nodes)
+                if retained(full, parent):
+                    pending.append([parent, offset, own])  # Reread after its queued children are serviced.
+                elif children and offset + len(children) < total:
+                    pending.append([parent, offset + len(children), own])
+                continue
+            if done:
+                done, skip = False, 0
+                break
             raw = client.get(path, {"max_depth": 20, "limit": COMMENT_PAGE, "skip": skip, "sort": "new"})
             top, total = raw["comments"], raw["total"]
             if not isinstance(top, list) or type(total) is not int or not 0 <= total < 2**63:
                 raise ValueError()
-            nodes.extend(_walk(client, top, pending, listed))
+            full = _walk(client, top, pending, served.setdefault("head", []), nodes)
+            if retained(full, "head"):
+                continue  # The queue drains first; this page is reread at the same offset.
             skip += len(top)
             if not top or skip >= total:
-                skip = 0
-                break
-        # Parents whose replies were cut: one bounded page each, resumed across passes.
-        while pending:
-            parent, offset, own = pending[0]
-            progress["skip"], progress["pending"] = skip, pending
-            raw = client.get(path, {"parent_id": parent, "max_depth": 20, "limit": COMMENT_PAGE, "skip": offset})
-            children, total = raw["comments"], raw["total"]
-            if not isinstance(children, list) or type(total) is not int:
-                raise ValueError()
-            nodes.extend(_walk(client, children, pending, listed))
-            pending.pop(0)
-            if children and offset + len(children) < total and len(pending) < MAX_PENDING_PARENTS:
-                pending.append([parent, offset + len(children), own])
-        complete = True
+                skip, done = 0, True
     except FAILURES as exc:
         interrupted = exc
-    progress["skip"], progress["pending"] = skip, pending
+    save()
     normalized = []
     for node in nodes:
         try:
@@ -448,14 +506,15 @@ def _scan(client, root, progress, batch, seen, mention):
         if item is None:
             continue
         tree[item["id"]] = own
-        normalized.append((item, own))
-    for item, own in normalized:
+        normalized.append((item, own, "parent_id" in node))
+    for item, own, explicit in normalized:
         if own:
             addressing.cache_original(batch, item)
             continue
         if item["id"] in seen:
             continue
-        parent = tree.get(item["parent_id"] or root)
+        # An explicit null parent is a reply to the root; a missing field proves nothing.
+        parent = tree.get(item["parent_id"]) if item["parent_id"] else (tree.get(root) if explicit else None)
         textual = addressing.mentions(mention, item["body"])
         item["addressing"] = addressing.resolve(direct=parent is True, mention=textual, thread=parent is False)
         item["discovery"] = "subscription"
@@ -463,18 +522,19 @@ def _scan(client, root, progress, batch, seen, mention):
         seen.add(item["id"])
     if interrupted is not None:
         raise interrupted
-    return complete
+    return True
 
 
 def _subscribed(client, selected, batch, seen, mention):
+    """Subscribed roots in rotation. A root cut short keeps its own position; when it
+    had already read something this pass the next pass starts at the following root."""
     entry = batch.state["subscriptions"]
     resume = None
     for root in subscriptions.rotation(entry, selected):
         progress = entry["roots"].setdefault(root, {})
+        before = client.requests
         try:
-            if not _scan(client, root, progress, batch, seen, mention):
-                resume = root
-                break
+            _scan(client, root, progress, batch, seen, mention)
         except FAILURES as exc:
             code = str(exc) if isinstance(exc, MailError) else "invalid_response"
             if code in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
@@ -483,7 +543,7 @@ def _subscribed(client, selected, batch, seen, mention):
                 continue
             _error(batch, exc)
             if code in ("http_429", "budget_exhausted"):
-                resume = root
+                resume = subscriptions.restart(selected, root, client.requests > before)
                 break
         resume = None
     subscriptions.advance(entry, selected, resume)
