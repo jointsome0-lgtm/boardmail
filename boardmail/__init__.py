@@ -1,2 +1,2 @@
 """Public-board mail collected locally, without launching agents."""
-__version__ = "0.8.0"
+__version__ = "0.8.1"
