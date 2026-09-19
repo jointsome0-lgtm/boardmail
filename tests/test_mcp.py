@@ -40,11 +40,11 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','list','show','wait','mark','context','expand','pause','resume')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','list','show','wait','mark','context','expand','pause','resume','reply_prepare','reply_begin','reply_show','reply_confirm')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
-                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions'))
+                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_reply_show'))
                 self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
@@ -110,6 +110,47 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.store.save('moltbook',uid(2),[mail(10)])
                 page = await self.call(c, 'wait', {'after':0,'timeout':0})
                 self.assertEqual((page['event'],page['next_after']), ('messages',1))
+
+    async def test_reply_attempt_survives_cli_mcp_handoffs_without_reset_or_implicit_marks(self):
+        self.store.initialize()
+        self.store.save('moltbook', uid(2), [mail(10)])
+        self.store.mark('moltbook', uid(10), 'needs_reply')
+        target = {'source':'moltbook', 'id':uid(10)}
+        body = 'Exact synthetic reply.\r\nКириллица.\n'
+        path = Path(self.temp.name) / 'reply.txt'; path.write_bytes(body.encode('utf-8'))
+        async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
+            self.assertIsNone((await self.call(c, 'reply_show', target))['reply'])
+            run = await asyncio.to_thread(subprocess.run,
+                [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'reply', 'prepare',
+                 target['source'], target['id'], '--body-file', str(path)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            prepared = json.loads(run.stdout)
+            key = prepared['reply']['idempotency_key']
+            begun = await self.call(c, 'reply_begin', {**target, 'key':key})
+            self.assertTrue(begun['send_allowed'])
+            repeat = await self.call(c, 'reply_prepare', {**target, 'body':body})
+            self.assertEqual((repeat['reply']['state'], repeat['reply']['idempotency_key']), ('unknown', key))
+            self.assertFalse(repeat['send_allowed'])
+            repeat = await self.call(c, 'reply_begin', {**target, 'key':key})
+            self.assertFalse(repeat['send_allowed'])
+            for args in ({**target, 'body':body, 'replace_key':key, 'unexpected':True},
+                         {**target, 'body':123}, {**target, 'body':body, 'replace_key':False}):
+                self.assertEqual((await self.call(c, 'reply_prepare', args, error=True))['error'], 'invalid_arguments')
+            receipt = {**target, 'key':key, 'ref':'https://example.invalid/reply', 'readback_body':body}
+            mismatch = await self.call(c, 'reply_confirm', {**receipt, 'readback_body':body.rstrip()}, error=True)
+            self.assertEqual(mismatch['error'], 'reply_readback_mismatch')
+            confirmed = await self.call(c, 'reply_confirm', receipt)
+            self.assertEqual(confirmed['reply']['state'], 'confirmed')
+            self.assertFalse(confirmed['remote_verified'])
+            self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
+            self.assertIsNone(confirmed['message']['read_at'])
+            self.assertTrue(confirmed['message']['needs_reply'])
+            self.assertEqual(confirmed['message']['reply_ref'], receipt['ref'])
+            run = await asyncio.to_thread(subprocess.run,
+                [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'reply', 'show',
+                 target['source'], target['id']], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(json.loads(run.stdout)['reply'], confirmed['reply'])
 
     async def test_reading_settings_thread_summary_and_replay(self):
         self.store.initialize()
@@ -269,7 +310,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),16)
+                self.assertEqual(len((await c.list_tools()).tools),20)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):

@@ -3,7 +3,7 @@ from copy import deepcopy
 import math
 import sqlite3
 
-from . import config, providers, reader
+from . import config, providers, reader, replies
 from .adapters import next_action
 from .config import MailError
 
@@ -31,7 +31,11 @@ def outcome(operation):
 
 def execute(store, command, *, sources=None, after=0, limit=None, unread=False, timeout=1800, source=None,
             id=None, action=None, ref=None, cancelled=None, require_fresh=False, stale_after=None, local=False,
-            scope=None, context_mode=None, reset=False, through=None, thread=None):
+            scope=None, context_mode=None, reset=False, through=None, thread=None,
+            body=None, key=None, readback_body=None, replace_key=None):
+    if command.startswith('reply_'):
+        return replies.execute(store, command.removeprefix('reply_'), source, id, body=body,
+                               key=key, readback_body=readback_body, ref=ref, replace_key=replace_key)
     if limit is None:
         limit = EXPAND_LIMIT if command == "expand" else 100
     if command in ("subscribe", "unsubscribe", "subscriptions"):

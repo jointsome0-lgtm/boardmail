@@ -44,6 +44,10 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_expand` | `source`, `thread`, `through`, `after=0`, `limit=20`, `local=false` | Saved thread interval with full target/parent context and one shared root. Bounded pagination; incomplete context is an error result. Never advances the delivery checkpoint. |
 | `boardmail_wait` | `after=0`, `limit=100`, `timeout=30` | Local arrival page or timeout. Timeout range is 0 to 60 seconds. |
 | `boardmail_mark` | `source`, `id`, `action`, optional `ref` | Change one local mark and return the message. |
+| `boardmail_reply_prepare` | `source`, `id`, `body`, optional `replace_key` | Save exact reply text and a stable key; repeat without resetting an unknown outcome. |
+| `boardmail_reply_begin` | `source`, `id`, `key` | Record an unknown outcome before external publication. Only the first successful begin allows the first send. |
+| `boardmail_reply_show` | `source`, `id` | Recover the saved attempt and incoming marks without writing or fetching. |
+| `boardmail_reply_confirm` | `source`, `id`, `key`, `ref`, `readback_body` | Compare caller readback with saved text and atomically record its receipt and replied mark. No remote verification by Boardmail. |
 
 `limit` is 1 to 500 for check/list/wait and 1 to 100 for expand. Use the exact source and string ID returned in a message. Mark actions match the CLI: `read`, `unread`, `needs-reply`, `clear-reply`, `replied`. Only `replied` accepts and requires `ref`, an HTTP(S) URL for a reply already sent elsewhere. It does not publish, mark read or clear `needs_reply`.
 
@@ -54,6 +58,8 @@ Displayed messages include `shown_because`; `recipient_unconfirmed_shown_by_defa
 Pass a summary's `expand.arguments` directly to `boardmail_expand` to open the interval with context in one call. Resolve a parent with `status: same_as_root` through the shared root. Follow `more` using `next_after` with the same `through`; retry failed originals with the original page bounds. `checkpoint_safe` is always false. `complete` requires successful current originals when remote lookup is enabled, including when saved copies exist. See the [expansion contract](reference.md#expand-a-thread-interval) for its shared budget and empty-page behavior.
 
 Every tool returns the CLI's JSON shape in both MCP text content and `structuredContent`, including `history_complete: false`. Errors retain safe codes and `next_action`, and set `isError: true`. A partially failed collection also sets `isError: true`; read its saved arrivals before retrying. Timeout is a normal result. Invalid tool arguments produce `invalid_arguments` without echoing the submitted values.
+
+Reply tools use text directly, never a caller-supplied file path. Bodies are nonempty UTF-8, at most 65,536 encoded bytes; line endings are exact. After an interrupted external POST, `reply_show` returns the original key and text with `state: unknown`; repeating prepare or begin never authorizes a duplicate first send. Confirm records caller-supplied evidence, with `confirmation_basis: caller_supplied_readback` and `remote_verified: false`. The caller checks author, thread, target and provider status independently. Read/needs-reply marks and delivery checkpoints remain separate. See [reply states, recovery and errors](replies.md).
 
 `boardmail_context` uses the [shared context contract](reference.md#context), including Moltbook's thread requirement. Read `remote_status` and `error` before relying on a saved snapshot. `differs_from_saved` compares against first collection, not a draft's version. `previous_exchange` finds exact recorded reply links for all four supported context sources; a link does not close a question or change local marks.
 

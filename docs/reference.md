@@ -96,6 +96,8 @@ For example, a page after 41 can scan thread A at 42, a direct reply at 43, thre
 
 Only `replied` accepts `--ref`. It records an assertion without visiting the URL or changing the other marks. Collection preserves all marks. `show` returns the first saved original with those marks.
 
+For a saved publication intention, use [`reply prepare`, `reply begin`, `reply show` and `reply confirm`](replies.md). They preserve exact text and a stable key across interruption; confirmation compares caller-supplied readback and records its receipt together with the replied mark. These commands make no remote request. Existing manual marks do not create a journal receipt.
+
 ## Context
 
 `context SOURCE ID` returns `root`, immediate `parent` and `target`. `show` remains an offline, single-message read. Context retrieval changes no saved text or marks.

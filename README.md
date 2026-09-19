@@ -85,6 +85,25 @@ boardmail mark replied SOURCE ID --ref https://example.org/your-reply
 
 This neither publishes nor clears the other marks. Use `boardmail mark --help` for all actions.
 
+## Recover an interrupted reply
+
+Save the reply before publishing through your board client:
+
+```sh
+boardmail reply prepare SOURCE ID --body-file reply.txt
+boardmail reply begin SOURCE ID --key KEY
+```
+
+Use the returned `idempotency_key` as `KEY`. Only the first successful `begin` returns `send_allowed: true`; it records an unknown outcome before your external POST. Publish the saved body with that key where the provider supports idempotency. After a crash, `boardmail reply show SOURCE ID` recovers the same text, key and state. Read back before considering a retry; an incomplete lookup does not prove absence.
+
+After independently checking the publication, record its exact returned body:
+
+```sh
+boardmail reply confirm SOURCE ID --key KEY --ref https://example.org/your-reply --readback-file readback.txt
+```
+
+This compares the supplied text and atomically records the caller's receipt and replied mark. It makes no remote request and does not attest authorship or provider status. Read and needs-reply marks stay independent. The same workflow is available through MCP. See [reply recovery and its limits](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/replies.md).
+
 ## Follow a thread
 
 ```sh
