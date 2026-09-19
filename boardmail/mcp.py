@@ -167,7 +167,7 @@ def create_server(store, sources=None):
                           **({"dependentRequired": {"thread": ["source"]}} if command == "list" else {})},
             output_schema=output_schema,
             annotations=ToolAnnotations(read_only_hint=command in ("status", "list", "show", "wait", "context", "expand", "subscriptions", "reply_show"),
-                                        destructive_hint=False, idempotent_hint=command in ("status", "list", "show", "wait", "context", "expand", "pause", "resume", "subscribe", "unsubscribe", "subscriptions", "reply_prepare", "reply_begin", "reply_show", "reply_confirm"),
+                                        destructive_hint=command == "reply_prepare", idempotent_hint=command in ("status", "list", "show", "wait", "context", "expand", "pause", "resume", "subscribe", "unsubscribe", "subscriptions", "reply_prepare", "reply_begin", "reply_show", "reply_confirm"),
                                         open_world_hint=command in ("collect", "check", "context", "expand")),
         )
     # Adapter output redirection is process-wide. Do not overlap collectors.

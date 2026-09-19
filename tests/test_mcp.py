@@ -44,6 +44,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
+                self.assertEqual(t.annotations.destructive_hint, t.name == 'boardmail_reply_prepare')
                 self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_reply_show'))
                 self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand'))
             missing = await self.call(c, 'status', error=True)
