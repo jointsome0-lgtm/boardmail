@@ -40,6 +40,12 @@ def next_action(error):
     if error == "subscription_config_required": return "rerun_with_config_to_identify_source_adapter"
     if error == "invalid_thread_id": return "use_a_thread_uuid_from_a_message_or_board"
     if error == "invalid_settings": return "run_settings_reset"
+    if error == "invalid_reply_body": return "use_nonempty_utf8_text_up_to_65536_bytes"
+    if error == "reply_not_prepared": return "prepare_reply_before_publishing"
+    if error == "reply_not_started": return "begin_before_publishing"
+    if error in ("reply_key_mismatch", "reply_body_conflict"): return "show_saved_reply_before_changing_a_draft"
+    if error in ("reply_already_recorded", "reply_already_started"): return "inspect_saved_reply_do_not_publish_again"
+    if error in ("reply_readback_mismatch", "reply_reference_conflict"): return "reconcile_publication_before_confirming"
     if error in ("unsupported_database", "local_state_error"): return "inspect_database_do_not_delete"
     if error in ("adapter_load_failed", "adapter_version_unsupported", "invalid_adapter_result", "adapter_failed"):
         return "check_trusted_adapter_code"

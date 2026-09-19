@@ -5,7 +5,7 @@ from pathlib import Path
 import signal
 import threading
 
-from . import commands, config
+from . import commands, config, replies
 from .config import MailError
 from .store import Store
 
@@ -170,6 +170,39 @@ def parser():
     s.add_argument("--limit", type=int, default=commands.EXPAND_LIMIT, metavar="N",
                    help="Saved messages per page; 1 to 100, default %(default)s")
     s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
+    s = sub.add_parser('reply', help='Save and recover a reply attempt without publishing',
+                       description='One durable reply per incoming message. Publishing and independent readback belong to the caller.',
+                       epilog='Prepare exact text, then begin BEFORE the external POST. After any interruption, show the saved attempt.\n'
+                              'An unknown outcome requires readback before any provider-supported retry, using the same key and body.\n'
+                              'Confirm records your readback assertion and replied mark; it makes no remote request.')
+    actions = s.add_subparsers(dest='reply_action', required=True)
+    for action, summary in (('prepare', 'Save exact reply text and a stable idempotency key'),
+                            ('begin', 'Record an unknown outcome before the external POST'),
+                            ('show', 'Recover the saved reply and independent incoming marks'),
+                            ('confirm', 'Record caller readback matching the saved reply text')):
+        a = actions.add_parser(action, help=summary, description=summary + '.',
+                               epilog='All commands are local. Never infer absence from an incomplete board lookup.\n'
+                                      'Boardmail does not publish, retry, fetch a reply URL or verify authorship.')
+        a.add_argument('source', metavar='SOURCE', help='Source from the saved incoming message')
+        a.add_argument('id', metavar='ID', help='Exact incoming message ID')
+        if action == 'prepare':
+            a.add_argument('--body-file', type=Path, required=True, metavar='PATH',
+                           help='Nonempty UTF-8 reply, at most 65536 bytes; preserves every newline')
+            a.add_argument('--replace-key', metavar='KEY',
+                           help='Explicitly replace this still-prepared draft; rejected after begin')
+            a.epilog += '\nExample: boardmail reply prepare SOURCE ID --body-file reply.txt\nSame text returns the existing key and state.'
+        if action in ('begin', 'confirm'):
+            a.add_argument('--key', required=True, metavar='KEY', help='Exact saved idempotency_key; stale keys are rejected')
+        if action == 'begin':
+            a.epilog += ('\nExample: boardmail reply begin SOURCE ID --key KEY\n'
+                         'Only the first successful begin returns send_allowed: true. Repeated begin requires reconciliation.')
+        if action == 'confirm':
+            a.add_argument('--ref', required=True, metavar='URL', help='Published reply URL independently checked by the caller')
+            a.add_argument('--readback-file', type=Path, required=True, metavar='PATH',
+                           help='Exact UTF-8 body read from the published reply, not your draft file')
+            a.epilog += ('\nExample: boardmail reply confirm SOURCE ID --key KEY --ref https://example.org/reply --readback-file readback.txt\n'
+                         'Check the account, thread, reply target and provider status yourself. Matching text alone cannot establish those.\n'
+                         'Atomically records the caller receipt and replied mark; leaves read and needs-reply unchanged.')
     return p
 
 
@@ -182,8 +215,14 @@ def run(args):
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])
     options = {key: value for key, value in vars(args).items() if key not in ("config", "db", "command")}
+    command = args.command
+    if command == 'reply':
+        command = 'reply_' + options.pop('reply_action')
+        for file_key, body_key in (('body_file', 'body'), ('readback_file', 'readback_body')):
+            if file_key in options:
+                options[body_key] = replies.read_body(options.pop(file_key))
     def invoke():
-        return commands.execute(store, args.command, sources=data["sources"] if data else None, **options)
+        return commands.execute(store, command, sources=data["sources"] if data else None, **options)
     if args.command == "wait":
         cancelled = threading.Event()
         options["cancelled"] = cancelled
