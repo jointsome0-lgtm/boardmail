@@ -80,6 +80,33 @@ def parser():
                        epilog="Examples:\n  boardmail subscriptions\n  boardmail subscriptions --source SOURCE\n"
                               "Subscriptions are shared by CLI and MCP clients of this database; changes need no MCP restart.")
     s.add_argument("--source", metavar="SOURCE", help="Show only this source's subscriptions")
+    sub.add_parser('tags', help='List local topics and unread counts without message bodies',
+                   description='Group selected threads across boards; always includes an untagged queue.',
+                   epilog='Run collect separately, then tags. Copy a topic read action to read only its unread mail.\n'
+                          'Tags may overlap; read marks are shared. No collection, marking or migration on this read.')
+    s = sub.add_parser('tag', help='Group whole threads for local reading',
+                       description='Tags group saved mail. Subscriptions independently control collection.',
+                       epilog='Names: 1 to 64 lowercase letters, digits, underscores or hyphens; start with a letter or digit.\n'
+                              'Examples: htalk, agent-memory. Tagging never subscribes, fetches or marks mail.')
+    actions = s.add_subparsers(dest='tag_action', required=True)
+    for action in ('add', 'remove'):
+        a = actions.add_parser(action, help=action.capitalize() + ' a thread membership',
+                               description='Local and idempotent. Select exactly one thread ID or saved message ID.',
+                               epilog=f'Examples:\n  boardmail tag {action} htalk SOURCE THREAD\n'
+                                      f'  boardmail tag {action} htalk SOURCE --message ID\n'
+                                      'Use the exact local thread_id, including non-UUID custom-adapter IDs.\n'
+                                      'The source must already belong to this inbox. The root need not be saved.\n'
+                                      'Adding a tag includes older unread messages immediately, without collection.')
+        a.add_argument('tag', metavar='TAG', help='Local topic name, e.g. htalk or agent-memory')
+        a.add_argument('source', metavar='SOURCE', help='Source name in this inbox, from status')
+        a.add_argument('thread', nargs='?', metavar='THREAD', help='Exact local thread_id; omit with --message')
+        a.add_argument('--message', dest='id', metavar='ID', help='Use this saved message\'s local thread_id')
+    a = actions.add_parser('show', help='Show the saved threads belonging to a tag',
+                           description='Local titles, known links, unread counts and subscription state; no message bodies.',
+                           epilog='Example: boardmail tag show agent-memory\n'
+                                  'Includes threads with no saved messages. Missing labels and links stay null.\n'
+                                  'Local subscription state does not guarantee collection or complete history.')
+    a.add_argument('tag', metavar='TAG', help='Local topic name')
     for command, summary in (("pause", "Stop collection and remote context for one source"),
                              ("resume", "Enable a source for the next collection")):
         s = sub.add_parser(command, help=summary, description=summary + ". Keeps messages and progress.",
@@ -118,8 +145,14 @@ def parser():
             s.add_argument("--through", type=int, metavar="N", help="Inclusive arrival_seq upper bound for replay")
             s.add_argument("--source", metavar="SOURCE", help="Read only this source")
             s.add_argument("--thread", metavar="ID", help="Read only this thread; pair with --source")
-            s.epilog += ("\nWith --unread, --source, --thread or --through, checkpoint_safe is false.\n"
-                         "Keep your delivery checkpoint; paginate this view with the same filters and its next_after.")
+            selection = s.add_mutually_exclusive_group()
+            selection.add_argument('--tag', metavar='TAG', help='Read messages in threads with this local tag')
+            selection.add_argument('--untagged', action='store_true', help='Read messages in threads with no local tags')
+            s.epilog += ("\nWith --unread, --source, --thread, --through, --tag or --untagged, checkpoint_safe is false.\n"
+                         "Keep your delivery checkpoint; paginate this view with the same filters and its next_after.\n"
+                         "Start each new topic visit at 0, so late tags include older unread messages:\n"
+                         "  boardmail list --tag htalk --unread --scope all --after 0\n"
+                         "  boardmail list --untagged --unread --scope all --after 0")
         elif command == "wait":
             s.add_argument("--timeout", type=float, default=1800, metavar="SECONDS",
                            help="Nonnegative, finite seconds; 0 checks once, default %(default)s. Run collection separately")
@@ -230,6 +263,8 @@ def run(args):
     store = Store(args.db or data["database"])
     options = {key: value for key, value in vars(args).items() if key not in ("config", "db", "command")}
     command = args.command
+    if command == 'tag':
+        command = 'tag_' + options.pop('tag_action')
     if command == 'reply':
         command = 'reply_' + options.pop('reply_action')
         for file_key, body_key in (('body_file', 'body'), ('readback_file', 'readback_body')):

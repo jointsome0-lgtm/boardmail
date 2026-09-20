@@ -3,7 +3,7 @@ from copy import deepcopy
 import math
 import sqlite3
 
-from . import config, providers, reader, replies, verification
+from . import config, providers, reader, replies, tags, verification
 from .adapters import next_action
 from .config import MailError
 
@@ -32,7 +32,19 @@ def outcome(operation):
 def execute(store, command, *, sources=None, after=0, limit=None, unread=False, timeout=1800, source=None,
             id=None, action=None, ref=None, cancelled=None, require_fresh=False, stale_after=None, local=False,
             scope=None, context_mode=None, reset=False, through=None, thread=None,
-            body=None, key=None, readback_body=None, replace_key=None):
+            body=None, key=None, readback_body=None, replace_key=None, tag=None, untagged=False):
+    if type(untagged) is not bool or tag is not None and untagged:
+        raise MailError('invalid_arguments')
+    if command in ('tags', 'tag_add', 'tag_remove', 'tag_show'):
+        if untagged:
+            raise MailError('invalid_arguments')
+        return tags.execute(store, 'list' if command == 'tags' else command.removeprefix('tag_'),
+                            tag=tag, source=source, thread=thread, id=id)
+    if tag is not None or untagged:
+        if command != 'list':
+            raise MailError('invalid_arguments')
+        if tag is not None:
+            tags.validate_name(tag)
     if command == 'reply_verify':
         if any(value is not None for value in (body, readback_body, replace_key)) or local:
             raise MailError('invalid_arguments')
@@ -119,7 +131,7 @@ def execute(store, command, *, sources=None, after=0, limit=None, unread=False, 
         return result, 1 if require_fresh and not result["fresh"] else 0
     if command == "list":
         return {"event": "messages", **store.page(after, limit, unread=unread, through=through,
-                source=source, thread=thread, **reading), "collection_performed": False}, 0
+                source=source, thread=thread, tag=tag, untagged=untagged, **reading), "collection_performed": False}, 0
     if command == "wait":
         if not math.isfinite(timeout) or timeout < 0:
             raise MailError("invalid_arguments")

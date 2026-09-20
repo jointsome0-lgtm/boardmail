@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import threading
 
-from . import __version__, commands, config
+from . import __version__, commands, config, tags
 from .store import Store
 
 
@@ -21,6 +21,11 @@ def create_server(store, sources=None):
     limit = {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}
     identity = {"source": {"type": "string", "minLength": 1, "maxLength": 64},
                 "id": {"type": "string", "minLength": 1, "maxLength": 1024}}
+    tag_name = {'type': 'string', 'minLength': 1, 'maxLength': 64, 'pattern': '^' + tags.NAME_PATTERN + '$',
+                'description': 'Local topic, e.g. htalk or agent-memory. Lowercase letters, digits, _ and -; start with a letter or digit.'}
+    tag_selection = {'tag': tag_name, 'source': identity['source'],
+                     'thread': {**identity['id'], 'description': 'Exact local thread_id, including custom-adapter IDs. Use thread or id, not both.'},
+                     'id': {**identity['id'], 'description': 'Saved message ID whose local thread_id should be used. Omit thread.'}}
     reading = {"scope": {"type": "string", "enum": ["addressed", "all"],
                          "description": "Override saved scope once. Default addressed summarizes only proven thread activity; unknown remains visible."},
                "context": {"type": "string", "enum": ["brief", "none"],
@@ -86,6 +91,21 @@ def create_server(store, sources=None):
                           "CLI and MCP share these selections without restarting the server. "
                           "This read does not collect, migrate or mark mail.",
                           {"source": identity["source"]}, []),
+        'tags': ('List local topics with thread and unread counts, plus an always-present untagged queue. '
+                 'No message bodies, collection, read marks or migration. Copy a read action to boardmail_list; '
+                 'start each new topic visit at after=0 so late tags include older unread mail. '
+                 'Topics can overlap; counts.unread equals tagged_unread plus untagged_unread, counting messages once.', {}, []),
+        'tag_add': ('Add one local tag to an entire source/thread. Use exactly one of thread or saved message id. '
+                    'The source must already belong to this inbox; no stored or remote root is required. '
+                    'Older saved mail joins the topic immediately. Local and idempotent; never subscribes, collects or marks mail.',
+                    tag_selection, ['tag', 'source']),
+        'tag_remove': ('Remove one local thread membership, selected by thread or saved message id. '
+                       'Idempotent. Keeps messages, marks, other tags, subscriptions and collection progress. Makes no remote request.',
+                       tag_selection, ['tag', 'source']),
+        'tag_show': ('Read the threads saved under a tag, including threads with no messages. Returns local titles, known links, '
+                     'their provenance, counts and local subscription state without bodies or remote lookup. '
+                     'Missing labels/links stay null. subscribed does not guarantee collection or complete history. '
+                     'Each thread read action opens saved mail including already-read messages.', {'tag': tag_name}, ['tag']),
         "init": ("Create the configured database once. Refuses to overwrite any existing file.", {}, []),
         "collect": ("Fetch one bounded pass of configured public mail. May save messages despite errors. "
                     "Run periodically, separately from wait. Never publishes or marks remote mail.", {}, []),
@@ -105,10 +125,13 @@ def create_server(store, sources=None):
                  "mention_detected_may_be_quoted or recipient_unconfirmed_shown_by_default, never a rewrite of stored addressing. "
                  "unread filters local marks before scope; replay omits unread because marks can change. "
                  "Filtered pages have checkpoint_safe=false: retain the delivery checkpoint; paginate with the same filters. "
-                 "thread requires source.",
+                 "thread requires source. tag and untagged=true are mutually exclusive local thread filters, applied before LIMIT. "
+                 "Start each new topic visit with after=0, unread=true and scope=all; preserve the delivery checkpoint. "
+                 "Read marks apply to a message in every tag.",
                  {"after": checkpoint, "limit": limit, "unread": {"type": "boolean", "default": False}, **reading,
                   "through": {"type": "integer", "minimum": 0, "maximum": 2**63-1},
-                  "source": identity["source"], "thread": identity["id"]}, []),
+                  "source": identity["source"], "thread": identity["id"], 'tag': tag_name,
+                  'untagged': {'type': 'boolean', 'default': False}}, []),
         "show": ("Read the stored original, independent local marks and a compact reply_attempt summary. "
                  "reply_attempt is null when none was saved; otherwise state and next_action describe the attempt. "
                  "Call reply_attempt.show.tool with its arguments to recover the full journal through boardmail_reply_show. "
@@ -150,7 +173,7 @@ def create_server(store, sources=None):
     output_schema = {
         "type": "object", "required": ["event", "history_complete"],
         "properties": {
-            "event": {"enum": ["initialized", "collected", "paused", "resumed", "status", "settings", "subscribed", "unsubscribed", "subscriptions", "messages", "message", "marked", "context", "expanded", "reply_attempt", "timeout", "cancelled", "error"]},
+            "event": {"enum": ["initialized", "collected", "paused", "resumed", "status", "settings", "subscribed", "unsubscribed", "subscriptions", "thread_tag", "tags", "tag", "messages", "message", "marked", "context", "expanded", "reply_attempt", "timeout", "cancelled", "error"]},
             "source": {"type": "string"}, "paused": {"type": "boolean"}, "changed": {"type": "boolean"},
             "history_complete": {"const": False}, "error": {"type": "string"},
             "next_action": {"type": "string"}, "next_after": {"type": "integer"},
@@ -168,6 +191,10 @@ def create_server(store, sources=None):
             "settings": {"type": "object"}, "reading": {"type": "object"},
             "subscribed": {"type": "boolean"}, "subscriptions": {"type": "array", "items": {"type": "object"}},
             "history": {"const": "available"},
+            'tag': {'type': 'string'}, 'tagged': {'type': 'boolean'}, 'exists': {'type': 'boolean'},
+            'tags': {'type': 'array', 'items': {'type': 'object'}},
+            'threads': {'type': 'array', 'items': {'type': 'object'}},
+            'untagged': {'type': 'object'}, 'read': {'type': 'object'},
             "reply": {"type": ["object", "null"]}, "send_allowed": {"type": "boolean"},
             "reply_attempt": {"type": ["object", "null"], "required": ["state", "next_action", "show"],
                               "properties": {"state": {"enum": ["prepared", "unknown", "confirmed"]},
@@ -188,10 +215,14 @@ def create_server(store, sources=None):
         catalog["boardmail_" + command] = Tool(
             name="boardmail_" + command, description=description,
             input_schema={"type": "object", "properties": properties, "required": required, "additionalProperties": False,
-                          **({"dependentRequired": {"thread": ["source"]}} if command == "list" else {})},
+                          **({'oneOf': [{'required': ['thread']}, {'required': ['id']}]}
+                             if command in ('tag_add', 'tag_remove') else {}),
+                          **({"dependentRequired": {"thread": ["source"]},
+                              'not': {'required': ['tag', 'untagged'], 'properties': {'untagged': {'const': True}}}}
+                             if command == "list" else {})},
             output_schema=output_schema,
-            annotations=ToolAnnotations(read_only_hint=command in ("status", "list", "show", "wait", "context", "expand", "subscriptions", "reply_show"),
-                                        destructive_hint=command == "reply_prepare", idempotent_hint=command in ("status", "list", "show", "wait", "context", "expand", "pause", "resume", "subscribe", "unsubscribe", "subscriptions", "reply_prepare", "reply_begin", "reply_show", "reply_confirm", "reply_verify"),
+            annotations=ToolAnnotations(read_only_hint=command in ("status", "list", "show", "wait", "context", "expand", "subscriptions", "tags", "tag_show", "reply_show"),
+                                        destructive_hint=command == "reply_prepare", idempotent_hint=command in ("status", "list", "show", "wait", "context", "expand", "pause", "resume", "subscribe", "unsubscribe", "subscriptions", "tags", "tag_show", "tag_add", "tag_remove", "reply_prepare", "reply_begin", "reply_show", "reply_confirm", "reply_verify"),
                                         open_world_hint=command in ("collect", "check", "context", "expand", "reply_verify")),
         )
     # Adapter output redirection is process-wide. Do not overlap collectors.
@@ -234,6 +265,9 @@ def create_server(store, sources=None):
                   "settings controls this consumer's scope/context; command flags override once. "
                   "subscribe/unsubscribe select thread roots locally; later collection uses current selections without a restart. "
                   "Initial subscription collection can include older available replies. Source pauses still apply. "
+                  "Tags group local threads independently of subscriptions. Collect, list tags, then follow one topic's read action. "
+                  "Start each topic visit at after=0 with unread=true and scope=all; filtered cursors never replace the delivery checkpoint. "
+                  "Read marks are shared across tags; tag_show recovers membership and known thread links. "
                   "reply_prepare saves text and a key; reply_begin records uncertainty before external publication. "
                   "After a crash, reply_show recovers the attempt; reply_confirm records the caller's matching readback and replied mark. "
                   "reply_verify checks a known reply URL against the provider and records only complete matching evidence. "

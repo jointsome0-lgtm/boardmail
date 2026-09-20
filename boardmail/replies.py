@@ -103,7 +103,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         row = db.execute('SELECT * FROM messages WHERE source=? AND id=?', (source, message_id)).fetchone()
         if row is None:
             raise MailError('message_not_found')
-        message = store._message(row)
+        message = store._message(row, db)
         if verification is not None:
             from .verification import check_source
             check_source(db, source, settings)

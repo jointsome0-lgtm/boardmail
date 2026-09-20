@@ -125,6 +125,25 @@ Use a configured source and the thread's root UUID from a message or board. All 
 
 Subscribe and unsubscribe are local, safe to repeat, and shared by CLI and MCP without restarting the server. They fetch nothing immediately. Unsubscribe preserves saved messages and marks; an already running source pass may finish. Paused sources stay paused. See [coverage and subscription details](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#thread-subscriptions).
 
+## Read one topic
+
+Group whole threads from different boards under local tags:
+
+```sh
+boardmail tag add htalk SOURCE THREAD
+boardmail tag add agent-memory SOURCE --message ID
+boardmail collect
+boardmail tags
+boardmail list --tag htalk --unread --scope all --after 0
+boardmail tag show agent-memory
+```
+
+`tags` lists topics and unread counts without message bodies. Each topic has ready-to-use reading arguments. `tag show` recovers its saved threads, local titles and known links, including threads with no saved messages. `--message ID` selects that incoming message's local thread. Names use lowercase letters, digits, `_` and `-`, up to 64 characters, starting with a letter or digit.
+
+Tagging does not subscribe or collect. A message can belong to several topics; its read mark applies to all of them. Start each topic visit at `--after 0` so tags added later include older unread mail. Paginate with the same filters and `next_after`, keeping your delivery checkpoint. Mark only messages you have read; other mail stays unread.
+
+Use `list --untagged --unread --scope all --after 0` for the separate untagged queue. `tag remove TAG SOURCE THREAD` removes one membership and preserves subscriptions and mail. See the [tag reference](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#local-thread-tags) for counters and metadata limits.
+
 ## Pause a source
 
 ```sh

@@ -40,12 +40,12 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','list','show','wait','mark','context','expand','pause','resume','reply_prepare','reply_begin','reply_show','reply_confirm','reply_verify')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','tags','tag_show','tag_add','tag_remove','list','show','wait','mark','context','expand','pause','resume','reply_prepare','reply_begin','reply_show','reply_confirm','reply_verify')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
                 self.assertEqual(t.annotations.destructive_hint, t.name == 'boardmail_reply_prepare')
-                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_reply_show'))
+                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_tags','boardmail_tag_show','boardmail_reply_show'))
                 self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand','boardmail_reply_verify'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
@@ -111,6 +111,63 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.store.save('moltbook',uid(2),[mail(10)])
                 page = await self.call(c, 'wait', {'after':0,'timeout':0})
                 self.assertEqual((page['event'],page['next_after']), ('messages',1))
+
+    async def test_topics_share_cli_membership_and_global_marks_without_restarting_mcp(self):
+        self.store.initialize({'moltbook': {'account_id': uid(2)}})
+        self.store.save('moltbook', uid(2), [dict(mail(10), addressing='thread'),
+                                          dict(mail(11), thread_id=uid(200))])
+        target = {'source': 'moltbook', 'id': uid(10)}
+        async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
+            before = self.path.read_bytes()
+            empty = await self.call(c, 'tags')
+            self.assertEqual((empty['tags'], empty['untagged']['unread']), ([], 2))
+            self.assertFalse((await self.call(c, 'tag_show', {'tag': 'htalk'}))['exists'])
+            self.assertEqual(self.path.read_bytes(), before)
+            run = await asyncio.to_thread(subprocess.run,
+                [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'tag', 'add',
+                 'htalk', 'moltbook', '--message', uid(10)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            added = await self.call(c, 'tag_add', {'tag': 'agent-memory', **target})
+            self.assertEqual((added['thread'], added['changed']), (uid(100), True))
+            topics = await self.call(c, 'tags')
+            self.assertEqual(topics['counts'], {'unread': 2, 'tagged_unread': 1, 'untagged_unread': 1})
+            route = topics['tags'][1]['read']
+            result = await c.call_tool(route['tool'], route['arguments'])
+            self.assertFalse(result.is_error)
+            page = result.structured_content
+            self.assertEqual([m['id'] for m in page['messages']], [uid(10)])
+            self.assertEqual(page['messages'][0]['tags'], ['agent-memory', 'htalk'])
+            self.assertFalse(page['checkpoint_safe'])
+            self.assertEqual(page['thread_activity'], [])
+            await self.call(c, 'mark', {**target, 'action': 'read'})
+            topics = await self.call(c, 'tags')
+            self.assertEqual([t['unread'] for t in topics['tags']], [0, 0])
+            self.assertEqual(topics['untagged']['unread'], 1)
+            member = (await self.call(c, 'tag_show', {'tag': 'htalk'}))['threads'][0]
+            reopened = await c.call_tool(member['read']['tool'], member['read']['arguments'])
+            self.assertFalse(reopened.is_error)
+            self.assertEqual([m['id'] for m in reopened.structured_content['messages']], [uid(10)])
+            self.assertFalse((await self.call(c, 'tag_add', {'tag': 'htalk', **target}))['changed'])
+            await self.call(c, 'tag_remove', {'tag': 'htalk', 'source': 'moltbook', 'thread': uid(100)})
+            self.assertFalse((await self.call(c, 'tag_remove', {'tag': 'htalk', **target}))['changed'])
+            self.assertEqual((await self.call(c, 'show', target))['message']['tags'], ['agent-memory'])
+            self.assertEqual(self.store.subscriptions(), [])
+
+    async def test_tag_schemas_reject_ambiguous_targets_and_filters_before_writing(self):
+        self.store.initialize({'moltbook': {'account_id': uid(2)}})
+        target = {'tag': 'htalk', 'source': 'moltbook'}
+        async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
+            before = self.path.read_bytes()
+            for tool, args in [('tag_add', target),
+                               ('tag_add', {**target, 'thread': uid(100), 'id': uid(10)}),
+                               ('tag_remove', {**target, 'thread': 123}),
+                               ('tag_show', {'tag': 'Upper'}), ('tags', {'unread': True}),
+                               ('list', {'tag': 'htalk', 'untagged': True}),
+                               ('check', {'tag': 'htalk'})]:
+                self.assertEqual((await self.call(c, tool, args, error=True))['error'], 'invalid_arguments')
+                self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual((await self.call(c, 'list', {'tag': 'htalk', 'untagged': False}))['scanned'], 0)
+            self.assertEqual(self.path.read_bytes(), before)
 
     async def test_reply_attempt_survives_cli_mcp_handoffs_without_reset_or_implicit_marks(self):
         self.store.initialize()
@@ -364,7 +421,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),21)
+                self.assertEqual(len((await c.list_tools()).tools),25)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):
