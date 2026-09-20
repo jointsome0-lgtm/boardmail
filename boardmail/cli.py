@@ -171,19 +171,20 @@ def parser():
                    help="Saved messages per page; 1 to 100, default %(default)s")
     s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
     s = sub.add_parser('reply', help='Save and recover a reply attempt without publishing',
-                       description='One durable reply per incoming message. Publishing and independent readback belong to the caller.',
+                       description='One durable reply per incoming message. Publish externally; verify a known reply URL or confirm your own readback.',
                        epilog='Prepare exact text, then begin BEFORE the external POST. After any interruption, show the saved attempt.\n'
                               'Read back an unknown outcome. An empty search does not authorize another send.\n'
                               'Idempotent replay needs the same key/body and provider guarantees still valid at retry time, including key retention.\n'
-                              'Confirm records your readback assertion and replied mark; it makes no remote request.')
+                              'Verify reads the provider and records matching evidence. Confirm records your own readback without a remote request.')
     actions = s.add_subparsers(dest='reply_action', required=True)
     for action, summary in (('prepare', 'Save exact reply text and a stable idempotency key'),
                             ('begin', 'Record an unknown outcome before the external POST'),
                             ('show', 'Recover the saved reply and independent incoming marks'),
-                            ('confirm', 'Record caller readback matching the saved reply text')):
+                            ('confirm', 'Record caller readback matching the saved reply text'),
+                            ('verify', 'Read a known reply from its provider and confirm only matching evidence')):
         a = actions.add_parser(action, help=summary, description=summary + '.',
-                               epilog='All commands are local. An empty board lookup does not prove the reply was never published.\n'
-                                      'Boardmail does not publish, retry, fetch a reply URL or verify authorship.')
+                               epilog='An empty board lookup does not prove the reply was never published.\n'
+                                      'Boardmail does not publish or retry. Only verify performs remote reads.')
         a.add_argument('source', metavar='SOURCE', help='Source from the saved incoming message')
         a.add_argument('id', metavar='ID', help='Exact incoming message ID')
         if action == 'prepare':
@@ -192,7 +193,7 @@ def parser():
             a.add_argument('--replace-key', metavar='KEY',
                            help='Explicitly replace this still-prepared draft; rejected after begin')
             a.epilog += '\nExample: boardmail reply prepare SOURCE ID --body-file reply.txt\nSame text returns the existing key and state.'
-        if action in ('begin', 'confirm'):
+        if action in ('begin', 'confirm', 'verify'):
             a.add_argument('--key', required=True, metavar='KEY', help='Exact saved idempotency_key; stale keys are rejected')
         if action == 'begin':
             a.epilog += ('\nExample: boardmail reply begin SOURCE ID --key KEY\n'
@@ -207,13 +208,19 @@ def parser():
             a.epilog += ('\nExample: boardmail reply confirm SOURCE ID --key KEY --ref https://example.org/reply --readback-file readback.txt\n'
                          'Check the account, thread, reply target and provider status yourself. Matching text alone cannot establish those.\n'
                          'Atomically records the caller receipt and replied mark; leaves read and needs-reply unchanged.')
+        if action == 'verify':
+            a.add_argument('--ref', required=True, metavar='URL', help='Known reply URL on the configured provider, including its exact reply ID')
+            a.epilog += ('\nExample: boardmail --config config.json reply verify SOURCE ID --key KEY --ref URL\n'
+                         'Checks author ID, thread, immediate target, exact body and provider status. Requires config; respects pauses.\n'
+                         'Supports Postingboard, The Colony, Moltbook and ClawdChat. Reads fixed API endpoints, never an arbitrary URL.\n'
+                         'A missing URL needs independent discovery. Unavailable, incomplete or mismatching evidence never authorizes sending.')
     return p
 
 
 def run(args):
     # Local reads need no config when --db is supplied; an explicit config still
     # enables remote context lookups unless --local is given.
-    needed = args.command in ("collect", "check") or args.db is None or (
+    needed = args.command in ("collect", "check") or (args.command == 'reply' and args.reply_action == 'verify') or args.db is None or (
         args.config is not None and (args.command in ("pause", "resume", "subscribe", "unsubscribe") or
                                     args.command in ("context", "expand") and not args.local))
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None

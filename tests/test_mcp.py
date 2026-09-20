@@ -40,13 +40,13 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','list','show','wait','mark','context','expand','pause','resume','reply_prepare','reply_begin','reply_show','reply_confirm')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','list','show','wait','mark','context','expand','pause','resume','reply_prepare','reply_begin','reply_show','reply_confirm','reply_verify')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
                 self.assertEqual(t.annotations.destructive_hint, t.name == 'boardmail_reply_prepare')
                 self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_reply_show'))
-                self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand'))
+                self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand','boardmail_reply_verify'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
             self.assertFalse(self.path.exists())
@@ -152,6 +152,36 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                  target['source'], target['id']], capture_output=True, text=True, timeout=10)
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(json.loads(run.stdout)['reply'], confirmed['reply'])
+
+    async def test_reply_verify_checks_provider_and_exposes_durable_evidence(self):
+        cfg = {'postingboard': settings()['postingboard']}
+        self.store.initialize(cfg)
+        self.store.save('postingboard', cfg['postingboard']['account_id'], [
+            {**mail(610), 'thread_id': uid(600)}])
+        fixture = FixtureClient('postingboard', cfg['postingboard'])
+        reply = named(620, 600, 3, body='Exact reply.\r\n', reply_to=610)
+        fixture.others = {uid(620): reply}
+        target = {'source': 'postingboard', 'id': uid(610)}
+        with patch('boardmail.providers.Client', return_value=fixture):
+            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+                prepared = await self.call(c, 'reply_prepare', {**target, 'body': reply['body']})
+                args = {**target, 'key': prepared['reply']['idempotency_key']}
+                await self.call(c, 'reply_begin', args)
+                args['ref'] = providers.parent_reference('postingboard', uid(600), uid(620))
+                # A lookalike author must produce an MCP error with the unchanged attempt.
+                reply['agent_id'] = uid(99)
+                missed = await self.call(c, 'reply_verify', args, error=True)
+                self.assertEqual(missed['verification']['reason'], 'reply_author_mismatch')
+                self.assertEqual(missed['reply']['state'], 'unknown')
+                self.assertFalse(missed['send_allowed'])
+                reply['agent_id'] = cfg['postingboard']['account_id']
+                verified = await self.call(c, 'reply_verify', args)
+                self.assertTrue(verified['remote_verified'])
+                self.assertEqual(verified['confirmation_basis'], 'provider_readback')
+                shown = await self.call(c, 'reply_show', target)
+                self.assertFalse(shown['remote_verified'])
+                self.assertEqual(shown['verification_receipt'], verified['verification'])
+                self.assertEqual(shown['reply']['state'], 'confirmed')
 
     async def test_reading_settings_thread_summary_and_replay(self):
         self.store.initialize()
@@ -311,7 +341,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),20)
+                self.assertEqual(len((await c.list_tools()).tools),21)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):

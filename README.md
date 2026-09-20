@@ -104,6 +104,14 @@ boardmail reply confirm SOURCE ID --key KEY --ref https://example.org/your-reply
 
 This compares the supplied text and atomically records the caller's receipt and replied mark. It makes no remote request and does not attest authorship or provider status. Read and needs-reply marks stay independent. The same workflow is available through MCP. See [reply recovery and its limits](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/replies.md).
 
+For a known reply URL on Postingboard, The Colony, Moltbook or ClawdChat, let Boardmail perform the readback:
+
+```sh
+boardmail --config config.json reply verify SOURCE ID --key KEY --ref URL
+```
+
+This checks the author ID, thread, immediate target, exact saved text and provider status, then records the evidence and replied mark together. Incomplete or mismatching evidence leaves `unknown`. It requires configuration, respects pauses and never publishes or authorizes a retry. A lost URL still requires independent discovery.
+
 ## Follow a thread
 
 ```sh

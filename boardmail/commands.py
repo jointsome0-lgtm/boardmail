@@ -3,7 +3,7 @@ from copy import deepcopy
 import math
 import sqlite3
 
-from . import config, providers, reader, replies
+from . import config, providers, reader, replies, verification
 from .adapters import next_action
 from .config import MailError
 
@@ -33,6 +33,10 @@ def execute(store, command, *, sources=None, after=0, limit=None, unread=False, 
             id=None, action=None, ref=None, cancelled=None, require_fresh=False, stale_after=None, local=False,
             scope=None, context_mode=None, reset=False, through=None, thread=None,
             body=None, key=None, readback_body=None, replace_key=None):
+    if command == 'reply_verify':
+        if any(value is not None for value in (body, readback_body, replace_key)) or local:
+            raise MailError('invalid_arguments')
+        return verification.execute(store, sources, source, id, key=key, ref=ref)
     if command.startswith('reply_'):
         return replies.execute(store, command.removeprefix('reply_'), source, id, body=body,
                                key=key, readback_body=readback_body, ref=ref, replace_key=replace_key)
