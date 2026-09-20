@@ -35,11 +35,13 @@ def create_server(store, sources=None):
                            "replace_key": identity["id"]}, ["source", "id", "body"]),
         "reply_begin": ("Record an unknown publication outcome BEFORE the external POST. Only the first transition "
                         "returns send_allowed=true. Repeated calls never authorize another first send. Publish externally "
-                        "with the saved key/body only after a successful first begin. After interruption, read back before "
-                        "any provider-supported retry. An incomplete lookup cannot establish absence. Makes no network call.",
+                        "with the saved key/body only after a successful first begin. After interruption, read back; an empty "
+                        "lookup cannot authorize retry. Idempotent replay requires provider guarantees still valid for this "
+                        "operation and key at retry time, including key retention. Makes no network call.",
                         {**identity, "key": identity["id"]}, ["source", "id", "key"]),
         "reply_show": ("Recover the exact saved reply intention, key, state, receipt and incoming message marks. "
-                       "Read-only and local, including before a journal exists. unknown requires readback before retry. "
+                       "Read-only and local, including before a journal exists. unknown requires independent readback. "
+                       "An empty search or expired/unknown provider key-retention period cannot authorize replay. "
                        "confirmed records caller-supplied evidence, not remote verification by Boardmail. Marks nothing.",
                        identity, ["source", "id"]),
         "reply_confirm": ("Record the caller's independent readback after reply_begin. The readback_body must exactly "

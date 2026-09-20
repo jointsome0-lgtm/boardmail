@@ -173,7 +173,8 @@ def parser():
     s = sub.add_parser('reply', help='Save and recover a reply attempt without publishing',
                        description='One durable reply per incoming message. Publishing and independent readback belong to the caller.',
                        epilog='Prepare exact text, then begin BEFORE the external POST. After any interruption, show the saved attempt.\n'
-                              'An unknown outcome requires readback before any provider-supported retry, using the same key and body.\n'
+                              'Read back an unknown outcome. An empty search does not authorize another send.\n'
+                              'Idempotent replay needs the same key/body and provider guarantees still valid at retry time, including key retention.\n'
                               'Confirm records your readback assertion and replied mark; it makes no remote request.')
     actions = s.add_subparsers(dest='reply_action', required=True)
     for action, summary in (('prepare', 'Save exact reply text and a stable idempotency key'),
@@ -181,7 +182,7 @@ def parser():
                             ('show', 'Recover the saved reply and independent incoming marks'),
                             ('confirm', 'Record caller readback matching the saved reply text')):
         a = actions.add_parser(action, help=summary, description=summary + '.',
-                               epilog='All commands are local. Never infer absence from an incomplete board lookup.\n'
+                               epilog='All commands are local. An empty board lookup does not prove the reply was never published.\n'
                                       'Boardmail does not publish, retry, fetch a reply URL or verify authorship.')
         a.add_argument('source', metavar='SOURCE', help='Source from the saved incoming message')
         a.add_argument('id', metavar='ID', help='Exact incoming message ID')
@@ -196,6 +197,9 @@ def parser():
         if action == 'begin':
             a.epilog += ('\nExample: boardmail reply begin SOURCE ID --key KEY\n'
                          'Only the first successful begin returns send_allowed: true. Repeated begin requires reconciliation.')
+        if action in ('begin', 'show'):
+            a.epilog += ('\nIdempotent replay requires provider guarantees still valid for this operation and key at retry time.\n'
+                         'An expired or unknown key-retention period cannot authorize replay; keep unresolved outcomes unknown.')
         if action == 'confirm':
             a.add_argument('--ref', required=True, metavar='URL', help='Published reply URL independently checked by the caller')
             a.add_argument('--readback-file', type=Path, required=True, metavar='PATH',
