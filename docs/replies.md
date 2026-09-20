@@ -30,7 +30,7 @@ boardmail reply confirm SOURCE ID --key KEY --ref https://example.org/published-
 
 `confirm` requires byte-exact matching UTF-8 text. A match atomically saves the caller's receipt and the incoming message's `replied_at`/`reply_ref`; `read_at` and `needs_reply` remain independent. Its state becomes `confirmed` and its `next_action` is `do_not_publish_again`.
 
-A receipt created by `confirm` is an assertion by the caller. Until a successful `verify`, results say `confirmation_basis: "caller_supplied_readback"` and `remote_verified: false`: Boardmail compared the supplied text but fetched no URL and did not verify authorship, destination or moderation status. Passing the draft itself as readback would not establish publication. If the provider rewrites the text, the exact comparison fails; inspect that difference rather than replacing an already-started intention to make it pass.
+A receipt created by `confirm` is an assertion by the caller. Successful `confirm` reports `remote_verified: false`. Its `confirmation_basis` is `caller_supplied_readback` unless an earlier provider verification receipt preserves `provider_readback`. Boardmail compared the supplied text but fetched no URL and did not verify authorship, destination or moderation status. Passing the draft itself as readback would not establish publication. If the provider rewrites the text, the exact comparison fails; inspect that difference rather than replacing an already-started intention to make it pass.
 
 ## Verify a known reply through its provider
 
@@ -101,6 +101,8 @@ A pre-existing manual `mark replied` prevents creating a new attempt. If a diffe
 ## Result and error contract
 
 The five commands return `event: "reply_attempt"`, `message`, `reply`, `changed`, `send_allowed`, `next_action`, `confirmation_basis`, `remote_verified`, `verification`, `verification_receipt`, `publication_performed: false`, `collection_performed: false` and `history_complete: false`.
+
+`confirmation_basis` is null when `reply` is null or its state is `prepared` or `unknown`, even if the incoming message has an independent `replied` mark. Only a confirmed attempt reports `caller_supplied_readback` or `provider_readback`. A failed fresh verification preserves the basis of any earlier confirmation.
 
 An attempt has `source`, `message_id`, `idempotency_key`, `body`, `body_sha256`, `state`, `prepared_at`, `attempted_at`, `confirmed_at`, `reply_ref` and `readback_sha256`. Times are local Unix seconds; fields for a phase not reached are null. `send_allowed` is true only on the first successful `begin` response; it is an ordering guard, not owner authorization, a lease or a provider delivery guarantee.
 

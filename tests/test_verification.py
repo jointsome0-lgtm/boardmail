@@ -67,6 +67,7 @@ class VerificationTests(unittest.TestCase):
         self.assertFalse(result['send_allowed'])
         self.assertFalse(result['remote_verified'])
         self.assertEqual(result['reply']['state'], 'unknown')
+        self.assertIsNone(result['confirmation_basis'])
         self.assertIsNone(result['message']['replied_at'])
         if reason:
             self.assertEqual(result['verification']['reason'], reason, result)
@@ -100,6 +101,7 @@ class VerificationTests(unittest.TestCase):
                 self.assertFalse(local['remote_verified'])
                 self.assertIsNone(local['verification'])
                 self.assertEqual(local['verification_receipt'], evidence)
+                self.assertEqual(local['confirmation_basis'], 'provider_readback')
                 self.assertEqual((self.path.read_bytes(), len(self.client.calls)), (before, calls))
                 # A later failed read cannot erase a previous confirmation or imply absence.
                 self.raw['is_hidden'] = True
@@ -107,6 +109,7 @@ class VerificationTests(unittest.TestCase):
                 self.assertEqual(code, 1)
                 self.assertEqual(failed['reply']['state'], 'confirmed')
                 self.assertEqual(failed['verification_receipt'], evidence)
+                self.assertEqual(failed['confirmation_basis'], 'provider_readback')
                 self.assertFalse(failed['remote_verified'])
                 self.assertEqual(self.path.read_bytes(), before)
 

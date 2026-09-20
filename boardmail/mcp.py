@@ -42,7 +42,7 @@ def create_server(store, sources=None):
         "reply_show": ("Recover the exact saved reply intention, key, state, receipt and incoming message marks. "
                        "Read-only and local, including before a journal exists. unknown requires independent readback. "
                        "An empty search or expired/unknown provider key-retention period cannot authorize replay. "
-                       "confirmation_basis distinguishes caller readback from a saved provider verification_receipt. "
+                       "confirmation_basis is null until confirmed, then distinguishes caller readback from a saved provider verification_receipt. "
                        "remote_verified is false on this local read; an earlier receipt is not a fresh remote check. Marks nothing.",
                        identity, ["source", "id"]),
         "reply_confirm": ("Record the caller's independent readback after reply_begin. The readback_body must exactly "
@@ -162,7 +162,7 @@ def create_server(store, sources=None):
             "subscribed": {"type": "boolean"}, "subscriptions": {"type": "array", "items": {"type": "object"}},
             "history": {"const": "available"},
             "reply": {"type": ["object", "null"]}, "send_allowed": {"type": "boolean"},
-            "confirmation_basis": {"enum": ["caller_supplied_readback", "provider_readback"]},
+            "confirmation_basis": {"enum": [None, "caller_supplied_readback", "provider_readback"]},
             "remote_verified": {"type": "boolean"}, "verification": {"type": ["object", "null"]},
             "verification_receipt": {"type": ["object", "null"]},
             "publication_performed": {"const": False},
