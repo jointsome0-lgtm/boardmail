@@ -22,6 +22,8 @@ boardmail reply begin SOURCE ID --key KEY
 
 Proceed with the first POST only if this call succeeds with `send_allowed: true`. `begin` commits `state: "unknown"` before returning. Use the saved key with the provider's idempotency mechanism, where supported, and the saved body. Boardmail does not make that POST.
 
+When the publisher receives a reply URL, save it durably alongside the saved key before calling `verify` or `confirm`. The journal saves a reply URL on successful confirmation. An unsuccessful provider check saves neither its candidate URL nor its diagnostics. `reply show` returns previously saved information, so keep the failed command's output if you need those diagnostics.
+
 After publication, independently read the resulting post. Check its author account, thread, reply target and provider status, and save the returned body as `readback.txt`. Then record that evidence:
 
 ```sh
@@ -34,7 +36,7 @@ A receipt created by `confirm` is an assertion by the caller. Successful `confir
 
 ## Verify a known reply through its provider
 
-After `begin`, supply a candidate reply URL from your publisher or independent discovery:
+After `begin`, supply the candidate reply URL saved by your publisher or recovered through independent discovery:
 
 ```sh
 boardmail --config config.json reply verify SOURCE ID --key KEY --ref URL
@@ -51,11 +53,22 @@ The command reads the original through fixed provider API endpoints. It compares
 
 A top-level comment targets the thread root. Moltbook's explicit `depth: 0` can establish that relationship when `parent_id` is omitted; otherwise missing parent evidence is inconclusive. Known negative or unfamiliar status values are rejected, including Moltbook's `pending` and `failed` even when the API returns the text. All checks concern the state observed by the provider during this invocation; they cannot promise future visibility or prove which request/idempotency key created the reply.
 
-Success returns `remote_verified: true`, `confirmation_basis: provider_readback`, and a `verification` result. The same evidence is saved as `verification_receipt`, with its local `checked_at`, provider, reply ID, thread ID, target ID, author ID, body hash, local idempotency key, reply URL and availability basis. The receipt, confirmed attempt and incoming `replied` mark commit together. Read and needs-reply marks stay unchanged.
+Success returns `remote_verified: true`, `confirmation_basis: provider_readback`, and a `verification` result. The same evidence is saved as `verification_receipt`, with its local `checked_at`, provider, reply ID, thread ID, target ID, author ID, body hash, local idempotency key, reply URL and availability basis. Its `checked_at` is a local check timestamp. It does not establish when publication happened or what the text was at that time. The receipt, confirmed attempt and incoming `replied` mark commit together. Read and needs-reply marks stay unchanged.
 
 Both `verification` and `verification_receipt` include `key_scope: "local"`. The key binds this evidence to Boardmail's saved intention. It is not a provider lookup key or proof of which HTTP request created the publication. Reading an older receipt adds the same description to the output without rewriting the database, changing `checked_at` or making a new provider check.
 
 On an incomplete, missing, unavailable or mismatching original, exit code is 1 and `verification.status` is `unverified`, with a safe `reason`. No receipt or marks are written and an unknown attempt stays unknown. A previous confirmation is preserved; a failed fresh check does not erase its historical receipt. `reply show` always returns `remote_verified: false`: its saved `verification_receipt` is dated evidence, not a new remote check.
+
+In a `verify` response, `verification` describes that invocation. A saved `verification_receipt` describes the last successful provider check. Examples of `verification.reason` include:
+
+| Reason | What this check established |
+| --- | --- |
+| `reply_missing`, `http_404` | The provider lookup did not return the original. This does not prove it was never published or was deleted. |
+| `reply_readback_mismatch` | The returned text differs from the saved reply body. The cause of the difference is not established. |
+| `reply_provider_not_verified` | Provider status did not satisfy verification, including Moltbook's `pending`, `failed` or an unfamiliar status. |
+| `http_503` | The provider was unavailable for this request; the publication's state remains unestablished by this check. |
+
+These examples are not an exhaustive error list. Treat an unfamiliar reason as inconclusive. Neither a missing original nor a mismatch proves that no send occurred, establishes fault by the author, or authorizes another POST. Preserve the saved attempt and any earlier receipt while reconciling the result.
 
 Verification requires configuration even with `--db`, respects source pauses, and refuses an account or adapter change. Unsupported adapters and malformed references fail before network access. Caller URLs are parsed into identities, never fetched directly; query strings, credentials, foreign hosts and redirects are not accepted. Network reads run outside the local write transaction, then the key, saved body, destination, reference and source identity are checked again before committing.
 
@@ -124,7 +137,7 @@ The five commands return `event: "reply_attempt"`, `message`, `reply`, `changed`
 
 An attempt has `source`, `message_id`, `idempotency_key`, `body`, `body_sha256`, `state`, `prepared_at`, `attempted_at`, `confirmed_at`, `reply_ref` and `readback_sha256`. Times are local Unix seconds; fields for a phase not reached are null. `send_allowed` is true only on the first successful `begin` response; it is an ordering guard, not owner authorization, a lease or a provider delivery guarantee.
 
-Malformed text returns `invalid_reply_body`. `reply_key_mismatch` means the supplied key does not name the current intention. `reply_not_prepared` and `reply_not_started` identify a missing prerequisite. `reply_already_started` prevents changing an uncertain or confirmed body; `reply_already_recorded` protects an existing reply mark. `reply_readback_mismatch` and `reply_reference_conflict` preserve the saved state and marks without claiming success. A failed command can be inspected through `reply show`; never delete the database to retry it.
+Malformed text returns `invalid_reply_body`. `reply_key_mismatch` means the supplied key does not name the current intention. `reply_not_prepared` and `reply_not_started` identify a missing prerequisite. `reply_already_started` prevents changing an uncertain or confirmed body; `reply_already_recorded` protects an existing reply mark. `reply_readback_mismatch` and `reply_reference_conflict` preserve the saved state and marks without claiming success. After a failure, inspect the saved attempt through `reply show` and read diagnostics from the failed command's output; never delete the database to retry it.
 
 Preparation and successful verification add their tables when needed without changing the supported database schema version. Local reads never migrate. Old messages, collection progress, pauses, reading preferences and subscriptions are preserved. The local prepare/begin/show/confirm protocol works for every built-in source and custom adapters; it requires a saved incoming message, not provider credentials. Use a journal-aware client for this workflow: older clients ignore these tables.
 
