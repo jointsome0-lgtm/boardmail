@@ -1,5 +1,6 @@
-"""Durable local reply intentions; the caller owns publication and remote readback."""
+"""Durable reply intentions and atomic receipts; the caller owns publication."""
 import hashlib
+import json
 import time
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -13,6 +14,10 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS reply_attempts (
     state TEXT NOT NULL CHECK (state IN ('prepared','unknown','confirmed')),
     prepared_at INTEGER NOT NULL, attempted_at INTEGER, confirmed_at INTEGER,
     reply_ref TEXT, readback_sha256 TEXT,
+    PRIMARY KEY (source,message_id))"""
+
+VERIFICATION_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_verifications (
+    source TEXT NOT NULL, message_id TEXT NOT NULL, evidence TEXT NOT NULL,
     PRIMARY KEY (source,message_id))"""
 
 
@@ -61,7 +66,16 @@ def saved(db, source, message_id):
     return dict(row) if row else None
 
 
-def execute(store, action, source, message_id, *, body=None, key=None, readback_body=None, ref=None, replace_key=None):
+def receipt(db, source, message_id, attempt):
+    if not attempt or not db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_verifications'").fetchone():
+        return None
+    row = db.execute('SELECT evidence FROM reply_verifications WHERE source=? AND message_id=?', (source, message_id)).fetchone()
+    evidence = json.loads(row[0]) if row else None
+    return evidence if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
+
+
+def execute(store, action, source, message_id, *, body=None, key=None, readback_body=None, ref=None, replace_key=None,
+            verification=None, settings=None):
     """One SQLite transaction binds each transition to a saved incoming and key."""
     if action not in ('prepare', 'begin', 'show', 'confirm'):
         raise MailError('invalid_arguments')
@@ -89,6 +103,12 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         if row is None:
             raise MailError('message_not_found')
         message = store._message(row)
+        if verification is not None:
+            from .verification import check_source
+            check_source(db, source, settings)
+            if (action != 'confirm' or verification['thread_id'] != message['thread_id']
+                    or verification['target_id'] != message_id):
+                raise MailError('reply_target_mismatch')
         attempt = saved(db, source, message_id)
         now = int(time.time())
         if action == 'prepare':
@@ -140,7 +160,14 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                                (now, ref, source, message_id))
                     message.update(replied_at=now, reply_ref=ref)
                     changed = True
+                if verification is not None:
+                    db.execute(VERIFICATION_SCHEMA)
+                    db.execute('INSERT INTO reply_verifications VALUES (?,?,?) ON CONFLICT(source,message_id) '
+                               'DO UPDATE SET evidence=excluded.evidence',
+                               (source, message_id, json.dumps(verification, ensure_ascii=True)))
+                    changed = True
         attempt = saved(db, source, message_id)
+        evidence = receipt(db, source, message_id, attempt)
 
     if attempt is None:
         following = 'inspect_recorded_reply' if message['reply_ref'] else 'prepare_reply'
@@ -151,5 +178,6 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         following = 'publish_saved_body_with_saved_key_then_read_back'
     return {'event': 'reply_attempt', 'message': message, 'reply': attempt,
             'changed': changed, 'send_allowed': send_allowed, 'next_action': following,
-            'confirmation_basis': 'caller_supplied_readback', 'remote_verified': False,
+            'confirmation_basis': 'provider_readback' if evidence else 'caller_supplied_readback',
+            'remote_verified': verification is not None, 'verification': verification, 'verification_receipt': evidence,
             'publication_performed': False, 'collection_performed': False}, 0
