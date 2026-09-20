@@ -71,7 +71,8 @@ def receipt(db, source, message_id, attempt):
         return None
     row = db.execute('SELECT evidence FROM reply_verifications WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     evidence = json.loads(row[0]) if row else None
-    return evidence if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
+    # Older receipts used the same local binding; describing it does not refresh their evidence.
+    return {**evidence, 'key_scope': 'local'} if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
 
 
 def execute(store, action, source, message_id, *, body=None, key=None, readback_body=None, ref=None, replace_key=None,

@@ -138,6 +138,21 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(repeat['send_allowed'])
             repeat = await self.call(c, 'reply_begin', {**target, 'key':key})
             self.assertFalse(repeat['send_allowed'])
+            await self.call(c, 'mark', {**target, 'action':'replied', 'ref':'https://example.invalid/reply'})
+            before = self.path.read_bytes()
+            incoming = await self.call(c, 'show', target)
+            self.assertEqual(incoming['reply_attempt']['state'], 'unknown')
+            self.assertEqual(incoming['reply_attempt']['next_action'], 'read_back_before_retry')
+            route = incoming['reply_attempt']['show']
+            recovered = await c.call_tool(route['tool'], route['arguments'])
+            self.assertFalse(recovered.is_error)
+            self.assertEqual(recovered.structured_content['reply'], repeat['reply'])
+            run = await asyncio.to_thread(subprocess.run,
+                [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'show',
+                 target['source'], target['id']], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(json.loads(run.stdout), incoming)
+            self.assertEqual(self.path.read_bytes(), before)
             for args in ({**target, 'body':body, 'replace_key':key, 'unexpected':True},
                          {**target, 'body':123}, {**target, 'body':body, 'replace_key':False}):
                 self.assertEqual((await self.call(c, 'reply_prepare', args, error=True))['error'], 'invalid_arguments')
@@ -176,6 +191,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 reply['agent_id'] = uid(99)
                 missed = await self.call(c, 'reply_verify', args, error=True)
                 self.assertEqual(missed['verification']['reason'], 'reply_author_mismatch')
+                self.assertEqual(missed['verification']['key_scope'], 'local')
                 self.assertEqual(missed['reply']['state'], 'unknown')
                 self.assertIsNone(missed['confirmation_basis'])
                 self.assertFalse(missed['send_allowed'])
@@ -186,6 +202,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 shown = await self.call(c, 'reply_show', target)
                 self.assertFalse(shown['remote_verified'])
                 self.assertEqual(shown['verification_receipt'], verified['verification'])
+                self.assertEqual(shown['verification_receipt']['key_scope'], 'local')
                 self.assertEqual(shown['confirmation_basis'], 'provider_readback')
                 self.assertEqual(shown['reply']['state'], 'confirmed')
 

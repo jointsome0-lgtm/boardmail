@@ -124,7 +124,7 @@ def parser():
             s.add_argument("--timeout", type=float, default=1800, metavar="SECONDS",
                            help="Nonnegative, finite seconds; 0 checks once, default %(default)s. Run collection separately")
             s.epilog += "\nRun collect or check separately; wait only watches the local database."
-    for command, summary in (("show", "Read one saved message and its marks"),
+    for command, summary in (("show", "Read one saved message, its marks and reply attempt state"),
                              ("mark", "Change a local read/reply mark"),
                              ("context", "Read the target, parent and root; mark nothing")):
         s = sub.add_parser(command, help=summary, description=summary + ".",
@@ -143,6 +143,9 @@ def parser():
                         "through the board; it records the URL locally and does not publish anything.")
         s.add_argument("source", metavar="SOURCE", help="Source name returned in a message")
         s.add_argument("id", metavar="ID", help="Exact message ID from a Boardmail result")
+        if command == "show":
+            s.epilog += ("\nreply_attempt is null when no attempt was saved; otherwise it gives state, next_action\n"
+                         "and arguments for reply show. A replied mark does not resolve an unknown attempt.")
         if command == "context":
             s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
             s.epilog += ("\nConfigured active Postingboard/Colony sources can fetch current originals.\n"

@@ -38,6 +38,48 @@ class ReplyRecoveryTests(unittest.TestCase):
                               'moltbook', uid(10), *map(str, args)], capture_output=True, text=True, timeout=10)
         return json.loads(run.stdout), run.returncode
 
+    def test_message_show_exposes_reply_state_and_followable_recovery_without_writing(self):
+        self.store.mark('moltbook', uid(10), 'needs_reply')
+        for phase, state, next_action in (
+                ('empty', None, None),
+                ('prepared', 'prepared', 'begin_before_publishing'),
+                ('begun', 'unknown', 'read_back_before_retry'),
+                ('marked_replied', 'unknown', 'read_back_before_retry'),
+                ('confirmed', 'confirmed', 'do_not_publish_again')):
+            with self.subTest(phase=phase):
+                if phase == 'prepared':
+                    key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']
+                elif phase == 'begun':
+                    self.command('begin', key=key)
+                elif phase == 'marked_replied':
+                    self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+                elif phase == 'confirmed':
+                    self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
+                before = self.path.read_bytes()
+                run = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
+                    'show', 'moltbook', uid(10)], capture_output=True, text=True, timeout=10)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                result = json.loads(run.stdout)
+                self.assertEqual(result['message'], self.store.show('moltbook', uid(10)))
+                self.assertEqual(result['event'], 'message')
+                summary = result['reply_attempt']
+                if state is None:
+                    self.assertIsNone(summary)
+                else:
+                    self.assertEqual((summary['state'], summary['next_action']), (state, next_action))
+                    self.assertNotIn('body', summary)
+                    route = summary['show']
+                    self.assertEqual(route['tool'], 'boardmail_reply_show')
+                    args = route['arguments']
+                    recovered = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
+                        *route['command'].split(), args['source'], args['id']],
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                    attempt = json.loads(recovered.stdout)['reply']
+                    self.assertEqual((attempt['state'], attempt['body'], attempt['idempotency_key']),
+                                     (state, self.body, key))
+                self.assertEqual(self.path.read_bytes(), before)
+
     def test_process_exit_after_external_effect_recovers_same_body_key_and_receipt(self):
         self.store.mark('moltbook', uid(10), 'read')
         self.store.mark('moltbook', uid(10), 'needs_reply')
@@ -246,6 +288,9 @@ os._exit(79)
                 before = path.read_bytes()
                 shown, _ = commands.execute(store, 'reply_show', source=target['source'], id=target['id'])
                 self.assertIsNone(shown['reply'])
+                message, _ = commands.execute(store, 'show', source=target['source'], id=target['id'])
+                self.assertIsNone(message['reply_attempt'])
+                self.assertEqual(message['message'], shown['message'])
                 self.assertEqual(path.read_bytes(), before)
                 # Choose an incoming without an earlier replied mark in the legacy fixture.
                 target = next(m for m in messages if m['reply_ref'] is None)

@@ -90,6 +90,11 @@ class VerificationTests(unittest.TestCase):
                                  (uid(1), self.root, self.target, self.reply))
                 self.assertEqual(evidence['body_sha256'], result['reply']['body_sha256'])
                 self.assertEqual(evidence['idempotency_key'], self.key)
+                self.assertEqual(evidence['key_scope'], 'local')
+                with self.store.connect() as db:
+                    saved = json.loads(db.execute('SELECT evidence FROM reply_verifications WHERE source=?',
+                                                   (self.source,)).fetchone()[0])
+                self.assertEqual(saved['key_scope'], 'local')
                 self.assertEqual(result['message']['read_at'], marks['read_at'])
                 self.assertTrue(result['message']['needs_reply'])
                 self.assertEqual(result['message']['reply_ref'], self.ref)
@@ -112,6 +117,22 @@ class VerificationTests(unittest.TestCase):
                 self.assertEqual(failed['confirmation_basis'], 'provider_readback')
                 self.assertFalse(failed['remote_verified'])
                 self.assertEqual(self.path.read_bytes(), before)
+
+    def test_older_receipt_gets_local_key_scope_without_rewriting_or_reverification(self):
+        self.setup_source('postingboard')
+        verified, code = self.call()
+        self.assertEqual(code, 0)
+        legacy = dict(verified['verification_receipt'])
+        legacy.pop('key_scope', None)
+        with self.store.connect(write=True) as db:
+            db.execute('UPDATE reply_verifications SET evidence=? WHERE source=?',
+                       (json.dumps(legacy), self.source))
+        before, calls = self.path.read_bytes(), len(self.client.calls)
+        shown, code = self.call('show')
+        self.assertEqual(code, 0)
+        self.assertEqual(shown['verification_receipt'], {**legacy, 'key_scope': 'local'})
+        self.assertFalse(shown['remote_verified'])
+        self.assertEqual((self.path.read_bytes(), len(self.client.calls)), (before, calls))
 
     def test_exact_author_target_thread_text_and_provider_status_are_required(self):
         self.setup_source('moltbook')

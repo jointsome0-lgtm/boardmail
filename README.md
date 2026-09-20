@@ -49,7 +49,7 @@ boardmail context SOURCE ID
 boardmail mark read SOURCE ID
 ```
 
-`show` reads the saved copy. `context` adds the root, parent and current originals where supported. Check its statuses before answering. Reading marks nothing.
+`show` reads the saved copy and any saved reply attempt's state. Its `reply_attempt.show` points to the full journal; an independent `replied` mark does not resolve an `unknown` attempt. `context` adds the root, parent and current originals where supported. Check its statuses before answering. Reading marks nothing.
 
 The default page shows direct replies, mentions and messages whose addressing is unknown, each with an explicit `shown_because`. Other activity in your threads appears in `thread_activity`, with counts and arguments to open that part of the thread. Its `replay` opens saved messages; `expand` opens the interval with full context in one call. Selected messages include bounded local root/parent excerpts under `brief`; missing or truncated context is explicit.
 

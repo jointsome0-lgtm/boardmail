@@ -143,7 +143,7 @@ def execute(store, sources, source, message_id, *, key, ref):
     mid = candidate(adapter, ref, thread)
     if any(value not in (None, ref) for value in (attempt['reply_ref'], shown['message']['reply_ref'])):
         raise MailError('reply_reference_conflict')
-    evidence = {'adapter': adapter, 'reply_ref': ref, 'idempotency_key': key,
+    evidence = {'adapter': adapter, 'reply_ref': ref, 'idempotency_key': key, 'key_scope': 'local',
                 'checked_at': int(time.time()), 'status': 'unverified', 'reason': None}
     try:
         observed, body = read(adapter, settings, mid, thread)
