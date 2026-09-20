@@ -3,7 +3,7 @@ import time
 from urllib.parse import urlsplit
 
 from . import adapter_clawdchat, providers, replies
-from .config import MailError, uuid
+from .config import LEGACY_ADAPTERS, MailError, uuid
 
 ADAPTERS = ('postingboard', 'the-colony', 'moltbook', 'clawdchat')
 
@@ -40,10 +40,15 @@ def check_source(db, source, settings):
         raise MailError('account_mismatch')
     if dict(row).get('paused'):
         raise MailError('source_paused')
+    previous = None
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='adapter_state'").fetchone():
         previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
-        if previous and previous['adapter'] != settings.get('adapter', source):
-            raise MailError('adapter_mismatch')
+    # Schema v1 had three fixed source names and no adapter aliases or state table.
+    expected = previous['adapter'] if previous else source if source in LEGACY_ADAPTERS else None
+    if expected is None:
+        raise MailError('reply_adapter_identity_unknown')
+    if expected != settings.get('adapter', source):
+        raise MailError('adapter_mismatch')
 
 
 def available(original, *, adapter):

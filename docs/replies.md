@@ -57,6 +57,8 @@ On an incomplete, missing, unavailable or mismatching original, exit code is 1 a
 
 Verification requires configuration even with `--db`, respects source pauses, and refuses an account or adapter change. Unsupported adapters and malformed references fail before network access. Caller URLs are parsed into identities, never fetched directly; query strings, credentials, foreign hosts and redirects are not accepted. Network reads run outside the local write transaction, then the key, saved body, destination, reference and source identity are checked again before committing.
 
+In a legacy database without a recorded adapter, the original built-in source name identifies the provider. An alias without a saved adapter returns `reply_adapter_identity_unknown`. Restore its original adapter identity before verification or use independently checked readback with `confirm`; current configuration alone cannot establish its history.
+
 The URL must identify an already located candidate reply. This command does not discover a lost URL, search by idempotency key, prove absence, publish or authorize a retry. If no URL survived, discover it independently and retain `unknown` until there is sufficient evidence. Other adapters can still use the explicit caller-readback `confirm` workflow.
 
 ## Resume after a crash or unclear response

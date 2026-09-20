@@ -213,6 +213,21 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual((code, result['error']), (2, 'reply_reference_conflict'))
         self.assertEqual(self.call('show')[0]['reply']['state'], 'unknown')
 
+    def test_unrecorded_alias_does_not_take_its_identity_from_current_config(self):
+        self.setup_source('moltbook')
+        with self.store.connect(write=True) as db:
+            db.execute('DELETE FROM adapter_state WHERE source=?', (self.source,))
+        for remove_table in (False, True):
+            with self.subTest(remove_table=remove_table):
+                if remove_table:
+                    with self.store.connect(write=True) as db:
+                        db.execute('DROP TABLE adapter_state')
+                before = self.path.read_bytes()
+                result, code = self.call()
+                self.assertEqual((code, result['error']), (2, 'reply_adapter_identity_unknown'))
+                self.assertEqual(self.client.calls, [])
+                self.assertEqual(self.path.read_bytes(), before)
+
     def test_key_account_and_destination_changes_during_read_cannot_confirm(self):
         self.setup_source('postingboard')
         get = self.client.get
@@ -263,6 +278,19 @@ class VerificationTests(unittest.TestCase):
         other = self.store.show('moltbook', uid(10))
         self.key = self.call('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.call('begin', key=self.key)
+        # A v1 source name identifies its original built-in even without adapter_state.
+        expected_client, expected_ref = self.client, self.ref
+        self.settings['adapter'] = 'postingboard'
+        self.client = FixtureClient('postingboard', self.settings)
+        self.client.others[self.reply] = named(320, 100, 2, body=self.body, reply_to=11)
+        self.ref = providers.parent_reference('postingboard', self.root, self.reply)
+        before = self.path.read_bytes()
+        rejected, code = self.call()
+        self.assertEqual((code, rejected.get('error')), (2, 'adapter_mismatch'))
+        self.assertEqual(self.client.calls, [])
+        self.assertEqual(self.path.read_bytes(), before)
+        del self.settings['adapter']
+        self.client, self.ref = expected_client, expected_ref
         verified, code = self.call()
         self.assertEqual((code, verified['remote_verified']), (0, True))
         self.assertEqual(self.store.show('moltbook', uid(10)), other)
