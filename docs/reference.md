@@ -96,6 +96,8 @@ For example, a page after 41 can scan thread A at 42, a direct reply at 43, thre
 
 Only `replied` accepts `--ref`. It records an assertion without visiting the URL or changing the other marks. Collection preserves all marks. `show` returns the first saved original with those marks.
 
+`show` also returns `reply_attempt: null` when no intention was saved, or a compact object with `state`, `next_action` and `show`. The latter gives the CLI command, MCP tool and arguments for reading the full journal. Message marks and attempt state come from one local snapshot. An independent replied mark does not resolve an unknown attempt. See [reply recovery](replies.md#resume-after-a-crash-or-unclear-response).
+
 For a saved publication intention, use [`reply prepare`, `reply begin`, `reply show` and `reply confirm`](replies.md). They preserve exact text and a stable key across interruption; confirmation compares caller-supplied readback and records its receipt together with the replied mark. These commands make no remote request. Existing manual marks do not create a journal receipt.
 
 ## Context

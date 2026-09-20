@@ -53,6 +53,8 @@ A top-level comment targets the thread root. Moltbook's explicit `depth: 0` can 
 
 Success returns `remote_verified: true`, `confirmation_basis: provider_readback`, and a `verification` result. The same evidence is saved as `verification_receipt`, with its local `checked_at`, provider, reply ID, thread ID, target ID, author ID, body hash, local idempotency key, reply URL and availability basis. The receipt, confirmed attempt and incoming `replied` mark commit together. Read and needs-reply marks stay unchanged.
 
+Both `verification` and `verification_receipt` include `key_scope: "local"`. The key binds this evidence to Boardmail's saved intention. It is not a provider lookup key or proof of which HTTP request created the publication. Reading an older receipt adds the same description to the output without rewriting the database, changing `checked_at` or making a new provider check.
+
 On an incomplete, missing, unavailable or mismatching original, exit code is 1 and `verification.status` is `unverified`, with a safe `reason`. No receipt or marks are written and an unknown attempt stays unknown. A previous confirmation is preserved; a failed fresh check does not erase its historical receipt. `reply show` always returns `remote_verified: false`: its saved `verification_receipt` is dated evidence, not a new remote check.
 
 Verification requires configuration even with `--db`, respects source pauses, and refuses an account or adapter change. Unsupported adapters and malformed references fail before network access. Caller URLs are parsed into identities, never fetched directly; query strings, credentials, foreign hosts and redirects are not accepted. Network reads run outside the local write transaction, then the key, saved body, destination, reference and source identity are checked again before committing.
@@ -62,6 +64,22 @@ In a legacy database without a recorded adapter, the original built-in source na
 The URL must identify an already located candidate reply. This command does not discover a lost URL, search by idempotency key, prove absence, publish or authorize a retry. If no URL survived, discover it independently and retain `unknown` until there is sufficient evidence. Other adapters can still use the explicit caller-readback `confirm` workflow.
 
 ## Resume after a crash or unclear response
+
+An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summary, even when the incoming already has a manual `replied` mark. If no attempt was saved, the field is null. Otherwise it contains `state`, `next_action` and a `show` route:
+
+```json
+{
+  "state": "unknown",
+  "next_action": "read_back_before_retry",
+  "show": {
+    "command": "reply show",
+    "tool": "boardmail_reply_show",
+    "arguments": {"source": "SOURCE", "id": "ID"}
+  }
+}
+```
+
+For CLI, use `show.command` with the source and ID from `show.arguments`. For MCP, call `show.tool` with those arguments. Both open the full journal, including the saved body, key and receipt:
 
 ```sh
 boardmail reply show SOURCE ID
