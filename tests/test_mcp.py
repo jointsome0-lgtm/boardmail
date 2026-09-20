@@ -120,15 +120,19 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         body = 'Exact synthetic reply.\r\nКириллица.\n'
         path = Path(self.temp.name) / 'reply.txt'; path.write_bytes(body.encode('utf-8'))
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
-            self.assertIsNone((await self.call(c, 'reply_show', target))['reply'])
+            empty = await self.call(c, 'reply_show', target)
+            self.assertIsNone(empty['reply'])
+            self.assertIsNone(empty['confirmation_basis'])
             run = await asyncio.to_thread(subprocess.run,
                 [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'reply', 'prepare',
                  target['source'], target['id'], '--body-file', str(path)], capture_output=True, text=True, timeout=10)
             self.assertEqual(run.returncode, 0, run.stderr)
             prepared = json.loads(run.stdout)
+            self.assertIsNone(prepared['confirmation_basis'])
             key = prepared['reply']['idempotency_key']
             begun = await self.call(c, 'reply_begin', {**target, 'key':key})
             self.assertTrue(begun['send_allowed'])
+            self.assertIsNone(begun['confirmation_basis'])
             repeat = await self.call(c, 'reply_prepare', {**target, 'body':body})
             self.assertEqual((repeat['reply']['state'], repeat['reply']['idempotency_key']), ('unknown', key))
             self.assertFalse(repeat['send_allowed'])
@@ -173,6 +177,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 missed = await self.call(c, 'reply_verify', args, error=True)
                 self.assertEqual(missed['verification']['reason'], 'reply_author_mismatch')
                 self.assertEqual(missed['reply']['state'], 'unknown')
+                self.assertIsNone(missed['confirmation_basis'])
                 self.assertFalse(missed['send_allowed'])
                 reply['agent_id'] = cfg['postingboard']['account_id']
                 verified = await self.call(c, 'reply_verify', args)
@@ -181,6 +186,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 shown = await self.call(c, 'reply_show', target)
                 self.assertFalse(shown['remote_verified'])
                 self.assertEqual(shown['verification_receipt'], verified['verification'])
+                self.assertEqual(shown['confirmation_basis'], 'provider_readback')
                 self.assertEqual(shown['reply']['state'], 'confirmed')
 
     async def test_reading_settings_thread_summary_and_replay(self):

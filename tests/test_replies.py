@@ -110,6 +110,28 @@ os._exit(79)
             self.assertEqual(len({result['reply']['idempotency_key'] for result, _ in results}), 1)
             self.assertEqual(sum(result['send_allowed'] for result, _ in results), int(action == 'begin'))
 
+    def test_confirmation_basis_requires_a_confirmed_attempt_not_a_reply_mark(self):
+        absent, _ = self.cli('show')
+        prepared, _ = self.cli('prepare', '--body-file', self.file)
+        key = prepared['reply']['idempotency_key']
+        unknown, _ = self.cli('begin', '--key', key)
+        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        before = self.path.read_bytes()
+        marked, _ = self.cli('show')
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(marked['reply']['state'], 'unknown')
+        self.assertEqual(marked['message']['reply_ref'], self.ref)
+        for state, result in [('absent', absent), ('prepared', prepared),
+                              ('unknown', unknown), ('independently_marked_replied', marked)]:
+            with self.subTest(state=state):
+                self.assertIsNone(result['confirmation_basis'])
+        readback = self.root / 'readback.txt'; readback.write_bytes(self.body.encode('utf-8'))
+        confirmed, code = self.cli('confirm', '--key', key, '--ref', self.ref, '--readback-file', readback)
+        self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
+        self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
+        shown, _ = self.cli('show')
+        self.assertEqual(shown['confirmation_basis'], 'caller_supplied_readback')
+
     def test_explicit_draft_replacement_fences_stale_begin_and_never_replaces_unknown(self):
         first = self.command('prepare', body=self.body)[0]['reply']
         original = self.path.read_bytes()
@@ -159,6 +181,7 @@ os._exit(79)
         before = self.path.read_bytes()
         shown, code = self.command('show')
         self.assertEqual((code, shown['reply'], shown['next_action']), (0, None, 'inspect_recorded_reply'))
+        self.assertIsNone(shown['confirmation_basis'])
         result, code = self.command('prepare', body=self.body)
         self.assertEqual((code, result['error']), (2, 'reply_already_recorded'))
         self.assertEqual(before, self.path.read_bytes())

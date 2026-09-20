@@ -176,8 +176,11 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                      'confirmed': 'do_not_publish_again'}[attempt['state']]
     if send_allowed:
         following = 'publish_saved_body_with_saved_key_then_read_back'
+    basis = None
+    if attempt is not None and attempt['state'] == 'confirmed':
+        basis = 'provider_readback' if evidence else 'caller_supplied_readback'
     return {'event': 'reply_attempt', 'message': message, 'reply': attempt,
             'changed': changed, 'send_allowed': send_allowed, 'next_action': following,
-            'confirmation_basis': 'provider_readback' if evidence else 'caller_supplied_readback',
+            'confirmation_basis': basis,
             'remote_verified': verification is not None, 'verification': verification, 'verification_receipt': evidence,
             'publication_performed': False, 'collection_performed': False}, 0
