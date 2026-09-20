@@ -85,7 +85,7 @@ def present(db, result, *, scope, context):
     for item in result["messages"]:
         if scope == "addressed" and item["addressing"] == "thread":
             key = (item["source"], item["thread_id"])
-            summary = activity.setdefault(key, {"source": key[0], "thread_id": key[1], "count": 0,
+            summary = activity.setdefault(key, {"source": key[0], "thread_id": key[1], "tags": item['tags'], "count": 0,
                 "unread": 0, "first_seq": item["arrival_seq"], "last_seq": item["arrival_seq"],
                 "reason": "thread_activity_without_confirmed_direct_reply_or_mention"})
             summary["count"] += 1

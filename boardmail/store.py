@@ -8,7 +8,7 @@ import time
 from urllib.parse import urlsplit
 
 from .config import COVERAGE, MailError
-from . import reader
+from . import reader, tags
 
 STALE_AFTER = 540
 SCHEMA_VERSION = 2
@@ -288,11 +288,12 @@ class Store:
         return result
 
     @staticmethod
-    def _message(row):
+    def _message(row, db):
         item = dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
         item.setdefault("discovery", None)
         item.setdefault("addressing", None)
+        item['tags'] = tags.names(db, item['source'], item['thread_id'])
         return item
 
     def settings(self, *, scope=None, context=None, reset=False):
@@ -317,21 +318,25 @@ class Store:
                     "origin": {key: "saved" if key in saved else "default" for key in reader.DEFAULTS}}
 
     def page(self, after=0, limit=100, *, unread=False, scope="all", context="none", through=None,
-             source=None, thread=None):
+             source=None, thread=None, tag=None, untagged=False):
         with self.connect() as db:
             predicate, values = "arrival_seq>?", [after]
             for column, value, operator in (("arrival_seq", through, "<="), ("source", source, "="), ("thread_id", thread, "=")):
                 if value is not None:
                     predicate += " AND " + column + operator + "?"
                     values.append(value)
+            membership, membership_values = tags.predicate(db, tag, untagged)
+            predicate += ' AND ' + membership
+            values.extend(membership_values)
             rows = db.execute("SELECT * FROM messages WHERE " + predicate +
                 (" AND read_at IS NULL" if unread else "") + " ORDER BY arrival_seq LIMIT ?",
                 (*values,limit+1)).fetchall()
             selected = rows[:limit]
-            result = {"messages": [self._message(r) for r in selected],
+            result = {"messages": [self._message(r, db) for r in selected],
                     "next_after": selected[-1]["arrival_seq"] if selected else after,
                     "more": len(rows)>limit, "sources": self._health(db),
-                    "checkpoint_safe": not (unread or through is not None or source is not None or thread is not None)}
+                    "checkpoint_safe": not (unread or through is not None or source is not None or thread is not None
+                                            or tag is not None or untagged)}
             return reader.present(db, result, scope=scope, context=context)
 
     def status(self, stale_after=None):
@@ -356,7 +361,7 @@ class Store:
     def find(self, source, message_id):
         with self.connect() as db:
             row = db.execute("SELECT * FROM messages WHERE source=? AND id=?", (source,message_id)).fetchone()
-            return None if row is None else self._message(row)
+            return None if row is None else self._message(row, db)
 
     def show(self, source, message_id):
         message = self.find(source, message_id)
@@ -367,7 +372,7 @@ class Store:
     def replied_with(self, source, reply_ref, *, exclude_id):
         """All local records linked to one exact published reply, within this source."""
         with self.connect() as db:
-            return [self._message(row) for row in db.execute(
+            return [self._message(row, db) for row in db.execute(
                 "SELECT * FROM messages WHERE source=? AND reply_ref=? AND id<>? ORDER BY arrival_seq",
                 (source, reply_ref, exclude_id))]
 

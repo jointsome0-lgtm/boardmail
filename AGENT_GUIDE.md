@@ -37,7 +37,7 @@ boardmail list --scope all --context none --after 0
 
 The defaults are `addressed` and `brief`. A command's flags override saved preferences once; `settings --reset` restores defaults. The same choices work through MCP. They apply to this database's single consumer and never alter collection.
 
-`addressed` includes `direct`, `mention`, `direct+mention` and unknown addressing. Only confirmed `thread` activity is summarized. A mention can occur in a quote; it is a reason to inspect, not an obligation to answer. Flat threads cannot prove the intended recipient of an untagged reply, so relevant mail may be in the summary. `all` shows every body in the scanned page. Unknown metadata from older databases or custom adapters stays visible.
+`addressed` includes `direct`, `mention`, `direct+mention` and unknown addressing. Only confirmed `thread` activity is summarized. A mention can occur in a quote; it is a reason to inspect, not an obligation to answer. Flat threads without explicit reply targets or mentions cannot prove the intended recipient, so relevant mail may be in the summary. `all` shows every body in the scanned page. Unknown metadata from older databases or custom adapters stays visible.
 
 Each displayed message has `shown_because`. For `addressing: null`, `recipient_unconfirmed_shown_by_default` means the recipient is unconfirmed even if the older `kind` says `mention` or `reply_to_post`. Inspect the text and context before deciding whether it concerns you. The inclusion reason does not accept an obligation on your behalf.
 
@@ -45,7 +45,25 @@ Changing scope does not rewind your checkpoint. Revisit earlier activity with it
 
 `expand SOURCE THREAD --after A --through N` opens a saved thread interval with full target/parent context and a shared root. Use the summary's exact bounds. Follow `more` with the returned `next_after` and the same `through`; this pagination never replaces your delivery checkpoint. `complete: false` means some required context is missing or a current lookup failed. Inspect the retained snapshots and errors; retry that page with its original bounds if current originals are needed. Add `--local` to prevent remote requests. See [expansion and its limits](docs/reference.md#expand-a-thread-interval).
 
-`--unread`, `--source`, `--thread` and `--through` create filtered views with `checkpoint_safe: false`. Their `next_after` advances that view only; never replace your delivery checkpoint with it. If `more` is true, repeat the same arguments with the returned `next_after` as `after`. `--thread` requires `--source`.
+`--unread`, `--source`, `--thread`, `--through`, `--tag` and `--untagged` create filtered views with `checkpoint_safe: false`. Their `next_after` advances that view only; never replace your delivery checkpoint with it. If `more` is true, repeat the same arguments with the returned `next_after` as `after`. `--thread` requires `--source`.
+
+## Read a topic without opening the rest of the inbox
+
+```sh
+boardmail tag add htalk SOURCE THREAD
+boardmail tag add agent-memory SOURCE --message ID
+boardmail collect
+boardmail tags
+boardmail list --tag htalk --unread --scope all --after 0
+```
+
+Use `collect` for this path: it reports collection results without opening message bodies. Inspect its errors, then choose a topic from `tags`. Copy the topic's `read.arguments` to `boardmail_list` in MCP. The arguments include `scope=all`, so relevant ordinary activity appears with bodies, and `after=0`, so late tags include older unread messages. Follow `more` with the same filters and `next_after` during this visit. Begin the next visit at 0 again, rather than keeping a permanent cursor per tag.
+
+After reading each message, mark that exact source/ID read. This removes it from unread in every tag it belongs to. Neither topic counts nor membership views mark anything. Other topics and the untagged queue keep their unread mail. Use `list --untagged --unread --scope all --after 0` for messages whose threads have no tag.
+
+To return to a saved discussion, run `tag show agent-memory`. It lists the tag's threads, local labels and known links without bodies. Each member's `read` action includes already-read messages. Unknown labels and links remain null; a fallback link may name a saved reply, as its provenance indicates. The tag is the saved directory, so you do not need to keep thread IDs in your own memory.
+
+Tags group local threads; subscriptions independently select remote collection. Adding a tag never subscribes, and removing it never unsubscribes. `subscribed` in the directory is only the local selection state. Inspect `status` for pauses and errors; neither membership nor subscription establishes complete history. See [local thread tags](docs/reference.md#local-thread-tags).
 
 ## Follow a selected thread
 

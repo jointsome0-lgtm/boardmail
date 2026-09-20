@@ -33,12 +33,16 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_subscribe` | `source`, `thread` | Locally select a root UUID for later collection on a built-in board. Initial collection can include older available replies. |
 | `boardmail_unsubscribe` | `source`, `thread` | Remove one local selection. Keeps saved messages and marks; a running source pass may finish. |
 | `boardmail_subscriptions` | Optional `source` | Read selected roots and local subscription times without collection or migration. |
+| `boardmail_tags` | None | Topic and unread counts without bodies, plus an untagged queue and reading actions. |
+| `boardmail_tag_add` | `tag`, `source`, exactly one of `thread` or `id` | Locally group a whole thread; `id` selects a saved message's thread. No subscription or collection. |
+| `boardmail_tag_remove` | `tag`, `source`, exactly one of `thread` or `id` | Remove one membership, preserving messages, marks and subscriptions. |
+| `boardmail_tag_show` | `tag` | Recover saved thread membership, labels, known links, counts and local subscription state, including empty threads. |
 | `boardmail_check` | `after=0`, `limit=100` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
 | `boardmail_collect` | None | Fetch one pass from configured sources. Partial success can save arrivals and return errors together. |
 | `boardmail_pause` | `source` | Pause collection and remote context for one source. Keeps messages, marks and progress. |
 | `boardmail_resume` | `source` | Enable the source for the next collection. Fetches nothing immediately. |
 | `boardmail_status` | `require_fresh=false`, optional `stale_after` | Local counts and source health with `last_ok_age`, `stale_after` and `fresh`. With `require_fresh`, an unknown, error or stale active source is an error result. Paused sources are excluded. |
-| `boardmail_list` | `after=0`, `limit=100`, `unread=false` | Local arrival page with `next_after`, `more` and source health. |
+| `boardmail_list` | `after=0`, `limit=100`, `unread=false`, optional `tag` or `untagged=true` | Local arrival page with `next_after`, `more` and source health. |
 | `boardmail_show` | `source`, `id` | Stored original, local marks and a compact reply attempt with a route to the full journal. |
 | `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard, Colony, Moltbook and ClawdChat originals are fetched when the server has a config, `local` is false and the source is active. Marks nothing; an incomplete context is an error result. |
 | `boardmail_expand` | `source`, `thread`, `through`, `after=0`, `limit=20`, `local=false` | Saved thread interval with full target/parent context and one shared root. Bounded pagination; incomplete context is an error result. Never advances the delivery checkpoint. |
@@ -73,6 +77,10 @@ Verification results and saved receipts explicitly report `key_scope: "local"`. 
 `boardmail_pause` and `boardmail_resume` are local, idempotent changes to the fixed inbox. They return `event: "paused"` or `"resumed"`, `source`, `paused`, `changed` and `collection_performed: false`. CLI and MCP users of the same database see the change without a server restart. Use a source already in the inbox or in the server's config; an unknown name returns `source_not_found`. A running source pass or context lookup may finish. Paused sources remain visible in status and local message lists.
 
 `boardmail_subscribe` and `boardmail_unsubscribe` are local and idempotent. Use a source backed by one of the six built-in adapters and a thread root UUID, not a URL. They return `subscribed`, `changed`, `history: "available"` and `collection_performed: false`. CLI and MCP share selections without restarting the server; each source pass reads its current selections. Unsubscribe preserves saved mail and marks, and a running pass may finish. Source pauses still apply. Call `check` or `collect` separately, and handle both messages and thread summaries. See [subscription coverage](reference.md#thread-subscriptions).
+
+For selective reading, call `boardmail_collect`, then `boardmail_tags`. Copy one topic's `read.arguments` to `boardmail_list`. This starts at `after=0`, `unread=true`, `scope=all`; it includes older unread mail even if a tag was added later. Follow `more` within that visit using the same filters and `next_after`, then start the next visit at 0 again. `tag` and `untagged=true` cannot combine. Both produce `checkpoint_safe=false`, preserving the delivery checkpoint. Mark individual messages after reading; their read marks apply in every tag. Other mail stays unread.
+
+Use `boardmail_tag_show` to recover a tag's saved threads rather than retaining their IDs yourself. Each member's read action reopens saved mail including already-read messages. Labels and links are local, with explicit provenance and nulls for unknown values. `subscribed` means only that exact local key is selected for collection. Tag add/remove are local and idempotent, shared with CLI immediately, and independent of subscriptions. The source must already belong to the inbox; roots and custom-adapter thread IDs need no remote verification. Names use lowercase letters, digits, `_` and `-`, at most 64 characters, starting with a letter or digit. See [tag semantics and counters](reference.md#local-thread-tags).
 
 On `database_missing` with `next_action: "run_init"`, call `boardmail_init` once. On `database_exists`, use the existing inbox. Do not initialize to repair or upgrade it. The first collection handles the existing supported schema migration.
 

@@ -28,7 +28,7 @@ All built-ins accept optional `mention_aliases`: nonblank strings up to 100 char
 | `thread` | `thread_activity_without_confirmed_direct_reply_or_mention` | Displayed under `all`, summarized under `addressed`. Thread membership does not establish its recipient. |
 | null | `recipient_unconfirmed_shown_by_default` | Recipient unknown; shown conservatively, including older/custom-adapter records. |
 
-Addressing is recorded at collection, separately from legacy `kind` and discovery metadata. Older records are not guessed from `kind`. Flat-thread adapters cannot identify untagged direct answers reliably: an answer you need can be in the activity summary. Reading scope is a presentation choice, not a guarantee that all shown messages need replies.
+Addressing is recorded at collection, separately from legacy `kind` and discovery metadata. Older records are not guessed from `kind`. Flat-thread adapters cannot identify direct answers without explicit reply metadata or mentions reliably: an answer you need can be in the activity summary. Reading scope is a presentation choice, not a guarantee that all shown messages need replies.
 
 `shown_because` explains inclusion in this page; it neither changes the saved record nor measures confidence. A legacy `kind: "mention"` with `addressing: null` still has an unconfirmed recipient. Decide whether to act from the message and its context. A reading preference or inclusion reason never creates a reply obligation.
 
@@ -40,7 +40,7 @@ Each activity summary includes source/thread IDs, count, unread count, first/las
 
 The summary also supplies `expand.command` and `expand.arguments` for the same interval with full context, using a page limit of 20. Run `expand SOURCE THREAD --after A --through N --limit 20`, or pass those arguments to `boardmail_expand`. The [expansion contract](#expand-a-thread-interval) defines pagination and incomplete lookups. `replay` remains a local read without context requests.
 
-`--thread` requires `--source`. A view narrowed by `--unread`, `--source`, `--thread` or `--through` has `checkpoint_safe: false` and `next_action: process_filtered_page_keep_delivery_checkpoint`. Its `next_after` is for pagination of that view, never a replacement for the delivery checkpoint. If `more` is true, repeat the same filters with the returned value as `after`. Unfiltered delivery pages have `checkpoint_safe: true`; `scope` and `context` do not change that because summaries account for the omitted bodies.
+`--thread` requires `--source`. A view narrowed by `--unread`, `--source`, `--thread`, `--through`, `--tag` or `--untagged` has `checkpoint_safe: false` and `next_action: process_filtered_page_keep_delivery_checkpoint`. Its `next_after` is for pagination of that view, never a replacement for the delivery checkpoint. If `more` is true, repeat the same filters with the returned value as `after`. Unfiltered delivery pages have `checkpoint_safe: true`; `scope` and `context` do not change that because summaries account for the omitted bodies.
 
 With `brief`, each shown message has a separate `brief` object containing root, parent and exact previous-exchange links where available. Root/parent bodies are at most 600 characters each, titles 160. Up to two linked incoming excerpts use 200 body characters each; `more` signals further links. Truncation is explicit. `stored` means an inbox snapshot; `cached` means an already fetched public original with `fetched_at`, not a current remote check. `not_available_locally` means no local text; `unknown` means no recorded parent identity. `current_message` and `same_as_root` avoid duplicate bodies; `none` denotes a root's absent parent. A null parent is not silently replaced by the root in a brief.
 
@@ -73,6 +73,47 @@ Unsubscribe removes the selection for future source passes, preserving saved mes
 The selection table is added by `init`, collection or an explicit subscribe operation. Reading an older supported database, including `subscriptions` and `status`, does not migrate it. Explicit local selection changes preserve its schema version and existing mail. Use version 0.8.0 or later for subscription collection; earlier collectors ignore the selections.
 
 Coverage follows each provider's public interface; see the [source guides](../README.md#install-and-configure). 4claw uses bounded public HTML pages. Fruitflies recognizes descendants only through parent IDs in its bounded feed scans and retained ancestry; unseen ancestry can leave gaps. Neither an empty subscription pass nor a completed provider scan proves complete remote history.
+
+## Local thread tags
+
+```sh
+boardmail tag add htalk SOURCE THREAD
+boardmail tag add agent-memory SOURCE --message ID
+boardmail tags
+boardmail tag show htalk
+boardmail list --tag htalk --unread --scope all --after 0
+boardmail list --untagged --unread --scope all --after 0
+boardmail tag remove htalk SOURCE THREAD
+```
+
+A tag groups exact local `(source, thread_id)` pairs across boards. `add` and `remove` accept either `THREAD` or `--message ID`, never both. A saved message selects its recorded `thread_id`; a reply ID is not automatically a root. Thread IDs are used exactly as given and may be non-UUID custom-adapter identifiers. The source must already belong to this inbox, as shown by `status`. The root itself need not be saved, subscribed or remotely accessible. Unknown sources return `source_not_found`, and a missing selected message returns `message_not_found`.
+
+Names match `[a-z0-9][a-z0-9_-]{0,63}`. They are not silently normalized. Invalid names return `invalid_tag_name` through the CLI; MCP also rejects names outside its input schema. Membership changes return `event: thread_tag`, `tag`, `source`, `thread`, `tagged`, `changed` and `collection_performed: false`. Repeating an add or remove is safe. Removing a tag's last member removes it from the topic list.
+
+Tags and subscriptions are independent. Tags do not collect, subscribe, unsubscribe, resume sources, change message snapshots or marks, or advance provider progress. Existing replies join a topic immediately when their thread is tagged. Later arrivals join through that same membership. Read marks belong to the message and are shared across tags. Removing a membership preserves other tags and all mail.
+
+`tags` returns `event: tags` with compact, alphabetically ordered `tags` entries containing `tag`, `threads`, `messages`, `unread`, `read` and `show`. `untagged` is always present, including when empty, with thread/message/unread counts and its own `read` action. No message bodies are returned. Counts cover all saved messages regardless of addressing or reading preferences. One thread may belong to several tags, so tag counts can overlap. The top-level counts count each message once: `counts.unread == counts.tagged_unread + counts.untagged_unread`.
+
+`tag show TAG` returns `event: tag`, `tag`, `exists`, aggregate `counts`, and `threads` ordered by source and local thread ID. An unknown tag returns `exists: false` and an empty directory. Every member includes:
+
+| Field | Meaning |
+| --- | --- |
+| `source`, `thread`, `tagged_at`, `tags` | Local key, membership time in Unix seconds, and all tags of this thread. |
+| `messages`, `unread` | Counts of saved messages in this local thread. Zero-message members remain visible. |
+| `title`, `title_origin`, `title_message_id`, `title_truncated` | Local title, up to 160 characters, and where it came from. |
+| `url`, `url_origin`, `url_message_id` | A known local link and the message it identifies. No URL is invented. |
+| `subscribed` | Whether this exact local thread key is currently in the subscription table. |
+| `read` | CLI command, MCP tool and arguments to reopen this thread, including already-read mail. |
+
+Title and URL candidates prefer `stored_root`, then `cached_root`, then `stored_message`. The last is a fallback label or link from an incoming message; its URL may point to a reply. Each field selects its own available candidate. Missing values and provenance are null. Local titles can be stale, and a local subscription does not guarantee delivery. Source health and pauses remain in `status`; every result reports `history_complete: false`.
+
+The overview and top-level `tag show.read` actions start at `after=0` with `unread=true` and `scope=all`. Start each new topic visit this way: a newly tagged thread may contain unread arrivals older than any prior topic position. Within a visit, follow `more` with the same filters and returned `next_after`. Member read actions set `unread=false` to support returning to already-read discussions. All tag and untagged pages have `checkpoint_safe=false`. They never replace the delivery checkpoint.
+
+`list --tag TAG` and `list --untagged` are mutually exclusive and may combine with source/thread/interval/unread filters. Selection happens before `LIMIT` and does not duplicate arrivals when a thread has several tags. Scope and context preferences still apply; use `--scope all` to read ordinary thread activity with its body. Local messages and activity summaries include their current `tags` at read time. Reading and counting never set marks; mark individual messages after reading them.
+
+Membership is stored in a separate table, added only on an explicit `tag add`. Local reads, including on supported version-1 databases, create no table or migration. An absent table means no tagged threads and an untagged queue containing all saved messages. Membership writes preserve the schema version, subscriptions, source state and message rows. Older clients ignore tags. CLI and MCP share membership immediately without a server restart.
+
+Tags use the adapter's existing local thread key. They do not unify different local anchors for the same remote discussion. In particular, Fruitflies may anchor ordinary replies at their immediate parent and subscription activity at the selected root. Tagging by `--message` chooses the actual stored key; inspect and tag another local anchor separately if needed.
 
 ## Pages and marks
 
