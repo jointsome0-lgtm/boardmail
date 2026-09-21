@@ -11,6 +11,14 @@ MAX_BODY_BYTES = 65536
 PAGE_SIZE = 20
 NEXT_ACTION = {'prepared': 'begin_before_publishing', 'unknown': 'read_back_before_retry',
                'confirmed': 'do_not_publish_again'}
+RECOVERY_GUIDANCE = (
+    "This attempt's external outcome remains unresolved. A replied mark or matching publication "
+    "does not identify which provider request created it; the saved key identifies this local journal entry. "
+    "A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. "
+    "A failed verification leaves the attempt unknown. Accepting the published reply's target does not "
+    "resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the "
+    "handoff before deciding whether retry or confirmation is justified."
+)
 SCHEMA = """CREATE TABLE IF NOT EXISTS reply_attempts (
     source TEXT NOT NULL, message_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE, body TEXT NOT NULL, body_sha256 TEXT NOT NULL,
@@ -215,5 +223,6 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
     return {'event': 'reply_attempt', 'message': message, 'reply': attempt,
             'changed': changed, 'send_allowed': send_allowed, 'next_action': following,
             'confirmation_basis': basis,
+            'recovery_guidance': RECOVERY_GUIDANCE if attempt and attempt['state'] == 'unknown' and not send_allowed else None,
             'remote_verified': verification is not None, 'verification': verification, 'verification_receipt': evidence,
             'publication_performed': False, 'collection_performed': False}, 0

@@ -211,6 +211,35 @@ os._exit(79)
             self.assertEqual(len({result['reply']['idempotency_key'] for result, _ in results}), 1)
             self.assertEqual(sum(result['send_allowed'] for result, _ in results), int(action == 'begin'))
 
+    def test_recovery_guidance_does_not_override_first_send_or_resolve_unknown(self):
+        absent, _ = self.cli('show')
+        prepared, _ = self.cli('prepare', '--body-file', self.file)
+        key = prepared['reply']['idempotency_key']
+        begun, _ = self.cli('begin', '--key', key)
+        self.assertTrue(begun['send_allowed'])
+        for result in (absent, prepared, begun):
+            self.assertIsNone(result['recovery_guidance'])
+        before = self.path.read_bytes()
+        shown, _ = self.cli('show')
+        guidance = shown['recovery_guidance']
+        self.assertIsInstance(guidance, str)
+        self.assertTrue(guidance.strip())
+        for action, args in (('begin', ('--key', key)), ('prepare', ('--body-file', self.file))):
+            result, code = self.cli(action, *args)
+            self.assertEqual((code, result['recovery_guidance'], result['send_allowed']), (0, guidance, False))
+            self.assertEqual(result['reply'], shown['reply'])
+        self.assertEqual(self.path.read_bytes(), before)
+        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        before = self.path.read_bytes()
+        marked, _ = self.cli('show')
+        self.assertEqual((marked['recovery_guidance'], marked['reply']), (guidance, shown['reply']))
+        self.assertIsNone(marked['confirmation_basis'])
+        self.assertEqual(self.path.read_bytes(), before)
+        confirmed, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
+        self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
+        self.assertIsNone(confirmed['recovery_guidance'])
+        self.assertIsNone(self.cli('show')[0]['recovery_guidance'])
+
     def test_confirmation_basis_requires_a_confirmed_attempt_not_a_reply_mark(self):
         absent, _ = self.cli('show')
         prepared, _ = self.cli('prepare', '--body-file', self.file)

@@ -118,6 +118,28 @@ class VerificationTests(unittest.TestCase):
                 self.assertFalse(failed['remote_verified'])
                 self.assertEqual(self.path.read_bytes(), before)
 
+    def test_unknown_guidance_survives_failed_verify_and_clears_on_confirmation(self):
+        self.setup_source('postingboard')
+        shown, _ = self.call('show')
+        guidance = shown['recovery_guidance']
+        self.assertIsInstance(guidance, str)
+        self.raw['reply_to_id'] = None
+        failed = self.assert_unverified('reply_target_mismatch')
+        self.assertEqual(failed['recovery_guidance'], guidance)
+        self.assertEqual(failed['reply'], shown['reply'])
+        self.assertIsNone(failed['verification_receipt'])
+        self.raw['reply_to_id'] = self.target
+        confirmed, code = self.call()
+        self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
+        self.assertIsNone(confirmed['recovery_guidance'])
+        before = self.path.read_bytes()
+        self.raw['reply_to_id'] = None
+        failed, code = self.call()
+        self.assertEqual((code, failed['reply']['state']), (1, 'confirmed'))
+        self.assertIsNone(failed['recovery_guidance'])
+        self.assertEqual(failed['verification_receipt'], confirmed['verification_receipt'])
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_older_receipt_gets_local_key_scope_without_rewriting_or_reverification(self):
         self.setup_source('postingboard')
         verified, code = self.call()
