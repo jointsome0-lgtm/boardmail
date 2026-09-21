@@ -45,6 +45,10 @@ def execute(store, command, *, sources=None, after=0, limit=None, unread=False, 
             raise MailError('invalid_arguments')
         if tag is not None:
             tags.validate_name(tag)
+    if command == 'reply_list':
+        with store.connect() as db:
+            return {'event': 'reply_attempts', **replies.pending(db, after, replies.PAGE_SIZE if limit is None else limit),
+                    'collection_performed': False, 'publication_performed': False}, 0
     if command == 'reply_verify':
         if any(value is not None for value in (body, readback_body, replace_key)) or local:
             raise MailError('invalid_arguments')
@@ -146,16 +150,12 @@ def execute(store, command, *, sources=None, after=0, limit=None, unread=False, 
         raise MailError("invalid_message_id") from None
     if command == "context":
         return context(store, source, message_id, remote_settings(store, source, sources, local))
-    if command == "show":
-        result, _ = replies.execute(store, 'show', source, message_id)
-        attempt = None
-        if result['reply'] is not None:
-            attempt = {'state': result['reply']['state'], 'next_action': result['next_action'],
-                       'show': {'command': 'reply show', 'tool': 'boardmail_reply_show',
-                                'arguments': {'source': source, 'id': message_id}}}
-        return {'event': 'message', 'message': result['message'], 'reply_attempt': attempt}, 0
-    store.mark(source, message_id, action.replace("-", "_"), ref=ref)
-    return {"event": "marked", "message": store.show(source, message_id)}, 0
+    if command == "mark":
+        store.mark(source, message_id, action.replace("-", "_"), ref=ref)
+    result, _ = replies.execute(store, 'show', source, message_id)
+    return {'event': 'marked' if command == 'mark' else 'message',
+            'message': result['message'],
+            'reply_attempt': replies.summary(source, message_id, result['reply'])}, 0
 
 
 def remote_settings(store, source, sources, local):

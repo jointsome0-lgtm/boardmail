@@ -8,7 +8,7 @@ import time
 from urllib.parse import urlsplit
 
 from .config import COVERAGE, MailError
-from . import reader, tags
+from . import reader, replies, tags
 
 STALE_AFTER = 540
 SCHEMA_VERSION = 2
@@ -348,6 +348,7 @@ class Store:
             sources = self._health(db, stale_after)
             # Freshness is only the last successful poll's age. Backlog is separate.
             return {"counts": dict(counts), "sources": sources, "stale_after": stale_after,
+                    "reply_attempts": replies.pending(db),
                     "subscriptions": self._subscriptions(db),
                     "fresh": bool(sources) and all(s["status"] in ("ok", "paused") for s in sources)}
 

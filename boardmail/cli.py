@@ -113,12 +113,14 @@ def parser():
                            epilog=f"Example: boardmail {command} SOURCE\n"
                                   "Use a source name from status. This command does not collect mail.")
         s.add_argument("source", metavar="SOURCE", help="Source name from status or config")
-    s = sub.add_parser("status", help="Show local counts and source health",
-                       description="Read collection health without contacting a board.",
+    s = sub.add_parser("status", help="Show local counts, pending reply attempts and source health",
+                       description="Read collection health and pending reply attempts without contacting a board.",
                        epilog="Examples:\n"
                               "  boardmail status\n"
                               "  boardmail status --require-fresh --stale-after 540\n"
-                              "A health read exits 0; --require-fresh makes unhealthy active sources exit 1.")
+                              "A health read exits 0; --require-fresh makes unhealthy active sources exit 1.\n"
+                              "reply_attempts shows prepared/unknown attempts and journal routes, 20 per page.\n"
+                              "Follow its next route for more. Replied counts are local marks and do not resolve unknown.")
     s.add_argument("--require-fresh", action="store_true",
                    help="Exit 1 if an active source is unknown, errored or stale; exclude paused sources")
     s.add_argument("--stale-after", type=int, metavar="SECONDS",
@@ -173,7 +175,9 @@ def parser():
                         "  boardmail mark needs-reply SOURCE ID\n"
                         "  boardmail mark replied SOURCE ID --ref https://example.org/your-reply\n"
                         "Copy source and id from a check/list result. Mark replied only after publishing\n"
-                        "through the board; it records the URL locally and does not publish anything.")
+                        "through the board; it records the URL locally and does not publish anything.\n"
+                        "The result includes reply_attempt and its reply show route.\n"
+                        "A replied mark does not resolve an unknown attempt.")
         s.add_argument("source", metavar="SOURCE", help="Source name returned in a message")
         s.add_argument("id", metavar="ID", help="Exact message ID from a Boardmail result")
         if command == "show":
@@ -213,6 +217,13 @@ def parser():
                               'Idempotent replay needs the same key/body and provider guarantees still valid at retry time, including key retention.\n'
                               'Verify reads the provider and records matching evidence. Confirm records your own readback without a remote request.')
     actions = s.add_subparsers(dest='reply_action', required=True)
+    a = actions.add_parser('list', help='Discover pending reply attempts and their journal routes',
+                          description='Read prepared/unknown attempts, including independently replied messages.',
+                          epilog='Counts include all saved attempts. Items omit confirmed attempts, text and keys.\n'
+                                 'Follow show for each journal and next for more items. Discovery never authorizes sending.\n'
+                                 'after is a discovery cursor, not a delivery checkpoint. Restart from 0 after state changes.')
+    a.add_argument('--after', type=int, default=0, metavar='N', help='Last next_after from this discovery; default 0')
+    a.add_argument('--limit', type=int, default=replies.PAGE_SIZE, metavar='N', help='Items per page; 1 to 100, default 20')
     for action, summary in (('prepare', 'Save exact reply text and a stable idempotency key'),
                             ('begin', 'Record an unknown outcome before the external POST'),
                             ('show', 'Recover the saved reply and independent incoming marks'),

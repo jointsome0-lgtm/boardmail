@@ -80,6 +80,65 @@ class ReplyRecoveryTests(unittest.TestCase):
                                      (state, self.body, key))
                 self.assertEqual(self.path.read_bytes(), before)
 
+    def test_marks_expose_recovery_without_changing_attempt_or_other_marks(self):
+        for state in (None, 'prepared', 'unknown', 'confirmed'):
+            with self.subTest(state=state):
+                path = self.root / f'{state}.sqlite3'
+                store = Store(path); store.initialize()
+                store.save('moltbook', uid(2), [mail(10)])
+                if state is not None:
+                    prepared, _ = replies.execute(store, 'prepare', 'moltbook', uid(10), body=self.body)
+                    key = prepared['reply']['idempotency_key']
+                    if state != 'prepared':
+                        replies.execute(store, 'begin', 'moltbook', uid(10), key=key)
+                    if state == 'confirmed':
+                        replies.execute(store, 'confirm', 'moltbook', uid(10), key=key,
+                                        ref=self.ref, readback_body=self.body)
+                original, _ = replies.execute(store, 'show', 'moltbook', uid(10))
+                for action, changed_fields in (
+                        ('read', {'read_at'}), ('unread', {'read_at'}),
+                        ('needs-reply', {'needs_reply'}), ('clear-reply', {'needs_reply'}),
+                        ('replied', {'replied_at', 'reply_ref'})):
+                    with self.subTest(action=action):
+                        before = store.show('moltbook', uid(10))
+                        args = ['mark', action, 'moltbook', uid(10)]
+                        if action == 'replied':
+                            args += ['--ref', self.ref]
+                        run = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(path), *args],
+                                             capture_output=True, text=True, timeout=10)
+                        self.assertEqual(run.returncode, 0, run.stderr)
+                        result = json.loads(run.stdout)
+                        self.assertEqual(result['event'], 'marked')
+                        after = result['message']
+                        self.assertEqual(after, store.show('moltbook', uid(10)))
+                        self.assertEqual({k: v for k, v in before.items() if k not in changed_fields},
+                                         {k: v for k, v in after.items() if k not in changed_fields})
+                        if action == 'read': self.assertIsNotNone(after['read_at'])
+                        elif action == 'unread': self.assertIsNone(after['read_at'])
+                        elif action == 'needs-reply': self.assertTrue(after['needs_reply'])
+                        elif action == 'clear-reply': self.assertFalse(after['needs_reply'])
+                        else:
+                            self.assertIsNotNone(after['replied_at'])
+                            self.assertEqual(after['reply_ref'], self.ref)
+                        summary = result['reply_attempt']
+                        snapshot = path.read_bytes()
+                        shown, _ = commands.execute(store, 'show', source='moltbook', id=uid(10))
+                        self.assertEqual(summary, shown['reply_attempt'])
+                        if state is None:
+                            self.assertIsNone(summary)
+                        else:
+                            self.assertEqual(summary['state'], state)
+                            self.assertEqual(set(summary), {'state', 'next_action', 'show'})
+                            route = summary['show']
+                            recovered = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(path),
+                                *route['command'].split(), route['arguments']['source'], route['arguments']['id']],
+                                capture_output=True, text=True, timeout=10)
+                            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                            journal = json.loads(recovered.stdout)
+                            self.assertEqual(journal['reply'], original['reply'])
+                            self.assertEqual(journal['confirmation_basis'], original['confirmation_basis'])
+                        self.assertEqual(path.read_bytes(), snapshot)
+
     def test_process_exit_after_external_effect_recovers_same_body_key_and_receipt(self):
         self.store.mark('moltbook', uid(10), 'read')
         self.store.mark('moltbook', uid(10), 'needs_reply')
@@ -151,6 +210,35 @@ os._exit(79)
             self.assertEqual(sum(result['changed'] for result, _ in results), 1)
             self.assertEqual(len({result['reply']['idempotency_key'] for result, _ in results}), 1)
             self.assertEqual(sum(result['send_allowed'] for result, _ in results), int(action == 'begin'))
+
+    def test_recovery_guidance_does_not_override_first_send_or_resolve_unknown(self):
+        absent, _ = self.cli('show')
+        prepared, _ = self.cli('prepare', '--body-file', self.file)
+        key = prepared['reply']['idempotency_key']
+        begun, _ = self.cli('begin', '--key', key)
+        self.assertTrue(begun['send_allowed'])
+        for result in (absent, prepared, begun):
+            self.assertIsNone(result['recovery_guidance'])
+        before = self.path.read_bytes()
+        shown, _ = self.cli('show')
+        guidance = shown['recovery_guidance']
+        self.assertIsInstance(guidance, str)
+        self.assertTrue(guidance.strip())
+        for action, args in (('begin', ('--key', key)), ('prepare', ('--body-file', self.file))):
+            result, code = self.cli(action, *args)
+            self.assertEqual((code, result['recovery_guidance'], result['send_allowed']), (0, guidance, False))
+            self.assertEqual(result['reply'], shown['reply'])
+        self.assertEqual(self.path.read_bytes(), before)
+        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        before = self.path.read_bytes()
+        marked, _ = self.cli('show')
+        self.assertEqual((marked['recovery_guidance'], marked['reply']), (guidance, shown['reply']))
+        self.assertIsNone(marked['confirmation_basis'])
+        self.assertEqual(self.path.read_bytes(), before)
+        confirmed, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
+        self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
+        self.assertIsNone(confirmed['recovery_guidance'])
+        self.assertIsNone(self.cli('show')[0]['recovery_guidance'])
 
     def test_confirmation_basis_requires_a_confirmed_attempt_not_a_reply_mark(self):
         absent, _ = self.cli('show')
