@@ -248,6 +248,9 @@ def parser():
         if action in ('begin', 'show'):
             a.epilog += ('\nIdempotent replay requires provider guarantees still valid for this operation and key at retry time.\n'
                          'An expired or unknown key-retention period cannot authorize replay; keep unresolved outcomes unknown.')
+        if action in ('show', 'verify'):
+            a.epilog += ('\nFor an unknown attempt, verify saves up to eight distinct candidate URLs before the provider read.\n'
+                         'After failure or interruption, reply show returns reply_candidates. They are unverified and never authorize sending.')
         if action == 'confirm':
             a.add_argument('--ref', required=True, metavar='URL', help='Published reply URL independently checked by the caller')
             a.add_argument('--readback-file', type=Path, required=True, metavar='PATH',
