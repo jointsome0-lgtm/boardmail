@@ -40,12 +40,12 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
-            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','tags','tag_show','tag_add','tag_remove','list','show','wait','mark','context','expand','pause','resume','reply_prepare','reply_begin','reply_show','reply_confirm','reply_verify')))
+            self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','tags','tag_show','tag_add','tag_remove','list','show','wait','mark','context','expand','pause','resume','reply_list','reply_prepare','reply_begin','reply_show','reply_confirm','reply_verify')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
                 self.assertIn('event', t.output_schema['required'])
                 self.assertEqual(t.annotations.destructive_hint, t.name == 'boardmail_reply_prepare')
-                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_tags','boardmail_tag_show','boardmail_reply_show'))
+                self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_tags','boardmail_tag_show','boardmail_reply_show','boardmail_reply_list'))
                 self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand','boardmail_reply_verify'))
             missing = await self.call(c, 'status', error=True)
             self.assertEqual((missing['error'],missing['next_action']), ('database_missing','run_init'))
@@ -167,6 +167,47 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await self.call(c, tool, args, error=True))['error'], 'invalid_arguments')
                 self.assertEqual(self.path.read_bytes(), before)
             self.assertEqual((await self.call(c, 'list', {'tag': 'htalk', 'untagged': False}))['scanned'], 0)
+            self.assertEqual(self.path.read_bytes(), before)
+
+    async def test_pending_reply_discovery_routes_and_cli_parity(self):
+        self.store.initialize()
+        self.store.save('moltbook', uid(2), [mail(n) for n in range(10, 31)])
+        self.store.save('custom', uid(3), [mail(42)])
+        async with Client(create_server(self.store), raise_exceptions=True) as c:
+            for source, number in [('moltbook', n) for n in range(10, 31)] + [('custom', 42)]:
+                target = {'source': source, 'id': uid(number)}
+                result = await self.call(c, 'reply_prepare', {**target, 'body': 'Synthetic reply'})
+                if number in (10, 30):
+                    key = result['reply']['idempotency_key']
+                    await self.call(c, 'reply_begin', {**target, 'key': key})
+                    if number == 30:
+                        await self.call(c, 'reply_confirm', {**target, 'key': key,
+                            'ref': 'https://example.invalid/reply', 'readback_body': 'Synthetic reply'})
+            await self.call(c, 'mark', {'source': 'moltbook', 'id': uid(10),
+                                      'action': 'replied', 'ref': 'https://example.invalid/independent'})
+            before = self.path.read_bytes()
+            status = await self.call(c, 'status')
+            page = status['reply_attempts']
+            self.assertEqual(page['counts'], {'prepared': 20, 'unknown': 1, 'confirmed': 1})
+            self.assertEqual(status['counts']['replied'], 2)
+            self.assertEqual(len(page['items']), 20)
+            route = page['items'][0]['show']
+            journal = await c.call_tool(route['tool'], route['arguments'])
+            self.assertFalse(journal.is_error)
+            self.assertEqual(journal.structured_content['reply']['state'], 'unknown')
+            route = page['next']
+            following = await c.call_tool(route['tool'], route['arguments'])
+            self.assertFalse(following.is_error)
+            self.assertEqual(len(following.structured_content['items']), 1)
+            self.assertIsNone(following.structured_content['next'])
+            first = await self.call(c, 'reply_list', {'limit': 1})
+            cli = subprocess.run([sys.executable, '-B', '-m', 'boardmail', '--db', str(self.path),
+                                  'reply', 'list', '--limit', '1'], text=True, capture_output=True, timeout=10)
+            self.assertEqual(cli.returncode, 0, cli.stderr)
+            self.assertEqual(first, json.loads(cli.stdout))
+            for arguments in ({'after': True}, {'after': -1}, {'limit': 0}, {'limit': 101}, {'source': 'custom'}):
+                error = await self.call(c, 'reply_list', arguments, error=True)
+                self.assertEqual(error['error'], 'invalid_arguments')
             self.assertEqual(self.path.read_bytes(), before)
 
     async def test_reply_attempt_survives_cli_mcp_handoffs_without_reset_or_implicit_marks(self):
@@ -423,7 +464,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
             async with Client(params, mode=mode, read_timeout_seconds=5) as c:
-                self.assertEqual(len((await c.list_tools()).tools),25)
+                self.assertEqual(len((await c.list_tools()).tools),26)
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):

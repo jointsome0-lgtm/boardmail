@@ -8,6 +8,9 @@ from uuid import uuid4
 from .config import MailError, identifier
 
 MAX_BODY_BYTES = 65536
+PAGE_SIZE = 20
+NEXT_ACTION = {'prepared': 'begin_before_publishing', 'unknown': 'read_back_before_retry',
+               'confirmed': 'do_not_publish_again'}
 SCHEMA = """CREATE TABLE IF NOT EXISTS reply_attempts (
     source TEXT NOT NULL, message_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE, body TEXT NOT NULL, body_sha256 TEXT NOT NULL,
@@ -73,6 +76,36 @@ def receipt(db, source, message_id, attempt):
     evidence = json.loads(row[0]) if row else None
     # Older receipts used the same local binding; describing it does not refresh their evidence.
     return {**evidence, 'key_scope': 'local'} if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
+
+
+def summary(source, message_id, attempt):
+    if attempt is None:
+        return None
+    return {'state': attempt['state'], 'next_action': NEXT_ACTION[attempt['state']],
+            'show': {'command': 'reply show', 'tool': 'boardmail_reply_show',
+                     'arguments': {'source': source, 'id': message_id}}}
+
+
+def pending(db, after=0, limit=PAGE_SIZE):
+    """Bounded discovery in the caller's read transaction; never creates a journal."""
+    if (type(after) is not int or not 0 <= after <= 2**63-1
+            or type(limit) is not int or not 1 <= limit <= 100):
+        raise MailError('invalid_arguments')
+    counts = {state: 0 for state in NEXT_ACTION}
+    rows = []
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reply_attempts'").fetchone():
+        counts.update(db.execute('SELECT state, COUNT(*) FROM reply_attempts GROUP BY state'))
+        rows = db.execute("""SELECT m.arrival_seq, a.source, a.message_id id, a.state
+            FROM reply_attempts a JOIN messages m ON m.source=a.source AND m.id=a.message_id
+            WHERE a.state IN ('prepared','unknown') AND m.arrival_seq>?
+            ORDER BY m.arrival_seq LIMIT ?""", (after, limit + 1)).fetchall()
+    items = [{'arrival_seq': row['arrival_seq'], 'source': row['source'], 'id': row['id'],
+              **summary(row['source'], row['id'], row)} for row in rows[:limit]]
+    next_after = items[-1]['arrival_seq'] if items else after
+    more = len(rows) > limit
+    return {'counts': counts, 'items': items, 'has_more': more, 'next_after': next_after,
+            'next': {'command': 'reply list', 'tool': 'boardmail_reply_list',
+                     'arguments': {'after': next_after, 'limit': limit}} if more else None}
 
 
 def execute(store, action, source, message_id, *, body=None, key=None, readback_body=None, ref=None, replace_key=None,
@@ -173,8 +206,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
     if attempt is None:
         following = 'inspect_recorded_reply' if message['reply_ref'] else 'prepare_reply'
     else:
-        following = {'prepared': 'begin_before_publishing', 'unknown': 'read_back_before_retry',
-                     'confirmed': 'do_not_publish_again'}[attempt['state']]
+        following = NEXT_ACTION[attempt['state']]
     if send_allowed:
         following = 'publish_saved_body_with_saved_key_then_read_back'
     basis = None

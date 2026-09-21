@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import threading
 
-from . import __version__, commands, config, tags
+from . import __version__, commands, config, replies, tags
 from .store import Store
 
 
@@ -31,6 +31,12 @@ def create_server(store, sources=None):
                "context": {"type": "string", "enum": ["brief", "none"],
                            "description": "Override saved context once. Default brief adds bounded local excerpts; no network."}}
     specs = {
+        'reply_list': ('Discover prepared/unknown attempts, including independently replied messages. '
+                       'Counts include all saved attempts; items omit confirmed attempts, text and keys. '
+                       'Follow each show route for its journal and next for another page. Local read, never authorizes sending. '
+                       'after is a discovery cursor, not a delivery checkpoint. Restart from 0 after state changes.',
+                       {'after': {**checkpoint, 'description': 'Last next_after from reply discovery; default 0.'},
+                        'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': replies.PAGE_SIZE}}, []),
         "reply_prepare": ("Save one reply intention locally before publishing. Returns the exact body, SHA-256 and stable "
                           "idempotency_key. Same text returns the saved key and state; never resets an unknown outcome. "
                           "replace_key explicitly replaces only a still-prepared draft and must match its current key. "
@@ -116,7 +122,9 @@ def create_server(store, sources=None):
                    "This local command fetches no mail.", {"source": identity["source"]}, ["source"]),
         "status": ("Read local counts and collection health with each source's last_ok_age and stale_after. "
                    "latest_arrival is diagnostic, not a checkpoint. require_fresh makes stale, error or unknown "
-                   "active sources an error result; paused sources are excluded. A fresh poll proves nothing about a consumer.",
+                   "active sources an error result; paused sources are excluded. A fresh poll proves nothing about a consumer. "
+                   "reply_attempts includes global state counts and the first 20 prepared/unknown attempts with journal routes; "
+                   "follow its next route for more. Replied counts are local marks and do not resolve unknown.",
                    {"require_fresh": {"type": "boolean", "default": False},
                     "stale_after": {"type": "integer", "minimum": 0, "maximum": 2**31-1, "description": "Seconds; default 540."}}, []),
         "list": ("Read an arrival page without changing marks. Process messages AND thread_activity before saving next_after; "
@@ -176,7 +184,7 @@ def create_server(store, sources=None):
     output_schema = {
         "type": "object", "required": ["event", "history_complete"],
         "properties": {
-            "event": {"enum": ["initialized", "collected", "paused", "resumed", "status", "settings", "subscribed", "unsubscribed", "subscriptions", "thread_tag", "tags", "tag", "messages", "message", "marked", "context", "expanded", "reply_attempt", "timeout", "cancelled", "error"]},
+            "event": {"enum": ["initialized", "collected", "paused", "resumed", "status", "settings", "subscribed", "unsubscribed", "subscriptions", "thread_tag", "tags", "tag", "messages", "message", "marked", "context", "expanded", "reply_attempt", "reply_attempts", "timeout", "cancelled", "error"]},
             "source": {"type": "string"}, "paused": {"type": "boolean"}, "changed": {"type": "boolean"},
             "history_complete": {"const": False}, "error": {"type": "string"},
             "next_action": {"type": "string"}, "next_after": {"type": "integer"},
@@ -199,6 +207,7 @@ def create_server(store, sources=None):
             'threads': {'type': 'array', 'items': {'type': 'object'}},
             'untagged': {'type': 'object'}, 'read': {'type': 'object'},
             "reply": {"type": ["object", "null"]}, "send_allowed": {"type": "boolean"},
+            'reply_attempts': {'type': 'object'}, 'has_more': {'type': 'boolean'}, 'next': {'type': ['object', 'null']},
             "reply_attempt": {"type": ["object", "null"], "required": ["state", "next_action", "show"],
                               "properties": {"state": {"enum": ["prepared", "unknown", "confirmed"]},
                                              "next_action": {"type": "string"}, "show": {"type": "object"}}},
@@ -224,8 +233,8 @@ def create_server(store, sources=None):
                               'not': {'required': ['tag', 'untagged'], 'properties': {'untagged': {'const': True}}}}
                              if command == "list" else {})},
             output_schema=output_schema,
-            annotations=ToolAnnotations(read_only_hint=command in ("status", "list", "show", "wait", "context", "expand", "subscriptions", "tags", "tag_show", "reply_show"),
-                                        destructive_hint=command == "reply_prepare", idempotent_hint=command in ("status", "list", "show", "wait", "context", "expand", "pause", "resume", "subscribe", "unsubscribe", "subscriptions", "tags", "tag_show", "tag_add", "tag_remove", "reply_prepare", "reply_begin", "reply_show", "reply_confirm", "reply_verify"),
+            annotations=ToolAnnotations(read_only_hint=command in ("status", "list", "show", "wait", "context", "expand", "subscriptions", "tags", "tag_show", "reply_show", "reply_list"),
+                                        destructive_hint=command == "reply_prepare", idempotent_hint=command in ("status", "list", "show", "wait", "context", "expand", "pause", "resume", "subscribe", "unsubscribe", "subscriptions", "tags", "tag_show", "tag_add", "tag_remove", "reply_prepare", "reply_begin", "reply_show", "reply_list", "reply_confirm", "reply_verify"),
                                         open_world_hint=command in ("collect", "check", "context", "expand", "reply_verify")),
         )
     # Adapter output redirection is process-wide. Do not overlap collectors.

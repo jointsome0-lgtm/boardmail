@@ -78,6 +78,10 @@ The URL must identify an already located candidate reply. This command does not 
 
 ## Resume after a crash or unclear response
 
+Start with `boardmail status`. Its `reply_attempts` includes counts for prepared, unknown and confirmed attempts and the first 20 pending items. Items include source, incoming ID, state, next_action and a `show` route to the full journal. Independent replied marks never hide an unknown attempt. Counts cover the whole journal, not just the page; confirmed attempts have no pending item.
+
+`boardmail reply list --after N --limit N` reads the same pending list directly. The default limit is 20, with a maximum of 100. Follow the returned `next` route while `has_more` is true. Items follow incoming `arrival_seq`; `next_after` is a discovery cursor, not a mail delivery checkpoint. Restart from 0 after attempt states change. Separate reads do not hold one frozen database snapshot. Summary items omit reply text, keys and confirmation evidence; open each journal to recover those. Discovery does not publish, confirm, change marks or authorize sending. Older databases without a journal return zero counts and an empty page without migration.
+
 An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summary, even when the incoming already has a manual `replied` mark. Every `boardmail mark` result includes the same summary after changing the mark, so an unresolved attempt stays visible when `mark replied` succeeds. Marks do not change the attempt's state. If no attempt was saved, the field is null. Otherwise it contains `state`, `next_action` and a `show` route:
 
 ```json
