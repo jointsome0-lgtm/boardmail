@@ -9,6 +9,7 @@ from .config import MailError, identifier
 
 MAX_BODY_BYTES = 65536
 PAGE_SIZE = 20
+MAX_CANDIDATES = 8
 NEXT_ACTION = {'prepared': 'begin_before_publishing', 'unknown': 'read_back_before_retry',
                'confirmed': 'do_not_publish_again'}
 RECOVERY_GUIDANCE = (
@@ -30,6 +31,11 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS reply_attempts (
 VERIFICATION_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_verifications (
     source TEXT NOT NULL, message_id TEXT NOT NULL, evidence TEXT NOT NULL,
     PRIMARY KEY (source,message_id))"""
+
+CANDIDATE_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_candidates (
+    source TEXT NOT NULL, message_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+    reply_ref TEXT NOT NULL, adapter TEXT NOT NULL, account_id TEXT NOT NULL,
+    recorded_at INTEGER NOT NULL, PRIMARY KEY (source,message_id,reply_ref))"""
 
 
 def digest(body):
@@ -84,6 +90,17 @@ def receipt(db, source, message_id, attempt):
     evidence = json.loads(row[0]) if row else None
     # Older receipts used the same local binding; describing it does not refresh their evidence.
     return {**evidence, 'key_scope': 'local'} if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
+
+
+def candidates(db, source, message_id, attempt):
+    """Caller-supplied references, separate from receipts and confirmed reply URLs."""
+    if (not attempt or attempt['state'] != 'unknown'
+            or not db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_candidates'").fetchone()):
+        return []
+    rows = db.execute('SELECT reply_ref,adapter,account_id,recorded_at FROM reply_candidates '
+                      'WHERE source=? AND message_id=? AND idempotency_key=? ORDER BY recorded_at,reply_ref',
+                      (source, message_id, attempt['idempotency_key']))
+    return [{**dict(row), 'status': 'unverified', 'identity_basis': 'parsed_reference'} for row in rows]
 
 
 def summary(source, message_id, attempt):
@@ -210,6 +227,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                     changed = True
         attempt = saved(db, source, message_id)
         evidence = receipt(db, source, message_id, attempt)
+        references = candidates(db, source, message_id, attempt)
 
     if attempt is None:
         following = 'inspect_recorded_reply' if message['reply_ref'] else 'prepare_reply'
@@ -222,7 +240,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         basis = 'provider_readback' if evidence else 'caller_supplied_readback'
     return {'event': 'reply_attempt', 'message': message, 'reply': attempt,
             'changed': changed, 'send_allowed': send_allowed, 'next_action': following,
-            'confirmation_basis': basis,
+            'confirmation_basis': basis, 'reply_candidates': references,
             'recovery_guidance': RECOVERY_GUIDANCE if attempt and attempt['state'] == 'unknown' and not send_allowed else None,
             'remote_verified': verification is not None, 'verification': verification, 'verification_receipt': evidence,
             'publication_performed': False, 'collection_performed': False}, 0

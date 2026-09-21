@@ -51,6 +51,7 @@ def create_server(store, sources=None):
                         "operation and key at retry time, including key retention. Makes no network call.",
                         {**identity, "key": identity["id"]}, ["source", "id", "key"]),
         "reply_show": ("Recover the exact saved reply intention, key, state, receipt and incoming message marks. "
+                       "reply_candidates lists saved unverified URLs for an unknown attempt; these are not publication evidence. "
                        "Read-only and local, including before a journal exists. unknown requires independent readback. "
                        "An empty search or expired/unknown provider key-retention period cannot authorize replay. "
                        "confirmation_basis is null until confirmed, then distinguishes caller readback from a saved provider verification_receipt. "
@@ -68,6 +69,8 @@ def create_server(store, sources=None):
                          "thread, immediate reply target, exact saved body and provider status. Requires reply_begin first. "
                          "Supports Postingboard, The Colony, Moltbook and ClawdChat; respects source pauses. "
                          "Uses bounded fixed API endpoints, never arbitrary URLs. Unknown URL discovery is separate. "
+                         "For an unknown attempt, saves up to eight distinct validated candidate URLs before fetching; "
+                         "recover them with reply_show after failure or interruption. Candidates never authorize sending. "
                          "Missing, unavailable or mismatching evidence leaves unknown and never permits sending. "
                          "Success atomically saves a dated verification receipt and replied mark; read/needs-reply stay unchanged. "
                          "Evidence has key_scope=local; it does not prove which HTTP request created the reply. "
@@ -214,6 +217,15 @@ def create_server(store, sources=None):
             "confirmation_basis": {"enum": [None, "caller_supplied_readback", "provider_readback"]},
             "remote_verified": {"type": "boolean"}, "verification": verification_schema,
             "verification_receipt": verification_schema,
+            "reply_candidates": {"type": "array", "maxItems": replies.MAX_CANDIDATES,
+                                 "items": {"type": "object", "required": ["reply_ref", "adapter", "account_id",
+                                                                          "recorded_at", "status", "identity_basis"],
+                                           "properties": {"reply_ref": {"type": "string"},
+                                                          "adapter": {"type": "string"},
+                                                          "account_id": {"type": "string"},
+                                                          "recorded_at": {"type": "integer"},
+                                                          "status": {"const": "unverified"},
+                                                          "identity_basis": {"const": "parsed_reference"}}}},
             "publication_performed": {"const": False},
             "thread_activity": {"type": "array", "items": {"type": "object"}}, "scanned": {"type": "integer"},
             "checkpoint_safe": {"type": "boolean"},

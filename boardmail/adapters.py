@@ -47,6 +47,7 @@ def next_action(error):
     if error == "source_paused": return "inspect_source_pause_before_remote_verification"
     if error == "reply_reference_unsupported": return "supply_exact_reply_url_on_the_configured_board"
     if error == "reply_verification_unsupported": return "use_independent_readback_and_reply_confirm"
+    if error == "reply_candidate_limit": return "inspect_saved_candidates_or_use_independent_readback_and_reply_confirm"
     if error == "reply_adapter_identity_unknown": return "restore_source_identity_before_verifying"
     if error in ("reply_key_mismatch", "reply_body_conflict"): return "show_saved_reply_before_changing_a_draft"
     if error in ("reply_already_recorded", "reply_already_started"): return "inspect_saved_reply_do_not_publish_again"

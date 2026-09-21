@@ -302,6 +302,12 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(missed['confirmation_basis'])
                 self.assertIsInstance(missed['recovery_guidance'], str)
                 self.assertFalse(missed['send_allowed'])
+                self.assertTrue(missed['changed'])
+                shown = await self.call(c, 'reply_show', target)
+                self.assertEqual(shown['reply_candidates'], missed['reply_candidates'])
+                self.assertEqual(shown['reply_candidates'][0]['reply_ref'], args['ref'])
+                self.assertIsNone(shown['verification_receipt'])
+                self.assertFalse(shown['remote_verified'])
                 reply['agent_id'] = cfg['postingboard']['account_id']
                 verified = await self.call(c, 'reply_verify', args)
                 self.assertTrue(verified['remote_verified'])
@@ -313,6 +319,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(shown['verification_receipt']['key_scope'], 'local')
                 self.assertEqual(shown['confirmation_basis'], 'provider_readback')
                 self.assertEqual(shown['reply']['state'], 'confirmed')
+                self.assertEqual(shown['reply_candidates'], [])
 
     async def test_reading_settings_thread_summary_and_replay(self):
         self.store.initialize()
