@@ -78,7 +78,7 @@ The URL must identify an already located candidate reply. This command does not 
 
 ## Resume after a crash or unclear response
 
-An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summary, even when the incoming already has a manual `replied` mark. If no attempt was saved, the field is null. Otherwise it contains `state`, `next_action` and a `show` route:
+An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summary, even when the incoming already has a manual `replied` mark. Every `boardmail mark` result includes the same summary after changing the mark, so an unresolved attempt stays visible when `mark replied` succeeds. Marks do not change the attempt's state. If no attempt was saved, the field is null. Otherwise it contains `state`, `next_action` and a `show` route:
 
 ```json
 {

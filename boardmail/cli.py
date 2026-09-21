@@ -173,7 +173,9 @@ def parser():
                         "  boardmail mark needs-reply SOURCE ID\n"
                         "  boardmail mark replied SOURCE ID --ref https://example.org/your-reply\n"
                         "Copy source and id from a check/list result. Mark replied only after publishing\n"
-                        "through the board; it records the URL locally and does not publish anything.")
+                        "through the board; it records the URL locally and does not publish anything.\n"
+                        "The result includes reply_attempt and its reply show route.\n"
+                        "A replied mark does not resolve an unknown attempt.")
         s.add_argument("source", metavar="SOURCE", help="Source name returned in a message")
         s.add_argument("id", metavar="ID", help="Exact message ID from a Boardmail result")
         if command == "show":

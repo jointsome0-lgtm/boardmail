@@ -163,7 +163,10 @@ def create_server(store, sources=None):
                  {"after": checkpoint, "limit": limit, **reading, "timeout": {"type": "number", "minimum": 0,
                   "maximum": 60, "default": 30, "description": "Seconds; bounded to fit client tool deadlines."}}, []),
         "mark": ("Change one local mark. read, needs-reply and replied are independent. replied requires "
-                 "a URL for a reply already sent elsewhere; it does not publish or clear other marks.",
+                 "a URL for a reply already sent elsewhere; it does not publish or clear other marks. "
+                 "The result includes reply_attempt, null when none was saved, with the same state, next_action "
+                 "and journal route as show. A replied mark does not resolve unknown; follow reply_attempt.show "
+                 "to recover the full journal.",
                  {**identity, "action": {"type": "string", "enum": ["read", "unread", "needs-reply", "clear-reply", "replied"]},
                   "ref": {"type": ["string", "null"], "description": "HTTP(S) URL required only for replied."}},
                  ["source", "id", "action"]),

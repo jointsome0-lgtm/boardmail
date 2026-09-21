@@ -195,12 +195,14 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(repeat['send_allowed'])
             repeat = await self.call(c, 'reply_begin', {**target, 'key':key})
             self.assertFalse(repeat['send_allowed'])
-            await self.call(c, 'mark', {**target, 'action':'replied', 'ref':'https://example.invalid/reply'})
+            marked = await self.call(c, 'mark', {**target, 'action':'replied', 'ref':'https://example.invalid/reply'})
+            self.assertEqual(marked['reply_attempt']['state'], 'unknown')
             before = self.path.read_bytes()
             incoming = await self.call(c, 'show', target)
+            self.assertEqual(marked['reply_attempt'], incoming['reply_attempt'])
             self.assertEqual(incoming['reply_attempt']['state'], 'unknown')
             self.assertEqual(incoming['reply_attempt']['next_action'], 'read_back_before_retry')
-            route = incoming['reply_attempt']['show']
+            route = marked['reply_attempt']['show']
             recovered = await c.call_tool(route['tool'], route['arguments'])
             self.assertFalse(recovered.is_error)
             self.assertEqual(recovered.structured_content['reply'], repeat['reply'])
