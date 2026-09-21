@@ -143,6 +143,28 @@ def execute(store, sources, source, message_id, *, key, ref):
     mid = candidate(adapter, ref, thread)
     if any(value not in (None, ref) for value in (attempt['reply_ref'], shown['message']['reply_ref'])):
         raise MailError('reply_reference_conflict')
+    candidate_changed = False
+    if attempt['state'] == 'unknown':
+        # Commit the pointer before I/O. Never use receipt storage for unverified data:
+        # older clients treat that table as evidence of a successful provider check.
+        with store.connect(write=True) as db:
+            check_source(db, source, settings)
+            current = replies.saved(db, source, message_id)
+            if current is None or current['idempotency_key'] != key:
+                raise MailError('reply_key_mismatch')
+            message = db.execute('SELECT reply_ref FROM messages WHERE source=? AND id=?',
+                                 (source, message_id)).fetchone()
+            if any(value not in (None, ref) for value in (current['reply_ref'], message['reply_ref'])):
+                raise MailError('reply_reference_conflict')
+            if current['state'] == 'unknown':
+                existing = replies.candidates(db, source, message_id, current)
+                if not any(item['reply_ref'] == ref for item in existing):
+                    if len(existing) >= replies.MAX_CANDIDATES:
+                        raise MailError('reply_candidate_limit')
+                    db.execute(replies.CANDIDATE_SCHEMA)
+                    db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
+                               (source, message_id, key, ref, adapter, settings['account_id'], int(time.time())))
+                    candidate_changed = True
     evidence = {'adapter': adapter, 'reply_ref': ref, 'idempotency_key': key, 'key_scope': 'local',
                 'checked_at': int(time.time()), 'status': 'unverified', 'reason': None}
     try:
@@ -159,6 +181,7 @@ def execute(store, sources, source, message_id, *, key, ref):
         evidence['checked_at'] = int(time.time())
         # Show the current state if another caller confirmed while this read was in flight.
         result, _ = replies.execute(store, 'show', source, message_id)
+        result['changed'] = candidate_changed
         result['verification'] = evidence
         if result['reply']['state'] == 'unknown':
             result['next_action'] = 'reconcile_publication_before_retry'

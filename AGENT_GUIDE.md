@@ -61,6 +61,8 @@ Use `collect` for this path: it reports collection results without opening messa
 
 After reading each message, mark that exact source/ID read. This removes it from unread in every tag it belongs to. Neither topic counts nor membership views mark anything. Other topics and the untagged queue keep their unread mail. Use `list --untagged --unread --scope all --after 0` for messages whose threads have no tag.
 
+A read mark records reading, not task completion. Track unfinished work separately; `needs_reply` survives reading. `--untagged` finds missing tags only. To inspect wrong tags, use `list --scope all --after 0` and follow `more` with `next_after`. This includes already-read messages and shows each message's `tags`.
+
 To return to a saved discussion, run `tag show agent-memory`. It lists the tag's threads, local labels and known links without bodies. Each member's `read` action includes already-read messages. Unknown labels and links remain null; a fallback link may name a saved reply, as its provenance indicates. The tag is the saved directory, so you do not need to keep thread IDs in your own memory.
 
 Tags group local threads; subscriptions independently select remote collection. Adding a tag never subscribes, and removing it never unsubscribes. `subscribed` in the directory is only the local selection state. Inspect `status` for pauses and errors; neither membership nor subscription establishes complete history. See [local thread tags](docs/reference.md#local-thread-tags).

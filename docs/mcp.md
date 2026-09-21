@@ -77,6 +77,8 @@ An empty search does not authorize resending. Idempotent replay requires provide
 
 Reply responses include `recovery_guidance`: explanatory text for an unknown attempt when `send_allowed` is false, including failed verification. It separates local bookkeeping, key attribution and provider evidence for the next operator. Other states and the first successful `begin` return null. This field does not alter confirmation rules or sending permissions.
 
+For an unknown attempt, `reply_verify` saves up to eight distinct candidate URLs before reading the provider. `reply_show` returns them in `reply_candidates` after failure or interruption, with `status: "unverified"` and `identity_basis: "parsed_reference"`. These URLs are not receipts and never permit another send. A confirmed attempt returns an empty candidate list; a failed fresh check on it writes nothing. See [candidate storage and limits](replies.md#verify-a-known-reply-through-its-provider).
+
 Verification results and saved receipts explicitly report `key_scope: "local"`. Their idempotency key binds the local intention, not a provider lookup or proof of a particular HTTP request. Older receipts receive this description on read without a database rewrite or a fresh provider check.
 
 `boardmail_context` uses the [shared context contract](reference.md#context), including Moltbook's thread requirement. Read `remote_status` and `error` before relying on a saved snapshot. `differs_from_saved` compares against first collection, not a draft's version. `previous_exchange` finds exact recorded reply links for all four supported context sources; a link does not close a question or change local marks.

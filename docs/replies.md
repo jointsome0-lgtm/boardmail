@@ -22,7 +22,7 @@ boardmail reply begin SOURCE ID --key KEY
 
 Proceed with the first POST only if this call succeeds with `send_allowed: true`. `begin` commits `state: "unknown"` before returning. Use the saved key with the provider's idempotency mechanism, where supported, and the saved body. Boardmail does not make that POST.
 
-When the publisher receives a reply URL, save it durably alongside the saved key before calling `verify` or `confirm`. The journal saves a reply URL on successful confirmation. An unsuccessful provider check saves neither its candidate URL nor its diagnostics. `reply show` returns previously saved information, so keep the failed command's output if you need those diagnostics.
+When the publisher receives a reply URL, save it durably alongside the saved key before calling `verify` or `confirm`. Boardmail cannot recover a URL lost before either call. For an unknown attempt, `verify` saves a locally validated candidate URL before its provider read. `reply show` recovers these candidates after failure or interruption. A candidate does not establish publication or authorize another POST. Keep the failed command's output if you need its diagnostics; Boardmail does not save failed check results.
 
 After publication, independently read the resulting post. Check its author account, thread, reply target and provider status, and save the returned body as `readback.txt`. Then record that evidence:
 
@@ -57,7 +57,9 @@ Success returns `remote_verified: true`, `confirmation_basis: provider_readback`
 
 Both `verification` and `verification_receipt` include `key_scope: "local"`. The key binds this evidence to Boardmail's saved intention. It is not a provider lookup key or proof of which HTTP request created the publication. Reading an older receipt adds the same description to the output without rewriting the database, changing `checked_at` or making a new provider check.
 
-On an incomplete, missing, unavailable or mismatching original, exit code is 1 and `verification.status` is `unverified`, with a safe `reason`. No receipt or marks are written and an unknown attempt stays unknown. A previous confirmation is preserved; a failed fresh check does not erase its historical receipt. `reply show` always returns `remote_verified: false`: its saved `verification_receipt` is dated evidence, not a new remote check.
+On an incomplete, missing, unavailable or mismatching original, exit code is 1 and `verification.status` is `unverified`, with a safe `reason`. The candidate remains saved, but no receipt or marks are written and an unknown attempt stays unknown. A previous confirmation is preserved; a failed fresh check on a confirmed attempt writes nothing. `reply show` always returns `remote_verified: false`: its saved `verification_receipt` is dated evidence, not a new remote check.
+
+Candidates are stored separately from confirmed URLs and provider receipts. Rechecking the same URL preserves its original `recorded_at`; a different URL adds a candidate without replacing earlier ones. At most eight distinct URLs are retained per attempt. A ninth returns `reply_candidate_limit` before any provider request. Inspect the saved candidates, or use `confirm` after independent readback. Unsupported URLs, wrong keys, paused sources and account or adapter mismatches save nothing and make no request.
 
 In a `verify` response, `verification` describes that invocation. A saved `verification_receipt` describes the last successful provider check. Examples of `verification.reason` include:
 
@@ -135,7 +137,9 @@ A pre-existing manual `mark replied` prevents creating a new attempt. If a diffe
 
 ## Result and error contract
 
-The five commands return `event: "reply_attempt"`, `message`, `reply`, `changed`, `send_allowed`, `next_action`, `confirmation_basis`, `remote_verified`, `verification`, `verification_receipt`, `publication_performed: false`, `collection_performed: false` and `history_complete: false`.
+The five commands return `event: "reply_attempt"`, `message`, `reply`, `reply_candidates`, `changed`, `send_allowed`, `next_action`, `confirmation_basis`, `remote_verified`, `verification`, `verification_receipt`, `publication_performed: false`, `collection_performed: false` and `history_complete: false`.
+
+`reply_candidates` lists unverified URLs bound to the current key while the attempt is `unknown`; otherwise it is empty. Each entry contains `reply_ref`, `recorded_at`, `adapter`, `account_id`, `status: "unverified"` and `identity_basis: "parsed_reference"`. The account and adapter describe the local source at recording time, not verified authorship. Rechecking requires `verify` with the saved key and candidate URL, which validates the current source configuration again. `changed` is also true when a failed check saved a new candidate.
 
 `confirmation_basis` is null when `reply` is null or its state is `prepared` or `unknown`, even if the incoming message has an independent `replied` mark. Only a confirmed attempt reports `caller_supplied_readback` or `provider_readback`. A failed fresh verification preserves the basis of any earlier confirmation.
 
@@ -145,7 +149,7 @@ An attempt has `source`, `message_id`, `idempotency_key`, `body`, `body_sha256`,
 
 Malformed text returns `invalid_reply_body`. `reply_key_mismatch` means the supplied key does not name the current intention. `reply_not_prepared` and `reply_not_started` identify a missing prerequisite. `reply_already_started` prevents changing an uncertain or confirmed body; `reply_already_recorded` protects an existing reply mark. `reply_readback_mismatch` and `reply_reference_conflict` preserve the saved state and marks without claiming success. After a failure, inspect the saved attempt through `reply show` and read diagnostics from the failed command's output; never delete the database to retry it.
 
-Preparation and successful verification add their tables when needed without changing the supported database schema version. Local reads never migrate. Old messages, collection progress, pauses, reading preferences and subscriptions are preserved. The local prepare/begin/show/confirm protocol works for every built-in source and custom adapters; it requires a saved incoming message, not provider credentials. Use a journal-aware client for this workflow: older clients ignore these tables.
+Preparation, candidate recording and successful verification add their tables when needed without changing the supported database schema version. Local reads never migrate. Old messages, collection progress, pauses, reading preferences and subscriptions are preserved. The local prepare/begin/show/confirm protocol works for every built-in source and custom adapters; it requires a saved incoming message, not provider credentials. Use a journal-aware client for this workflow: older clients ignore these tables.
 
 MCP exposes `boardmail_reply_prepare(source, id, body, replace_key?)`, `boardmail_reply_begin(source, id, key)`, `boardmail_reply_show(source, id)`, `boardmail_reply_confirm(source, id, key, ref, readback_body)` and `boardmail_reply_verify(source, id, key, ref)`. It accepts text directly instead of file paths and returns the same results and errors. The server reads no caller-supplied filesystem path.
 

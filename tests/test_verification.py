@@ -3,6 +3,8 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -52,6 +54,7 @@ class VerificationTests(unittest.TestCase):
         self.key = self.call('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.call('begin', key=self.key)
         self.before = self.path.read_bytes()
+        self.before_result = self.call('show')[0]
 
     def call(self, action='verify', **options):
         if action == 'verify':
@@ -71,8 +74,110 @@ class VerificationTests(unittest.TestCase):
         self.assertIsNone(result['message']['replied_at'])
         if reason:
             self.assertEqual(result['verification']['reason'], reason, result)
-        self.assertEqual(self.path.read_bytes(), self.before)
+        self.assertEqual(result['reply'], self.before_result['reply'])
+        self.assertEqual(result['message'], self.before_result['message'])
+        self.assertIsNone(result['verification_receipt'])
+        before = self.path.read_bytes()
+        self.assertEqual(self.call()[1], 1)
+        self.assertEqual(self.path.read_bytes(), before)
         return result
+
+    def test_candidate_survives_timeout_and_reopen_without_becoming_evidence(self):
+        self.setup_source('postingboard')
+        with patch.object(verification, 'read', side_effect=TimeoutError('synthetic timeout')):
+            failed, code = self.call()
+        self.assertEqual(code, 1)
+        self.store = Store(self.path)
+        before = self.path.read_bytes()
+        shown, code = self.call('show')
+        self.assertEqual(code, 0)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(shown['reply_candidates'], failed['reply_candidates'])
+        candidate, = shown['reply_candidates']
+        self.assertEqual(candidate['reply_ref'], self.ref)
+        self.assertEqual(candidate['adapter'], self.adapter)
+        self.assertEqual(candidate['account_id'], self.settings['account_id'])
+        self.assertEqual(candidate['status'], 'unverified')
+        self.assertEqual(candidate['identity_basis'], 'parsed_reference')
+        self.assertIsInstance(candidate['recorded_at'], int)
+        self.assertEqual(shown['reply'], self.before_result['reply'])
+        self.assertEqual(shown['message'], self.before_result['message'])
+        self.assertIsNone(shown['confirmation_basis'])
+        self.assertIsNone(shown['verification_receipt'])
+        self.assertFalse(shown['send_allowed'])
+        self.assertFalse(shown['remote_verified'])
+        self.assertEqual(self.before_result['reply_candidates'], [])
+        self.assertTrue(failed['changed'])
+
+    def test_candidate_survives_process_exit_before_provider_read_returns(self):
+        self.setup_source('postingboard')
+        program = '''import json, os, sys
+from unittest.mock import patch
+from boardmail import verification
+from boardmail.store import Store
+path, source, target, key, ref, settings = sys.argv[1:]
+with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
+    verification.execute(Store(path), {source: json.loads(settings)}, source, target, key=key, ref=ref)
+'''
+        child = subprocess.run([sys.executable, '-c', program, str(self.path), self.source,
+                                self.target, self.key, self.ref, json.dumps(self.settings)],
+                               cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=15)
+        self.assertEqual(child.returncode, 73, child.stderr)
+        self.store = Store(self.path)
+        shown, code = self.call('show')
+        self.assertEqual(code, 0)
+        self.assertEqual([c['reply_ref'] for c in shown['reply_candidates']], [self.ref])
+        self.assertEqual(shown['reply']['state'], 'unknown')
+        self.assertIsNone(shown['reply']['reply_ref'])
+        self.assertIsNone(shown['confirmation_basis'])
+        self.assertIsNone(shown['verification_receipt'])
+        self.assertFalse(shown['send_allowed'])
+
+    def test_candidates_are_bounded_without_replacing_an_earlier_url(self):
+        self.setup_source('postingboard')
+        refs = [providers.parent_reference(self.adapter, self.root, uid(320 + i)) for i in range(9)]
+        with patch.object(verification, 'read', side_effect=TimeoutError()) as read:
+            for ref in refs[:8]:
+                self.assertEqual(self.call(ref=ref)[1], 1)
+            shown = self.call('show')[0]
+            self.assertEqual({c['reply_ref'] for c in shown['reply_candidates']}, set(refs[:8]))
+            before = self.path.read_bytes()
+            self.assertEqual(self.call(ref=refs[0])[1], 1)
+            self.assertEqual(self.path.read_bytes(), before)
+            calls = read.call_count
+            rejected, code = self.call(ref=refs[8])
+            self.assertEqual((code, rejected['error']), (2, 'reply_candidate_limit'))
+            self.assertEqual(read.call_count, calls)
+            self.assertEqual(self.path.read_bytes(), before)
+        # The bounded candidate directory does not block independent caller readback.
+        confirmed, code = self.call('confirm', key=self.key, ref=refs[8], readback_body=self.body)
+        self.assertEqual((code, confirmed['confirmation_basis']), (0, 'caller_supplied_readback'))
+        self.assertEqual(confirmed['reply_candidates'], [])
+        self.assertIsNone(confirmed['verification_receipt'])
+
+    def test_wrong_candidate_does_not_block_a_different_verified_reply(self):
+        self.setup_source('postingboard')
+        wrong = providers.parent_reference(self.adapter, self.root, uid(999))
+        self.assertEqual(self.call(ref=wrong)[1], 1)
+        self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], wrong)
+        confirmed, code = self.call()
+        self.assertEqual((code, confirmed['confirmation_basis']), (0, 'provider_readback'))
+        self.assertEqual(confirmed['reply']['reply_ref'], self.ref)
+        self.assertEqual(confirmed['reply_candidates'], [])
+
+    def test_candidate_write_failure_prevents_provider_request(self):
+        self.setup_source('postingboard')
+        with patch.object(verification, 'read', side_effect=TimeoutError()):
+            self.call()
+        with self.store.connect(write=True) as db:
+            db.execute("CREATE TRIGGER fail_candidate BEFORE INSERT ON reply_candidates "
+                       "BEGIN SELECT RAISE(ABORT, 'stop'); END")
+        before = self.path.read_bytes()
+        with patch.object(verification, 'read') as read:
+            result, code = self.call(ref=providers.parent_reference(self.adapter, self.root, uid(999)))
+        self.assertEqual((code, result['error']), (2, 'local_state_error'))
+        read.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_all_providers_and_source_aliases_save_exact_evidence_and_independent_marks(self):
         for adapter in verification.ADAPTERS:
@@ -234,9 +339,12 @@ class VerificationTests(unittest.TestCase):
         self.settings['adapter'] = 'custom'
         self.assertEqual(self.call()[0]['error'], 'reply_verification_unsupported')
         self.settings['adapter'] = 'moltbook'
+        self.assertEqual(self.path.read_bytes(), self.before)
         self.store.set_paused(self.source, True)
+        before = self.path.read_bytes()
         self.assertEqual(self.call()[0]['error'], 'source_paused')
         self.assertEqual(self.client.calls, [])
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_state_is_rechecked_after_network_without_holding_a_write_lock(self):
         self.setup_source('postingboard')
@@ -293,17 +401,22 @@ class VerificationTests(unittest.TestCase):
                 result, code = self.call()
                 self.assertEqual((code, result['error']), (2, expected))
                 self.assertEqual(self.call('show')[0]['reply']['state'], 'unknown')
+                if column == 'idempotency_key':
+                    self.assertEqual(self.call('show')[0]['reply_candidates'], [])
                 with self.store.connect(write=True) as db:
                     db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (old, self.source))
 
     def test_receipt_and_confirmation_roll_back_together(self):
         self.setup_source('postingboard')
+        with patch.object(verification, 'read', side_effect=TimeoutError()):
+            self.call()
         with self.store.connect(write=True) as db:
             db.execute("CREATE TRIGGER fail_mark BEFORE UPDATE OF replied_at ON messages BEGIN SELECT RAISE(ABORT, 'stop'); END")
         before = self.path.read_bytes()
         self.assertEqual(self.call()[0]['error'], 'local_state_error')
         self.assertEqual(self.path.read_bytes(), before)
         self.assertIsNone(self.call('show')[0]['verification_receipt'])
+        self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], self.ref)
 
     def test_successful_verification_on_v1_keeps_the_schema_and_other_mail(self):
         self.path = self.path.parent / 'legacy.sqlite3'
@@ -337,6 +450,13 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         del self.settings['adapter']
         self.client, self.ref = expected_client, expected_ref
+        before = self.path.read_bytes()
+        self.assertEqual(self.call('show')[0]['reply_candidates'], [])
+        self.assertEqual(self.path.read_bytes(), before)
+        with patch.object(verification, 'read', side_effect=TimeoutError()):
+            failed, code = self.call()
+        self.assertEqual((code, failed['reply']['state']), (1, 'unknown'))
+        self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], self.ref)
         verified, code = self.call()
         self.assertEqual((code, verified['remote_verified']), (0, True))
         self.assertEqual(self.store.show('moltbook', uid(10)), other)
