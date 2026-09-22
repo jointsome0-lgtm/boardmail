@@ -303,9 +303,13 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsInstance(missed['recovery_guidance'], str)
                 self.assertFalse(missed['send_allowed'])
                 self.assertTrue(missed['changed'])
+                self.assertTrue(missed['last_check_saved'])
                 shown = await self.call(c, 'reply_show', target)
                 self.assertEqual(shown['reply_candidates'], missed['reply_candidates'])
                 self.assertEqual(shown['reply_candidates'][0]['reply_ref'], args['ref'])
+                self.assertEqual(shown['reply_candidates'][0]['last_check'],
+                                 {'checked_at': missed['verification']['checked_at'],
+                                  'reason': 'reply_author_mismatch', 'status': 'unverified'})
                 self.assertIsNone(shown['verification_receipt'])
                 self.assertFalse(shown['remote_verified'])
                 reply['agent_id'] = cfg['postingboard']['account_id']

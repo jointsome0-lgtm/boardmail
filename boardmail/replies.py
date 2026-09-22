@@ -37,6 +37,11 @@ CANDIDATE_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_candidates (
     reply_ref TEXT NOT NULL, adapter TEXT NOT NULL, account_id TEXT NOT NULL,
     recorded_at INTEGER NOT NULL, PRIMARY KEY (source,message_id,reply_ref))"""
 
+CHECK_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_candidate_checks (
+    source TEXT NOT NULL, message_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+    reply_ref TEXT NOT NULL, checked_at INTEGER NOT NULL, reason TEXT NOT NULL,
+    PRIMARY KEY (source,message_id,reply_ref))"""
+
 
 def digest(body):
     try:
@@ -97,10 +102,18 @@ def candidates(db, source, message_id, attempt):
     if (not attempt or attempt['state'] != 'unknown'
             or not db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_candidates'").fetchone()):
         return []
+    checks = {}
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_candidate_checks'").fetchone():
+        checks = {row['reply_ref']: {'checked_at': row['checked_at'], 'reason': row['reason'],
+                                     'status': 'unverified'}
+                  for row in db.execute('SELECT reply_ref,checked_at,reason FROM reply_candidate_checks '
+                                        'WHERE source=? AND message_id=? AND idempotency_key=?',
+                                        (source, message_id, attempt['idempotency_key']))}
     rows = db.execute('SELECT reply_ref,adapter,account_id,recorded_at FROM reply_candidates '
                       'WHERE source=? AND message_id=? AND idempotency_key=? ORDER BY recorded_at,reply_ref',
                       (source, message_id, attempt['idempotency_key']))
-    return [{**dict(row), 'status': 'unverified', 'identity_basis': 'parsed_reference'} for row in rows]
+    return [{**dict(row), 'status': 'unverified', 'identity_basis': 'parsed_reference',
+             'last_check': checks.get(row['reply_ref'])} for row in rows]
 
 
 def summary(source, message_id, attempt):

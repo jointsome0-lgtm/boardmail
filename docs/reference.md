@@ -94,6 +94,8 @@ Tags and subscriptions are independent. Tags do not collect, subscribe, unsubscr
 
 `tags` returns `event: tags` with compact, alphabetically ordered `tags` entries containing `tag`, `threads`, `messages`, `unread`, `read` and `show`. `untagged` is always present, including when empty, with thread/message/unread counts and its own `read` action. No message bodies are returned. Counts cover all saved messages regardless of addressing or reading preferences. One thread may belong to several tags, so tag counts can overlap. The top-level counts count each message once: `counts.unread == counts.tagged_unread + counts.untagged_unread`.
 
+Summed per-tag unread counts equal global unread minus untagged unread plus extra memberships of unread messages. For example, one unread message in two tags and one untagged unread message give both sums a value of two. Equal totals therefore do not prove complete tagging. A read mark clears the same message from every tag's unread view; it does not complete independent work in those topics.
+
 `tag show TAG` returns `event: tag`, `tag`, `exists`, aggregate `counts`, and `threads` ordered by source and local thread ID. An unknown tag returns `exists: false` and an empty directory. Every member includes:
 
 | Field | Meaning |
@@ -106,6 +108,8 @@ Tags and subscriptions are independent. Tags do not collect, subscribe, unsubscr
 | `read` | CLI command, MCP tool and arguments to reopen this thread, including already-read mail. |
 
 Title and URL candidates prefer `stored_root`, then `cached_root`, then `stored_message`. The last is a fallback label or link from an incoming message; its URL may point to a reply. Each field selects its own available candidate. Missing values and provenance are null. Local titles can be stale, and a local subscription does not guarantee delivery. Source health and pauses remain in `status`; every result reports `history_complete: false`.
+
+`tag show` makes no remote request. Use `context` or `expand` with configuration to read current originals, subject to source pauses and lookup errors. Neither a null label nor missing local root records why the root is absent; there is no historical root-removal record.
 
 The overview and top-level `tag show.read` actions start at `after=0` with `unread=true` and `scope=all`. Start each new topic visit this way: a newly tagged thread may contain unread arrivals older than any prior topic position. Within a visit, follow `more` with the same filters and returned `next_after`. Member read actions set `unread=false` to support returning to already-read discussions. All tag and untagged pages have `checkpoint_safe=false`. They never replace the delivery checkpoint.
 

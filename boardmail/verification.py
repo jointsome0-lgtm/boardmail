@@ -1,4 +1,5 @@
 """Verify a known reply reference with bounded provider reads, never publication."""
+import sqlite3
 import time
 from urllib.parse import urlsplit
 
@@ -120,6 +121,42 @@ def read(adapter, settings, mid, thread):
             'availability_basis': basis, 'provider_status': original.get('verification_status', 'available')}, body
 
 
+def save_failed_check(store, source, message_id, attempt, thread, settings, evidence):
+    """Save only a safe failure code; a lost binding or write failure stays explicit."""
+    if attempt['state'] != 'unknown':
+        return False, False
+    key, ref = evidence['idempotency_key'], evidence['reply_ref']
+    try:
+        with store.connect(write=True) as db:
+            current = replies.saved(db, source, message_id)
+            if (not current or current['state'] != 'unknown' or current['idempotency_key'] != key
+                    or current['body_sha256'] != attempt['body_sha256']):
+                return False, False
+            check_source(db, source, settings)
+            message = db.execute('SELECT thread_id,reply_ref FROM messages WHERE source=? AND id=?',
+                                 (source, message_id)).fetchone()
+            if (not message or message['thread_id'] != thread
+                    or any(value not in (None, ref) for value in (current['reply_ref'], message['reply_ref']))):
+                return False, False
+            bound = db.execute('SELECT 1 FROM reply_candidates WHERE source=? AND message_id=? '
+                               'AND idempotency_key=? AND reply_ref=? AND adapter=? AND account_id=?',
+                               (source, message_id, key, ref, evidence['adapter'], settings['account_id'])).fetchone()
+            if not bound:
+                return False, False
+            # Keep the seven-column candidate table writable by 0.12.0 clients.
+            # Commit order defines the last saved check; wall clocks are not an ordering key.
+            db.execute(replies.CHECK_SCHEMA)
+            changed = db.execute('INSERT INTO reply_candidate_checks VALUES (?,?,?,?,?,?) '
+                                 'ON CONFLICT(source,message_id,reply_ref) DO UPDATE SET '
+                                 'idempotency_key=excluded.idempotency_key,checked_at=excluded.checked_at,reason=excluded.reason '
+                                 'WHERE idempotency_key!=excluded.idempotency_key OR checked_at!=excluded.checked_at '
+                                 'OR reason!=excluded.reason',
+                                 (source, message_id, key, ref, evidence['checked_at'], evidence['reason'])).rowcount > 0
+        return True, changed
+    except (MailError, sqlite3.Error, OSError):
+        return False, False
+
+
 def execute(store, sources, source, message_id, *, key, ref):
     shown, _ = replies.execute(store, 'show', source, message_id)
     attempt = shown['reply']
@@ -179,9 +216,11 @@ def execute(store, sources, source, message_id, *, key, ref):
     except providers.FAILURES as exc:
         evidence['reason'] = providers.error_code(exc)
         evidence['checked_at'] = int(time.time())
+        check_saved, check_changed = save_failed_check(store, source, message_id, attempt, thread, settings, evidence)
         # Show the current state if another caller confirmed while this read was in flight.
         result, _ = replies.execute(store, 'show', source, message_id)
-        result['changed'] = candidate_changed
+        result['changed'] = candidate_changed or check_changed
+        result['last_check_saved'] = check_saved
         result['verification'] = evidence
         if result['reply']['state'] == 'unknown':
             result['next_action'] = 'reconcile_publication_before_retry'
