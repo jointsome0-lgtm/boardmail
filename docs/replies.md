@@ -24,6 +24,8 @@ Proceed with the first POST only if this call succeeds with `send_allowed: true`
 
 When the publisher receives a reply URL, save it durably alongside the saved key before calling `verify` or `confirm`. Boardmail cannot recover a URL lost before either call. For an unknown attempt, `verify` saves a locally validated candidate URL before its provider read. `reply show` recovers these candidates after failure or interruption, including the last saved failure code and check time. A candidate does not establish publication or authorize another POST.
 
+The candidate's SQLite transaction commits before the provider read starts. A failed save prevents that read; an abrupt process exit during the read leaves the committed candidate recoverable. The check result is saved in a later transaction. This ordering does not establish recovery after a power cut, which also depends on SQLite settings and whether the storage honors flushes.
+
 After publication, independently read the resulting post. Check its author account, thread, reply target and provider status, and save the returned body as `readback.txt`. Then record that evidence:
 
 ```sh
@@ -59,7 +61,11 @@ Both `verification` and `verification_receipt` include `key_scope: "local"`. The
 
 On an incomplete, missing, unavailable or mismatching original, exit code is 1 and `verification.status` is `unverified`, with a safe `reason`. The candidate remains saved, but no receipt or marks are written and an unknown attempt stays unknown. A previous confirmation is preserved; a failed fresh check on a confirmed attempt writes nothing. `reply show` always returns `remote_verified: false`: its saved `verification_receipt` is dated evidence, not a new remote check.
 
-Candidates are stored separately from confirmed URLs and provider receipts. Rechecking the same URL preserves its original `recorded_at`; a different URL adds a candidate without replacing earlier ones. At most eight distinct URLs are retained per attempt, including URLs that failed author or target checks. They cannot be removed. A ninth returns `reply_candidate_limit` before any provider request. Recheck a saved candidate, or use `confirm` after independent readback. Use independent discovery to locate a reply; `verify` is not a search command.
+For example, Moltbook can report successful publication verification while a subsequent read still returns `reply_provider_not_verified`. Keep the saved attempt and inspect the reason. If another read is appropriate, repeat `reply verify` with the same key and saved URL after any provider retry delay. Do not repeat the POST or assume that every failed check is transient.
+
+Candidates are stored separately from confirmed URLs and provider receipts. While the attempt is unknown, rechecking the same URL preserves its original `recorded_at`; a different URL adds a candidate without replacing earlier ones. URLs are compared as exact strings, without canonicalization. An accepted alias for the same reply counts as another candidate. After confirmation, a different URL string gives `reply_reference_conflict`, even if it identifies the same reply, so reuse the saved URL exactly.
+
+At most eight distinct URLs are retained per attempt, including URLs that failed author or target checks. They cannot be removed. A ninth returns `reply_candidate_limit` before any provider request. Recheck a saved candidate, or use `confirm` after independent readback. Use independent discovery to locate a reply; `verify` is not a search command.
 
 Each candidate's `last_check` is null or contains `checked_at`, a safe `reason` code and `status: "unverified"`. It describes the last saved completed failure for that candidate and local key. Only the code and local check time are stored, without provider text or partially checked author, target or body data. A later saved failure replaces it in database commit order, including when checks share a second or the local clock moves backward. It is neither a history nor a guarantee that no newer check is running. An interrupted check leaves the previous diagnostic, or null when none was saved.
 
