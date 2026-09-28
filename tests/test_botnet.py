@@ -43,6 +43,8 @@ class FixtureClient:
         self.profile = {"actor": {"id": OWNER}}
         self.events, self.calls = [], []
         self.page_errors = {}
+        self.topic_error = None
+        self.bad_cursor = False
         self.originals = {OPENER: original(100, id=OPENER, parentMessageId=None,
                                          author={"id": OWNER, "name": "Owner"})}
 
@@ -67,9 +69,12 @@ class FixtureClient:
             ceiling = int(cursor.split(":")[1]) if cursor else 10000
             items = sorted((e for e in self.events if e["id"] < ceiling), key=lambda e: -e["id"])
             page = items[:params["limit"]]
-            return {"items": page, "nextCursor": "older:" + str(page[-1]["id"]) if len(items) > len(page) else None}
+            return {"items": page, "nextCursor": 123 if self.bad_cursor else
+                    "older:" + str(page[-1]["id"]) if len(items) > len(page) else None}
         assert not authenticated, "Public-original requests carried credentials"
         if path == "/topics/" + TOPIC:
+            if self.topic_error:
+                raise MailError(self.topic_error)
             return {"id": TOPIC, "title": "Topic, not legacy thread", "description": "Public topic",
                     "createdAt": 1790593200000}
         value = self.originals.get(unquote(path.rsplit("/", 1)[-1]), MailError("http_404"))
@@ -122,6 +127,16 @@ class BotnetTests(unittest.TestCase):
         self.assertEqual(self.collect()[1], 0)
         self.assertEqual(self.store.show("botnet", mid(10)), saved)
         self.assertEqual(self.store.status()["counts"]["latest_arrival"], 2)
+        # A topic outage must not hide a readable parent or collapse two native
+        # reasons. A null reason is a legacy mention, like an absent reason.
+        self.client.add(13, reason=None)
+        self.client.add(14, reason="reply", parentMessageId=mid(999))
+        self.client.events.append({**self.client.events[-1], "reason": "mention"})
+        self.client.topic_error = "http_503"
+        batch, added = self.collect()
+        self.assertEqual((added, batch.error), (2, "http_503"))
+        for n in (13, 14):
+            self.assertEqual(self.store.show("botnet", mid(n))["addressing"], "direct+mention")
         with self.assertRaisesRegex(MailError, "^subscriptions_unsupported$"):
             self.store.set_subscription("botnet", TOPIC, True, self.settings)
 
@@ -166,6 +181,20 @@ class BotnetTests(unittest.TestCase):
             self.assertIsNone(batch.state["cursor"])
             self.assertIn(mid(13), {x["id"] for x in batch.state["pending"]})
 
+        # A malformed item on an older page reports failure but cannot pin the
+        # scan there forever. Valid refs survive even a malformed page cursor.
+        self.client.page_errors.clear()
+        self.client.events.append({"id": 15, "reason": "mention", "threadId": None})
+        with patch.object(adapter, "PAGE_SIZE", 2):
+            for _ in range(5):
+                batch, _ = self.collect()
+        self.assertIsNone(batch.state["cursor"])
+        self.client.add(30)
+        self.client.bad_cursor = True
+        batch, added = self.collect()
+        self.assertEqual((batch.error, added), ("invalid_response", 1))
+        self.assertIn(mid(30), self.store.known("botnet", OWNER))
+
     def test_identity_and_public_original_failures_never_save_unconfirmed_text(self):
         self.client.add(10)
         self.client.profile = {"actor": {"id": "other-account"}}
@@ -176,7 +205,7 @@ class BotnetTests(unittest.TestCase):
         self.client.originals[mid(10)] = original(999, body="WRONG BODY")
         batch, added = self.collect()
         self.assertEqual((batch.error, added), ("invalid_response", 0))
-        self.assertEqual(batch.state["pending"], [{"id": mid(10), "reason": "reply"}])
+        self.assertEqual(batch.state["pending"], [{"id": mid(10), "reasons": ["reply"]}])
         self.client.page_errors[None] = "http_429"
         self.client.calls.clear()
         batch, _ = self.collect()

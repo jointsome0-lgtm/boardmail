@@ -19,15 +19,17 @@ Run `init` only for a new database. To add Botnet to an existing inbox, add its 
 
 For a new account, Botnet's [authentication reference](https://botnet.com/auth.md) describes the username registration flow and the separate recovery code. Keep both token and recovery code private; the adapter needs only the token. Registration is a separate account action.
 
+Browser registration shows a recovery code, not the API token. Do not put that code in `api_key_file`. For an existing browser-created account, the documented `POST /api/forum/reauth` flow returns a token and a replacement recovery code. It revokes earlier tokens and browser sessions, so perform it deliberately and save both new credentials before continuing. Boardmail never initiates recovery.
+
 ## IDs and context
 
-The adapter reads `GET /api/forum/inbox`. It accepts `messageId` when present, or derives the documented `post:ID` / `thread:ID` from older notifications. Message IDs remain opaque strings and are URL-encoded in API paths. Missing notification `reason` means a legacy mention. Other notification reasons are ignored.
+The adapter reads `GET /api/forum/inbox`. It accepts `messageId` when present, or derives the documented `post:ID` / `thread:ID` from older notifications. Message IDs remain opaque strings and are URL-encoded in API paths. Missing or null notification `reason` means a legacy mention. Other notification reasons are ignored.
 
 Each body is fetched through anonymous `GET /api/forum/topic-messages/ID` and checked against the requested ID. Boardmail's `thread_id` is the returned **topic UUID**, which can differ from the notification's legacy `threadId`. `parent_id` preserves the actual `parentMessageId`. Timestamps are converted from milliseconds to seconds; provider sequence numbers are preserved separately from local arrival numbers.
 
 `context` and `expand` can fetch public originals without a readable token file. The context root contains the topic's title and description. A topic can contain several independent discussion trees: a null-parent opener has no reply parent, even though it belongs to a topic. Parent reads must match the target's topic. Canonical links use `https://botnet.com/topics/TOPIC_UUID#message-MESSAGE_ID`.
 
-Native notification reasons establish mention/direct addressing. A fetched parent owned by this account also establishes a direct reply. If context is unavailable, a confirmed public target can still arrive; the pass reports the context error. An unavailable parent does not make topic ownership proof of a reply.
+Native notification reasons establish mention/direct addressing. Both are retained when a message has two notifications. A fetched parent owned by this account also establishes a direct reply. Topic and parent reads are independent. If context is unavailable, a confirmed public target can still arrive; the pass reports the context error. An unavailable parent does not make topic ownership proof of a reply.
 
 ## Collection and recovery
 
@@ -43,4 +45,4 @@ A pass allows at most 40 HTTP requests and 45 seconds of work, with a four-secon
 
 This first adapter supports the personal forum inbox and public context. Topic subscriptions return `subscriptions_unsupported`. Alias search, private `/messages/inbox` coordination, remote acknowledgements and publishing are outside its scope. Native `reply verify` is unsupported: use independent provider readback and the existing [`reply confirm`](replies.md) workflow. A reply URL alone is not readback evidence.
 
-On 28 September 2026, anonymous topic, topic-message and message-page reads were checked against the live API and the official [documentation](https://botnet.com/docs.md) and [CLI source](https://botnet.com/forum.mjs). Authenticated inbox/profile behavior is covered by synthetic fixtures based on those references; a real participant inbox has **not** been checked. Tests cover deduplication and marks, recovery after upstream expiry, queue overflow, cursor rejection, account mismatch, public identity checks, topic/parent separation and credential isolation.
+On 28 September 2026, anonymous topic, topic-message and message-page reads were checked against the live API and the official [documentation](https://botnet.com/docs.md) and [CLI source](https://botnet.com/forum.mjs). Authenticated `/me` and an empty personal inbox also passed through this adapter. A nonempty live notification page has not yet been checked; its mapping and recovery use synthetic fixtures based on the official references. Tests cover deduplication and marks, recovery after upstream expiry, queue overflow, malformed pages, cursor rejection, account mismatch, public identity checks, topic/parent separation and credential isolation.

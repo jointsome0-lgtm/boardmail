@@ -179,13 +179,15 @@ def lookup(client, mid, root=None):
 
 
 def _reference(item):
-    reason = item.get("reason", "mention")  # Older notifications were all mentions.
+    reason = item.get("reason")
+    if reason is None:
+        reason = "mention"  # Older notifications were all mentions.
     if reason not in ("mention", "reply"):
         return None
     mid = item.get("messageId")
     if mid is None:
         mid = "post:" + uuid(item["postId"]) if item.get("postId") else "thread:" + uuid(item["threadId"])
-    return {"id": message_id(mid), "reason": reason}
+    return {"id": message_id(mid), "reasons": [reason]}
 
 
 def _cursor(value):
@@ -217,9 +219,14 @@ def collect(settings, state, known):
         if identifier(client.get("/me", authenticated=True)["actor"]["id"]) != client.owner:
             raise MailError("account_mismatch")
         cursor = _cursor(state.get("cursor"))
-        pending = {entry["id"]: {"id": message_id(entry["id"]), "reason": entry["reason"]}
-                   for entry in state.get("pending", []) if entry["id"] not in known}
-        if len(pending) > MAX_PENDING or any(e["reason"] not in ("mention", "reply") for e in pending.values()):
+        pending = {}
+        for entry in state.get("pending", []):
+            mid, reasons = message_id(entry["id"]), entry["reasons"]
+            if not isinstance(reasons, list) or not reasons or any(r not in ("mention", "reply") for r in reasons):
+                raise ValueError()
+            if mid not in known:
+                pending[mid] = {"id": mid, "reasons": sorted(set(reasons))}
+        if len(pending) > MAX_PENDING:
             raise ValueError()
     except FAILURES as exc:
         _error(batch, exc)
@@ -229,12 +236,10 @@ def collect(settings, state, known):
     for position in ([None, cursor] if cursor is not None else [None]):
         try:
             page = client.get("/inbox", {"limit": PAGE_SIZE, **({"cursor": position} if position else {})}, authenticated=True)
-            items, following = page["items"], _cursor(page["nextCursor"])
+            items = page["items"]
             if not isinstance(items, list) or len(items) > PAGE_SIZE:
                 raise ValueError()
-            if following is not None and following == position:
-                raise MailError("pagination_no_progress")
-            refs, valid_page = [], True
+            refs = []
             for item in items:
                 try:
                     ref = _reference(item)
@@ -242,27 +247,29 @@ def collect(settings, state, known):
                         refs.append(ref)
                 except FAILURES as exc:
                     _error(batch, exc)
-                    valid_page = False
             overflow = False
             for ref in refs:
                 mid = ref["id"]
                 if mid in known:
                     continue
                 if mid in pending:
-                    if ref["reason"] == "mention":
-                        pending[mid] = ref
+                    pending[mid]["reasons"] = sorted(set(pending[mid]["reasons"]) | set(ref["reasons"]))
                 elif len(pending) < MAX_PENDING:
                     pending[mid] = ref
                     fresh.append(mid)
                 else:
                     overflow = True
+            # Harvest valid references even when the page's cursor is broken.
+            following = _cursor(page["nextCursor"])
+            if following is not None and following == position:
+                raise MailError("pagination_no_progress")
             if overflow:
                 raise MailError("pending_overflow")
-            if valid_page and (position is not None or cursor is None):
+            if position is not None or cursor is None:
                 batch.state["cursor"] = following
         except FAILURES as exc:
             code = _error(batch, exc)
-            if position is not None and code in ("http_400", "http_422", "pagination_no_progress"):
+            if position is not None and code in ("http_400", "http_422", "pagination_no_progress", "invalid_response"):
                 batch.state["cursor"] = None
             if code in ("http_401", "http_403", "http_429", "budget_exhausted"):
                 break
@@ -287,13 +294,16 @@ def collect(settings, state, known):
                         root = _topic(client, message["thread_id"])
                         addressing.cache_original(batch, root)
                         message["title"] = message["title"] or root["title"]
-                        if message["parent_id"] is not None:
-                            parent, parent_author = _message(client, message["parent_id"], message["thread_id"])
-                            addressing.cache_original(batch, parent)
                     except FAILURES as exc:
                         _error(batch, exc)
-                    mention = entry["reason"] == "mention"
-                    direct = entry["reason"] == "reply" or parent_author == client.owner
+                    if message["parent_id"] is not None and batch.error != "http_429":
+                        try:
+                            parent, parent_author = _message(client, message["parent_id"], message["thread_id"])
+                            addressing.cache_original(batch, parent)
+                        except FAILURES as exc:
+                            _error(batch, exc)
+                    mention = "mention" in entry["reasons"]
+                    direct = "reply" in entry["reasons"] or parent_author == client.owner
                     message.update(kind="mention" if mention else "reply_to_post" if parent and parent["parent_id"] is None else "reply_to_comment",
                                    addressing=addressing.resolve(direct=direct, mention=mention), discovery="inbox")
                     batch.messages.append(message)
