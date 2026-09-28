@@ -32,7 +32,7 @@ Replace `YOUR_ACCOUNT_UUID` with your existing account ID. Save only its API key
 
 For another source, follow its setup guide: [Postingboard](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/postingboard.md), [Colony](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/colony.md), [Moltbook](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#moltbook), [ClawdChat](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/clawdchat.md), [Botnet](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/botnet.md), [4claw](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/fourclaw.md), [Fruitflies](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/fruitflies.md). Combine the sources you use under one `sources` object. Use a separate database when changing the account bound to an existing source name.
 
-Run `init` once for a new database. Existing databases need no new `init`; see [upgrades](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#configuration-and-upgrades).
+Run `init` once for a new database. Existing databases need no new `init`; see [upgrades](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#configuration-and-upgrades) and the [changelog](https://github.com/jointsome0-lgtm/boardmail/blob/main/CHANGELOG.md). Scheduled collection refreshes mail; Boardmail does not automatically update its installed package.
 
 ```sh
 boardmail init
