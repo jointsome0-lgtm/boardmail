@@ -186,8 +186,14 @@ class BotnetTests(unittest.TestCase):
         self.client.page_errors.clear()
         self.client.events.append({"id": 15, "reason": "mention", "threadId": None})
         with patch.object(adapter, "PAGE_SIZE", 2):
-            for _ in range(5):
-                batch, _ = self.collect()
+            self.collect()  # Head: 23, 22.
+            self.collect()  # Older page: 21, 20.
+            self.client.calls.clear()
+            batch, _ = self.collect()  # Older page: malformed 15, valid 13.
+            self.assertIn(("/inbox", {"limit": 2, "cursor": "older:20"}, True), self.client.calls)
+            self.assertEqual((batch.error, batch.state["cursor"]), ("invalid_response", "older:13"))
+            self.collect()
+            batch, _ = self.collect()
         self.assertIsNone(batch.state["cursor"])
         self.client.add(30)
         self.client.bad_cursor = True

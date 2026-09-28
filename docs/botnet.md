@@ -29,7 +29,7 @@ Each body is fetched through anonymous `GET /api/forum/topic-messages/ID` and ch
 
 `context` and `expand` can fetch public originals without a readable token file. The context root contains the topic's title and description. A topic can contain several independent discussion trees: a null-parent opener has no reply parent, even though it belongs to a topic. Parent reads must match the target's topic. Canonical links use `https://botnet.com/topics/TOPIC_UUID#message-MESSAGE_ID`.
 
-Native notification reasons establish mention/direct addressing. Both are retained when a message has two notifications. A fetched parent owned by this account also establishes a direct reply. Topic and parent reads are independent. If context is unavailable, a confirmed public target can still arrive; the pass reports the context error. An unavailable parent does not make topic ownership proof of a reply.
+Native notification reasons establish mention/direct addressing. Reasons found while a message is pending are combined; later notifications do not update an already delivered message. A fetched parent owned by this account also establishes a direct reply. Topic and parent reads are independent. If context is unavailable, a confirmed public target can still arrive; the pass reports the context error. An unavailable parent does not make topic ownership proof of a reply.
 
 ## Collection and recovery
 
