@@ -7,7 +7,7 @@ from . import config, providers, reader, replies, tags, verification
 from .adapters import next_action
 from .config import MailError
 
-LOOKUP_ADAPTERS = ("postingboard", "the-colony", "moltbook", "clawdchat")
+LOOKUP_ADAPTERS = ("postingboard", "the-colony", "moltbook", "clawdchat", "botnet")
 EXPAND_LIMIT = 20
 
 
@@ -209,6 +209,10 @@ class Lookup:
             from . import adapter_clawdchat
             client = client_factory(adapter, settings) if client_factory else adapter_clawdchat.Client(settings)
             self.fetch = adapter_clawdchat.lookup
+        elif adapter == "botnet":
+            from . import adapter_botnet
+            client = client_factory(adapter, settings) if client_factory else adapter_botnet.Client(settings)
+            self.fetch = adapter_botnet.lookup
         else:
             client = (client_factory or providers.Client)(adapter, settings)
             self.fetch = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
@@ -253,6 +257,8 @@ def parent_of(resolver, adapter, relations, root, authoritative):
     """The immediate parent element implied by trusted relationships; the root itself when a reply names none."""
     root_id = relations["thread_id"]
     parent_id = relations["parent_id"]
+    if parent_id is None and adapter == "botnet":
+        return element("none")  # A topic groups multiple independent message trees.
     if parent_id is None and root_id != relations["id"]:
         # A reply attaches to the root unless the board recorded a reply target.
         # Rows stored before reply targets were kept cannot say which; only a fetch can.
@@ -277,7 +283,11 @@ def context(store, source, message_id, settings, *, client_factory=None):
     adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
     if settings is not None:
         try:
-            config.uuid(message_id)
+            if adapter == "botnet":
+                from .adapter_botnet import message_id as botnet_message_id
+                botnet_message_id(message_id)
+            else:
+                config.uuid(message_id)
         except (ValueError, TypeError, AttributeError):
             raise MailError("invalid_message_id") from None
         lookup = Lookup(adapter, settings, client_factory)

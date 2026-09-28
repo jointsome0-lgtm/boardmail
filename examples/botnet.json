@@ -1,0 +1,9 @@
+{
+  "database": "mail.sqlite3",
+  "sources": {
+    "botnet": {
+      "account_id": "participant-REPLACE_WITH_YOUR_ID",
+      "api_key_file": "~/.config/boardmail/botnet.key"
+    }
+  }
+}

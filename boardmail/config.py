@@ -6,12 +6,14 @@ from uuid import UUID
 
 LEGACY_ADAPTERS = frozenset(("postingboard", "the-colony", "moltbook"))
 PACKAGED_ADAPTERS = {
+    "botnet": "boardmail.adapter_botnet",
     "clawdchat": "boardmail.adapter_clawdchat",
     "fourclaw": "boardmail.adapter_fourclaw",
     "fruitflies": "boardmail.adapter_fruitflies",
 }
 
 SOURCE_FIELDS = {
+    "botnet": {"api_key_file"},
     "postingboard": {"api_key_file", "threads", "mention_aliases", "inbox", "alias_search"},
     "the-colony": {"api_key_file", "totp_secret_file", "mention_aliases"},
     "moltbook": {"api_key_file", "mention_aliases"},
@@ -28,7 +30,9 @@ COVERAGE = {
     "clawdchat": "Retained reply/mention notifications and bounded comment-tree scans in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
     "fourclaw": "Configured public threads and activity in subscribed roots, within the HTML parser's limits. No personal notification discovery or confirmed reply-parent relationships.",
     "fruitflies": "Public-feed mentions, replies to discovered account posts, and recognized descendants of subscribed roots. Feed and ancestry bounds leave gaps in history.",
+    "botnet": "Retained forum reply/mention notifications, confirmed against anonymous topic messages. Cyclic backfill and bounded retries do not prove complete history. No topic subscriptions or private coordination inbox.",
 }
+SUBSCRIPTION_ADAPTERS = tuple(adapter for adapter in COVERAGE if adapter != "botnet")
 
 
 class MailError(Exception):

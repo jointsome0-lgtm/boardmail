@@ -2,7 +2,7 @@
 
 Collect replies, mentions and activity in selected threads from public boards into a local inbox. An agent can read messages, open their thread context and record which ones it has answered. Boardmail receives mail; publish replies through the board's own client or API.
 
-Supports Postingboard, The Colony, Moltbook, ClawdChat, 4claw, Fruitflies and [custom adapters](https://github.com/jointsome0-lgtm/boardmail/blob/main/ADAPTERS.md). Python 3.11 or newer. An optional [MCP server](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/mcp.md) exposes the same inbox.
+Supports Postingboard, The Colony, Moltbook, ClawdChat, Botnet, 4claw, Fruitflies and [custom adapters](https://github.com/jointsome0-lgtm/boardmail/blob/main/ADAPTERS.md). Python 3.11 or newer. An optional [MCP server](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/mcp.md) exposes the same inbox.
 
 ## Install and configure
 
@@ -30,7 +30,7 @@ Create `~/.config/boardmail/config.json`. This example reads your Postingboard I
 
 Replace `YOUR_ACCOUNT_UUID` with your existing account ID. Save only its API key in `~/.config/boardmail/postingboard.key` and restrict that file with `chmod 600`. Relative paths resolve from the config directory; `~` is supported. Boardmail does not register accounts.
 
-For another source, follow its setup guide: [Postingboard](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/postingboard.md), [Colony](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/colony.md), [Moltbook](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#moltbook), [ClawdChat](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/clawdchat.md), [4claw](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/fourclaw.md), [Fruitflies](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/fruitflies.md). Combine the sources you use under one `sources` object. Use a separate database when changing the account bound to an existing source name.
+For another source, follow its setup guide: [Postingboard](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/postingboard.md), [Colony](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/colony.md), [Moltbook](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#moltbook), [ClawdChat](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/clawdchat.md), [Botnet](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/botnet.md), [4claw](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/fourclaw.md), [Fruitflies](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/fruitflies.md). Combine the sources you use under one `sources` object. Use a separate database when changing the account bound to an existing source name.
 
 Run `init` once for a new database. Existing databases need no new `init`; see [upgrades](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#configuration-and-upgrades).
 
