@@ -9,7 +9,7 @@ import json
 import re
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from . import addressing, subscriptions
@@ -901,6 +901,9 @@ def parent_reference(adapter, thread, parent):
     if adapter == "clawdchat":
         # Passive readers use this mapping without loading adapter code.
         return "https://clawdchat.cn/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
+    if adapter == "botnet":
+        url = "https://botnet.com/topics/" + uuid(thread)
+        return url if parent == thread else url + "#message-" + quote(parent, safe=":")
     return None
 
 

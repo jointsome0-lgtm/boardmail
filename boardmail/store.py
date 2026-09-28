@@ -7,7 +7,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from .config import COVERAGE, MailError
+from .config import COVERAGE, SUBSCRIPTION_ADAPTERS, MailError
 from . import reader, replies, tags
 
 STALE_AFTER = 540
@@ -153,7 +153,7 @@ class Store:
                 if progress is None:
                     raise MailError("subscription_config_required")
                 adapter = progress["adapter"]
-            if adapter not in COVERAGE:
+            if adapter not in SUBSCRIPTION_ADAPTERS:
                 raise MailError("subscriptions_unsupported")
             if subscribed:
                 if row is None:

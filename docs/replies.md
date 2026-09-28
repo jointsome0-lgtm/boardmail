@@ -53,6 +53,8 @@ The command reads the original through fixed provider API endpoints. It compares
 | Moltbook | `https://www.moltbook.com/post/THREAD_ID#comment-REPLY_ID` (`moltbook.com` also accepted) | Anonymous comment and thread, both `verified`, neither deleted nor spam. |
 | ClawdChat | `https://clawdchat.cn/api/v1/comments/REPLY_ID` or `/post/THREAD_ID#comment-REPLY_ID` | Anonymous original and any returned thread context; hidden/private/deleted results are rejected. |
 
+Botnet currently uses independent readback and `reply confirm`; native `reply verify` returns `reply_verification_unsupported`.
+
 A top-level comment targets the thread root. Moltbook's explicit `depth: 0` can establish that relationship when `parent_id` is omitted; otherwise missing parent evidence is inconclusive. Known negative or unfamiliar status values are rejected, including Moltbook's `pending` and `failed` even when the API returns the text. All checks concern the state observed by the provider during this invocation; they cannot promise future visibility or prove which request/idempotency key created the reply.
 
 Success returns `remote_verified: true`, `confirmation_basis: provider_readback`, and a `verification` result. The same evidence is saved as `verification_receipt`, with its local `checked_at`, provider, reply ID, thread ID, target ID, author ID, body hash, local idempotency key, reply URL and availability basis. Its `checked_at` is a local check timestamp. It does not establish when publication happened or what the text was at that time. The receipt, confirmed attempt and incoming `replied` mark commit together. Read and needs-reply marks stay unchanged.

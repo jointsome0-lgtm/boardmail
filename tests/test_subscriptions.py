@@ -34,7 +34,7 @@ class SubscriptionTests(unittest.TestCase):
         return result.returncode, json.loads(result.stdout)
 
     def test_all_boards_cli_persistence_idempotence_and_saved_marks(self):
-        sources = {source: {'account_id': uid(n)} for n, source in enumerate(config.COVERAGE, 1)}
+        sources = {source: {'account_id': uid(n)} for n, source in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
         self.store.initialize(sources)
         self.store.save('postingboard', uid(1), [mail(10)])
         for action in ('read', 'needs_reply'):
@@ -152,7 +152,7 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_every_builtin_gets_current_source_selections_and_pause_still_applies(self):
         sources = {f'board{n}': {'account_id': uid(n), 'adapter': adapter}
-                   for n, adapter in enumerate(config.COVERAGE, 1)}
+                   for n, adapter in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
         original = deepcopy(sources)
         self.store.initialize(sources)
         for source in sources:
@@ -166,7 +166,7 @@ class SubscriptionTests(unittest.TestCase):
         with patch.object(providers, 'collect', side_effect=lambda adapter, cfg, state, known, **kw: collect(cfg, state, known)), \
                 patch('boardmail.adapters.importlib.import_module', return_value=SimpleNamespace(API_VERSION=1, collect=collect)):
             self.assertFalse(collect_all(self.store, sources)['failed'])
-            self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.COVERAGE])
+            self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS])
             seen.clear()
             self.store.set_subscription('board1', uid(100), False)
             self.store.set_subscription('board2', uid(101), True)

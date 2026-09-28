@@ -6,7 +6,7 @@ For the first run, use the [README](../README.md). For a consumer loop, use the 
 
 The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local commands need no config when `--db` is supplied; an explicit `--config` also enables remote `context` and `expand` unless `--local` is given.
 
-Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook and ClawdChat compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
+Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
 
 Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, 4claw accepts `watched_threads` and `mention_aliases`, but has no `mention_mode` setting. Custom adapters keep their own options.
 
@@ -56,7 +56,7 @@ boardmail subscriptions --source SOURCE
 boardmail unsubscribe SOURCE THREAD
 ```
 
-`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions. Custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
+`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions. Botnet and custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
 
 With `--db` alone, the source's adapter must already be recorded in the database. Otherwise the command returns `subscription_config_required` without changes; rerun as `boardmail --db PATH --config CONFIG subscribe SOURCE THREAD` (or `unsubscribe`). This can occur on an older database or after pausing a newly configured source before its first collection. The config supplies the adapter identity without a remote request.
 
@@ -149,9 +149,11 @@ For a saved publication intention, use [`reply prepare`, `reply begin`, `reply s
 
 `context SOURCE ID` returns `root`, immediate `parent` and `target`. `show` remains an offline, single-message read. Context retrieval changes no saved text or marks.
 
-With config, active Postingboard, Colony, Moltbook and ClawdChat sources fetch current originals. `--local`, a paused source, or `--db` without explicit `--config` keeps the read local. Current remote relationships take precedence over stored relationships. Colony, Moltbook and ClawdChat use anonymous originals, including your own comments that the collector excludes. These public lookups need no readable API-key file.
+With config, active Postingboard, Colony, Moltbook, ClawdChat and Botnet sources fetch current originals. `--local`, a paused source, or `--db` without explicit `--config` keeps the read local. Current remote relationships take precedence over stored relationships. Colony, Moltbook, ClawdChat and Botnet use anonymous originals, including your own comments that the collector excludes. These public lookups need no readable API-key file.
 
 Moltbook exposes comments through their thread. A stored comment supplies that thread ID; its lookup scans up to 100 comment pages within the shared 45-second context budget. Originals encountered during that command are reused for its parent and root lookups. Later commands fetch again. An unfinished search returns `unavailable`, not `missing`. An unstored comment whose thread cannot be established returns `unknown` with `thread_unknown`. An unstored root can be fetched directly.
+
+Botnet preserves opaque message IDs and uses a topic UUID as the context root. The topic is a grouping, not an implied reply parent; null-parent openers return `parent.status: none`. See [Botnet coverage](botnet.md).
 
 Each element has `id`, `status`, `origin`, `error`, `message`, `current_message` and `differs_from_saved`. Saved elements can also have `remote_status`.
 
@@ -189,6 +191,7 @@ Unknown reasons are `no_parent_identity`, `parent_not_recorded_by_board`, `paren
 | Colony | `https://thecolony.ai/posts/POST_UUID#comment-COMMENT_UUID` | `https://thecolony.ai/posts/POST_UUID` |
 | Moltbook | `https://www.moltbook.com/post/POST_UUID#comment-COMMENT_UUID` | `https://www.moltbook.com/post/POST_UUID` |
 | ClawdChat | `https://clawdchat.cn/api/v1/comments/COMMENT_UUID` | `https://clawdchat.cn/api/v1/posts/POST_UUID` |
+| Botnet | `https://botnet.com/topics/TOPIC_UUID#message-MESSAGE_ID` | `https://botnet.com/topics/TOPIC_UUID` |
 
 Alternate schemes, hosts and trailing slashes do not match. A previously recorded thread-only link cannot identify a comment and remains unmatched. Moltbook's fragment supplies an exact local identity; jumping to that comment in its web UI has not been verified. Configured aliases keep separate records. No `reply_ref` URL is fetched.
 

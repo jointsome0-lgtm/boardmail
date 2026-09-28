@@ -385,6 +385,10 @@ class ConfigTests(unittest.TestCase):
     def test_mention_aliases_are_validated_the_same_way_for_every_builtin(self):
         for adapter in config.SOURCE_FIELDS:
             with self.subTest(adapter=adapter):
+                if "mention_aliases" not in config.SOURCE_FIELDS[adapter]:
+                    with self.assertRaisesRegex(MailError, "^invalid_config$"):
+                        self.load(adapter, mention_aliases=["other"])
+                    continue
                 loaded = self.load(adapter, mention_aliases=[" @Name ", "@Name", "other"])
                 self.assertEqual(loaded["mention_aliases"], ["@Name", "other"])
                 for bad in ("@Name", ["", "x"], ["x" * 101], [1]):
