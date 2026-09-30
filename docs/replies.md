@@ -6,7 +6,7 @@ Use one consumer per inbox. A saved attempt is not a worker lease or permission 
 
 ## Prepare, begin, publish, confirm
 
-Write the final reply body to a UTF-8 file, then save it:
+Choose the final text after any transformations your publishing client applies, then write that exact reply body to a UTF-8 file and save it. For example, if the publishing path removes a final newline, omit that newline before `prepare`; `printf '%s' 'Final reply text' > reply.txt` writes a body without one. An editor or heredoc may add a newline. Review the resulting file and publish the saved `reply.body` without further trimming or formatting.
 
 ```sh
 boardmail reply prepare SOURCE ID --body-file reply.txt

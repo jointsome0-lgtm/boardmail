@@ -8,6 +8,8 @@ from copy import deepcopy
 import io
 import json
 import re
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -17,8 +19,9 @@ from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
 from boardmail import addressing, providers, subscriptions
-from boardmail.adapters import Batch, validate
+from boardmail.adapters import Batch, collect_all, validate
 from boardmail.config import MailError
+from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
 from test_clawdchat import FixtureClient as ClawdChatClient, event as clawd_event, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post
@@ -156,6 +159,7 @@ class ThreadClient:
             return deepcopy(self.posts[root]) if self.colony else {"success": True, "post": deepcopy(self.posts[root])}
         items, limit = self.comments.get(root, []), params["limit"]
         if self.colony:
+            assert params["sort"] == "oldest", "Colony requires oldest, not Moltbook's old"
             page = params.get("page", 1)
             start = (page - 1) * limit
             return {"items": deepcopy(items[start:start + limit]), "total": len(items),
@@ -206,6 +210,9 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
                 self.assertEqual(len(pages), 3, "Seven comments in pages of three")
                 if source == "the-colony":
                     self.assertEqual([p["page"] for p in pages], [1, 2, 3])
+                    self.assertEqual([p["sort"] for p in pages], ["oldest"] * 3)
+                else:
+                    self.assertEqual([p["sort"] for p in pages], ["old"] * 3)
                 progress = batch.state["subscriptions"]["roots"][uid(root)]
                 self.assertEqual(set(progress), {"owners"}, "A finished cycle keeps only fetched ownership")
                 self.assertEqual({int(UUID(k)) - root: v for k, v in progress["owners"].items()},
@@ -285,6 +292,66 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(400)]["page"], 2, "The cut pass saved its next page")
         self.assertEqual(batch.state["subscriptions"]["next"], uid(400), "A single root simply resumes")
         self.assertNotIn("page", second.state["subscriptions"]["roots"][uid(400)], "A finished cycle restarts at the head")
+
+    def test_colony_page_cap_keeps_progress_until_the_real_end(self):
+        client = self.client("the-colony", [400])
+        self.thread(client, 400)
+        state, known, got = {}, set(), []
+        with patch.object(providers, "PAGE_SIZE", 3), patch.object(providers, "MAX_PAGES", 1):
+            for number in (1, 2, 3):
+                batch = self.collect(client, state, known)
+                got.extend(m["id"] for m in batch.messages)
+                known.update(got)
+                state = json.loads(json.dumps(batch.state))  # A resumed collector sees saved state.
+                progress = state["subscriptions"]["roots"][uid(400)]
+                self.assertEqual(batch.complete, number == 3)
+                self.assertEqual(progress.get("page"), number+1 if number < 3 else None)
+            replay = self.collect(client, state, known)
+        self.assertEqual(got, [uid(n) for n in (411, 413, 414, 415, 416)])
+        self.assertEqual(replay.messages, [])
+        self.assertEqual([p["page"] for path, p, _ in client.calls if path.endswith("/comments")], [1, 2, 3, 1])
+
+    def test_colony_invalid_continuation_never_claims_a_finished_scan(self):
+        for values, error in (({"page": 1}, "pagination_no_progress"),
+                              ({"items": [], "has_more": True}, "pagination_no_progress"),
+                              ({"page": True}, "invalid_response"),
+                              ({"has_more": "false"}, "invalid_response")):
+            with self.subTest(values=values):
+                client = self.client("the-colony", [400])
+                self.thread(client, 400)
+                real = client.get
+                def malformed(path, params=None, **kw):
+                    response = real(path, params, **kw)
+                    return {**response, **values} if path.endswith("/comments") else response
+                client.get = malformed
+                state = {"subscriptions": {"next": None, "roots": {uid(400): {"page": 2}}}}
+                batch = self.collect(client, state)
+                self.assertEqual(batch.error, error)
+                self.assertFalse(batch.complete)
+                self.assertEqual(batch.messages, [], "No data from an unvalidated page enters the inbox")
+                if error == "pagination_no_progress":
+                    self.assertNotIn("page", batch.state["subscriptions"]["roots"][uid(400)])
+                    client.get = real
+                    self.assertEqual(len(self.collect(client, batch.state).messages), 5)
+
+    def test_colony_overlapping_pages_and_restart_preserve_read_and_replied(self):
+        client = self.client("the-colony", [400])
+        self.thread(client, 400)
+        client.comments[uid(400)].insert(3, deepcopy(client.comments[uid(400)][0]))
+        with tempfile.TemporaryDirectory() as directory, patch.object(providers, "PAGE_SIZE", 3), patch.object(providers, "MAX_PAGES", 1):
+            database = Path(directory) / "mail.sqlite3"
+            store = Store(database)
+            store.initialize({client.source: client.settings})
+            store.set_subscription(client.source, uid(400), True, client.settings)
+            collect = lambda db: collect_all(db, {client.source: client.settings}, client_factory=lambda *_: client)
+            self.assertEqual(collect(store)["added"], 2)
+            store.mark(client.source, uid(411), "read")
+            store.mark(client.source, uid(411), "replied", ref="https://thecolony.ai/posts/" + uid(400) + "#comment-" + uid(999))
+            marked = store.show(client.source, uid(411))
+            self.assertEqual(collect(Store(database))["added"], 2)
+            self.assertEqual(collect(Store(database))["added"], 1)
+            self.assertEqual(collect(Store(database))["added"], 0)
+            self.assertEqual(Store(database).show(client.source, uid(411)), marked)
 
     def passes(self, client, roots, limit, count):
         """Repeated passes under one identical public-request budget; every message once."""
