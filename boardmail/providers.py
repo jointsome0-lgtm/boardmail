@@ -200,11 +200,17 @@ def failure(batch, exc):
 
 
 def page(client, path, key, position=None):
+    colony_comments = client.source == "the-colony" and path.endswith("/comments")
     params = {"limit": PAGE_SIZE, **(position or {})}
-    if path.endswith("/comments"): params["sort"] = "old"
+    if colony_comments:
+        number = params.get("page", 1)
+        if type(number) is not int or number < 1: raise ValueError("Invalid page number")
+        params = {"limit": PAGE_SIZE, "page": number, "sort": "oldest"}
+    elif path.endswith("/comments"):
+        params["sort"] = "old"
     raw = client.get(path, params, authenticated=path == "/notifications")
     bare = client.source == "the-colony" and path == "/notifications"
-    items = raw if bare else raw[key]
+    items = raw if bare else raw["items" if colony_comments else key]
     if not isinstance(items, list): raise ValueError("Invalid page")
     if bare:
         # Do not assume the server honored the requested page size.
@@ -213,9 +219,15 @@ def page(client, path, key, position=None):
     else:
         more = raw["has_more"]
         if type(more) is not bool: raise ValueError("Invalid continuation")
-        following = {"cursor": raw.get("next_cursor")}
-        if more and (not isinstance(following["cursor"], str) or not following["cursor"]):
-            raise ValueError("Missing cursor")
+        if colony_comments:
+            echoed = raw["page"]
+            if type(echoed) is not int or echoed < 1: raise ValueError("Invalid page number")
+            if echoed != number: raise MailError("pagination_no_progress")
+            following = {"page": number+1}
+        else:
+            following = {"cursor": raw.get("next_cursor")}
+            if more and (not isinstance(following["cursor"], str) or not following["cursor"]):
+                raise ValueError("Missing cursor")
     if more and (not items or following == position): raise MailError("pagination_no_progress")
     return items, following if more else None
 
@@ -417,13 +429,11 @@ def scan_thread(client, root, progress, known, batch, mention, colony, consumed)
         for _ in range(MAX_PAGES):
             if colony:
                 number = progress.get("page") if type(progress.get("page")) is int and progress.get("page") >= 1 else 1
-                page_raw = client.get(path, {"limit": PAGE_SIZE, "page": number})
-                items, more = page_raw["items"], page_raw["has_more"]
-                if not isinstance(items, list) or type(more) is not bool: raise ValueError("Invalid page")
+                items, following = page(client, path, "comments", {"page": number})
                 deliver(items)
-                done = not more or not items or number >= MAX_PAGES
+                done = following is None
                 if done: clear_position(progress)
-                else: progress["page"] = number+1
+                else: progress["page"] = following["page"]
             else:
                 cursor, pages = progress.get("cursor"), progress.get("pages")
                 position = {"cursor": cursor} if isinstance(cursor, str) and cursor else None
