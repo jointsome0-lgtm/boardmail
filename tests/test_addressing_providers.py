@@ -17,6 +17,7 @@ from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
+from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
 from test_clawdchat import FixtureClient as ClawdChatClient, event as clawd_event, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post
@@ -168,6 +169,164 @@ class PostingboardTests(unittest.TestCase):
         batch = providers.collect("postingboard", client.settings, deepcopy(state or {}), set(known or ()), client_factory=lambda *_: client)
         assert_clean(self, batch)
         return batch
+
+    def incomplete_parent_client(self, *, parent_first=False, null_author=False):
+        cfg = {**settings()["postingboard"], "threads": [], "subscriptions": [uid(302)],
+               "inbox": False, "mention_aliases": []}
+        client = FixtureClient("postingboard", cfg)
+        unknown = named(316, 302)
+        del unknown["agent_id"]
+        client.comments[uid(302)] = [named(313, 302, 3), named(315, 302), unknown,
+            named(323, 302, reply_to=313), named(324, 302, reply_to=315),
+            named(325, 302, reply_to=316), named(326, 302, reply_to=999), named(327, 302)]
+        client.summaries = {uid(313), uid(315), uid(316)}
+        if parent_first:
+            for post in client.comments[uid(302)][:3]: post["seq"] += 100
+        get = client.get
+        def incomplete_page(path, params=None, **kw):
+            raw = get(path, params, **kw)
+            for item in raw.get("replies", {}).get("items", []):
+                if item["id"] in client.summaries:
+                    if null_author: item["agent_id"] = None
+                    else: item.pop("agent_id", None)
+            return raw
+        client.get = incomplete_page
+        return client
+
+    def test_missing_page_authors_use_hydrated_targets_in_either_order(self):
+        for parent_first in (False, True):
+            for null_author in (False, True):
+                with self.subTest(parent_first=parent_first, null_author=null_author):
+                    client = self.incomplete_parent_client(parent_first=parent_first, null_author=null_author)
+                    batch = self.collect(client)
+                    self.assertIsNone(batch.error)
+                    got = by_id(batch)
+                    self.assertEqual({n: got[uid(n)]["addressing"] for n in (323, 324, 325, 326, 327)},
+                                     {323: "direct", 324: "thread", 325: None, 326: None, 327: "thread"})
+                    self.assertTrue(all(got[uid(n)]["kind"] == "thread_activity" for n in range(323, 328)))
+                    self.assertTrue(all(got[uid(n)]["discovery"] == "subscription" for n in range(323, 328)))
+                    self.assertNotIn(uid(313), got)
+                    self.assertIn(uid(313), originals(batch))
+                    # Omitting page IDs does not add ownership-discovery requests.
+                    self.assertEqual([path for path, _, _ in client.calls],
+                        ["/v1/me", "/v1/posts/"+uid(302), *["/v1/posts/"+uid(n)
+                         for n in (316, 315, 313)],
+                         "/v1/posts/"+uid(313)])
+
+    def test_unknown_complete_parent_does_not_supply_foreign_ownership(self):
+        client = self.incomplete_parent_client()
+        client.summaries.clear()  # Complete bodies need no singular request.
+        batch = self.collect(client)
+        self.assertIsNone(by_id(batch)[uid(325)]["addressing"])
+        self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
+        self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
+        self.assertEqual(len(client.calls), 2)
+
+    def test_later_backfill_original_corrects_same_pass_reply(self):
+        client = self.incomplete_parent_client()
+        parent = named(313, 302, 3)
+        parent["seq"] = 1
+        client.comments[uid(302)] = [parent, named(500, 302, reply_to=313),
+                                    *[named(n, 302) for n in range(401, 430)]]
+        client.summaries = {uid(313)}
+        batch = self.collect(client)
+        self.assertEqual(by_id(batch)[uid(500)]["addressing"], "direct")
+        self.assertEqual(len(batch.messages), 30)
+        self.assertIsNone(batch.error)
+        self.assertEqual([call[1].get("before") for call in client.calls if call[0].endswith(uid(302))],
+                         [None, 401])
+
+    def test_pending_own_original_supplies_ownership_without_page_identity(self):
+        client = self.incomplete_parent_client()
+        client.settings["inbox"] = True
+        parent = client.comments[uid(302)][0]
+        client.inbox = [(8001, parent, ["mention"])]
+        # The watched page later omits the ID and supplies only a summary.
+        batch = self.collect(client)
+        self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
+        self.assertNotIn(uid(313), by_id(batch))
+        self.assertEqual(batch.state["pending"], {})
+
+    def test_pending_own_original_is_not_mail_when_later_full_body_omits_author(self):
+        client = self.incomplete_parent_client()
+        client.settings["inbox"] = True
+        client.inbox = [(8001, client.comments[uid(302)][0], ["mention"])]
+        get, fetched = client.get, False
+        def later_incomplete_original(path, params=None, **kw):
+            nonlocal fetched
+            raw = get(path, params, **kw)
+            if path == "/v1/posts/"+uid(313):
+                if fetched: raw["post"].pop("agent_id")
+                fetched = True
+            return raw
+        client.get = later_incomplete_original
+        batch = self.collect(client)
+        self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
+        self.assertNotIn(uid(313), by_id(batch))
+        self.assertEqual(batch.state["pending"], {})
+
+    def test_invalid_hydrated_parent_cannot_establish_ownership(self):
+        client = self.incomplete_parent_client()
+        client.comments[uid(302)][0]["created_at"] = "invalid timestamp"
+        batch = self.collect(client)
+        self.assertEqual(batch.error, "invalid_response")
+        self.assertIsNone(by_id(batch)[uid(323)]["addressing"])
+        self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
+        self.assertNotIn(uid(313), originals(batch))
+
+    def test_budget_failure_finalizes_prefix_without_inventing_target_ownership(self):
+        client = self.incomplete_parent_client()
+        get = client.get
+        def exhausted_parent(path, params=None, **kw):
+            if path == "/v1/posts/"+uid(313): raise MailError("budget_exhausted")
+            return get(path, params, **kw)
+        client.get = exhausted_parent
+        batch = self.collect(client)
+        self.assertFalse(batch.complete)
+        self.assertIsNone(batch.error)
+        self.assertIsNone(by_id(batch)[uid(323)]["addressing"])
+        self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
+
+    def test_native_direct_reply_survives_unknown_target_and_failed_lookup(self):
+        for reasons, expected in ((["direct_reply"], "direct"),
+                                  (["direct_reply", "mention"], "direct+mention")):
+            with self.subTest(reasons=reasons):
+                client = self.incomplete_parent_client()
+                client.settings["inbox"] = True
+                child = next(p for p in client.comments[uid(302)] if p["id"] == uid(325))
+                client.inbox = [(8002, child, reasons)]
+                get = client.get
+                def fail_singular(path, params=None, **kw):
+                    if path == "/v1/posts/"+uid(325): raise MailError("source_timeout")
+                    return get(path, params, **kw)
+                client.get = fail_singular
+                batch = self.collect(client)
+                got = by_id(batch)[uid(325)]
+                self.assertEqual(got["addressing"], expected)
+                self.assertEqual(got["discovery"], "inbox:"+"+".join(sorted(reasons)))
+                self.assertEqual(batch.error, "source_timeout")
+                self.assertEqual(batch.state["pending"], {})
+
+    def test_hydrated_ownership_snapshot_and_marks_survive_reopen(self):
+        client = self.incomplete_parent_client()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"inbox.sqlite3"
+            store = Store(path)
+            store.initialize()
+            store.set_subscription("postingboard", uid(302), True, client.settings)
+            def collect():
+                return providers.collect_all(Store(path), {"postingboard": client.settings},
+                                             client_factory=lambda *_: client)
+            self.assertEqual(collect()["added"], 7)
+            self.assertEqual(Store(path).show("postingboard", uid(323))["addressing"], "direct")
+            for action in ("read", "needs_reply", "replied"):
+                Store(path).mark("postingboard", uid(323), action,
+                    **({"ref": "https://postingboard.example.invalid/v1/posts/"+uid(999)} if action == "replied" else {}))
+            saved = Store(path).show("postingboard", uid(323))
+            # A weaker repeat response cannot rewrite an accepted snapshot or marks.
+            client.comments[uid(302)] = client.comments[uid(302)][1:]
+            self.assertEqual(collect()["added"], 0)
+            self.assertEqual(Store(path).show("postingboard", uid(323)), saved)
 
     def test_watched_thread_targets_and_flat_replies(self):
         cfg = {**settings()["postingboard"], "threads": [uid(301)]}

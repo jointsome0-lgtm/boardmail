@@ -577,6 +577,21 @@ def alias_pattern(aliases):
 
 
 def postingboard_mail(client, known, batch, explicit=None):
+    # Ownership is evidence from this pass, never persisted preview metadata.
+    # Finalize after hydration so a child can precede its parent, even across pages.
+    ownership, addressed = {}, []
+    try:
+        postingboard_scan(client, known, batch, explicit, ownership, addressed)
+    finally:
+        for message, reasons, activity in addressed:
+            parent = message["parent_id"]
+            target = (message["thread_id"], parent)
+            message["addressing"] = postingboard_addressing(reasons, explicit, message["title"], message["body"],
+                direct=ownership.get(target) is True,
+                thread=activity and (parent is None or target in ownership))
+
+
+def postingboard_scan(client, known, batch, explicit, ownership, addressed):
     settings = client.settings
     mention = alias_pattern(settings.get("mention_aliases", []))
     state = batch.state
@@ -602,7 +617,7 @@ def postingboard_mail(client, known, batch, explicit=None):
             entry = pending.pop(mid)
             pending[mid] = entry  # Rotation: one failing original cannot block later ones.
             try:
-                resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit)
+                resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit, ownership=ownership)
             except FAILURES as exc:
                 code = failure(batch, exc)
                 if code == "http_429": return
@@ -625,7 +640,7 @@ def postingboard_mail(client, known, batch, explicit=None):
         try:
             first = client.get(path, {"limit": 30}, authenticated=True)
             postingboard_items(client, first, thread, mention, known, batch, explicit=explicit,
-                               subscribed=thread in subscribed)
+                               subscribed=thread in subscribed, ownership=ownership, addressed=addressed)
         except HTTPError as exc:
             if exc.code == 404:
                 exc.close(); batch.unavailable += 1
@@ -639,7 +654,7 @@ def postingboard_mail(client, known, batch, explicit=None):
             raw = first if before is None and first is not None else client.get(path, {"limit": 30, **({"before": before} if before is not None else {})}, authenticated=True)
             for page_number in range(MAX_PAGES):
                 following = postingboard_items(client, raw, thread, mention, known, batch, cursors=cursors, explicit=explicit,
-                                               subscribed=thread in subscribed)
+                                               subscribed=thread in subscribed, ownership=ownership, addressed=addressed)
                 if following is None:
                     cursors[thread] = None
                     break
@@ -757,7 +772,7 @@ def postingboard_discovery_kind(discovery, reasons, mention, body, parent, root)
     return "reply_to_comment" if parent and parent != root else "reply_to_post"
 
 
-def resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit=None):
+def resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit=None, *, ownership):
     try:
         post = client.get("/v1/posts/"+mid, authenticated=True)["post"]
     except HTTPError as exc:
@@ -770,6 +785,7 @@ def resolve_postingboard(client, mid, entry, mention, known, batch, pending, exp
     parent = message["parent_id"] or entry.get("parent")
     discovery = discovery_of(entry, client.settings, message["title"], message["body"])
     own = post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner
+    if post.get("agent_id") is not None: ownership[root, mid] = own
     if own: addressing.cache_original(batch, message)
     kind = None if own else postingboard_discovery_kind(discovery, entry["reasons"], mention, message["body"], parent, root)
     if kind:
@@ -780,27 +796,32 @@ def resolve_postingboard(client, mid, entry, mention, known, batch, pending, exp
 
 
 def page_authors(client, items):
-    """IDs on one fetched page, split by whether this account wrote them.
+    """Confirmed authors on one page; missing author IDs supply no evidence.
     Malformed rows are left to the per-item checks."""
     ours, others = set(), set()
     for item in items:
         try:
             mid = uuid(item["id"])
-            (ours if item.get("agent_id") is not None and uuid(item["agent_id"]) == client.owner else others).add(mid)
+            if item.get("agent_id") is not None:
+                (ours if uuid(item["agent_id"]) == client.owner else others).add(mid)
         except FAILURES:
             continue
     return ours, others
 
 
-def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=None, explicit=None, subscribed=False):
+def postingboard_items(client, raw, thread, mention, known, batch, *, ownership, addressed,
+                      cursors=None, explicit=None, subscribed=False):
     root, replies = raw["post"], raw["replies"]
     if uuid(root["id"]) != thread: raise ValueError("Unexpected root")
-    own = root.get("agent_id") is not None and uuid(root["agent_id"]) == client.owner
     items = replies["items"]
     if not isinstance(items, list): raise ValueError("Invalid replies")
     before = cursors.get(thread) if cursors is not None else None
     pending = batch.state.get("pending", {})
     ours, others = page_authors(client, [root, *items])
+    for mid in ours | others:
+        # An incomplete page must not replace ownership from an earlier full original.
+        ownership.setdefault((thread, mid), mid in ours)
+    own = ownership.get((thread, thread)) is True
     if "body" in root:
         try:
             addressing.cache_original(batch, postingboard_post(client, root, thread, thread, None))
@@ -824,13 +845,17 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                 if post is not None:
                     if uuid(post["id"]) != mid or mid != thread and uuid(post["root_id"]) != thread:
                         raise ValueError("Unexpected reply")
-                    body = text(post["body"])
                     title = text(root.get("title") or "Untitled thread")
+                    original = postingboard_post(client, post, mid, thread, title, seq=seq)
+                    body = original["body"]
                     author_id = uuid(post["agent_id"]) if post.get("agent_id") else None
+                    if author_id is not None:
+                        ownership[thread, mid] = author_id == client.owner
+                        if mid == thread: own = author_id == client.owner
                     # A watched page can supply the full original of a pending discovery
                     # candidate; its retained reason completes that discovery here.
                     entry = pending.get(mid)
-                    parent = (uuid(post["reply_to_id"]) if post.get("reply_to_id") else None) or (entry or {}).get("parent")
+                    parent = original["parent_id"] or (entry or {}).get("parent")
                     retained = discovery_of(entry, client.settings, title, body) if entry else None
                     kind = postingboard_discovery_kind(retained, (entry or {}).get("reasons", []), mention, body, parent, thread)
                     if kind is None:
@@ -839,21 +864,17 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                     # A subscribed foreign root delivers its other-author replies as thread activity.
                     discovery = retained or (
                         "subscription" if kind == "thread_activity" or (subscribed and thread not in client.settings.get("threads", [])) else "thread")
-                    if author_id == client.owner:
+                    if ownership.get((thread, mid)) is True:
                         pending.pop(mid, None)
-                        if mid != thread: addressing.cache_original(batch, postingboard_post(client, post, mid, thread, title, seq=seq))
+                        if mid != thread: addressing.cache_original(batch, original)
                     elif kind:
-                        author = text(post["author"]) if post.get("author") is not None else None
-                        # A flat reply in our thread is thread activity. An explicit target
-                        # we authored makes it direct; a target this page never showed stays unknown.
-                        direct = parent is not None and parent in ours
-                        resolved = parent is None or parent in ours or parent in others
-                        batch.messages.append({"id": mid, "thread_id": thread, "provider_seq": seq, "kind": kind,
-                            "parent_id": parent, "author": author, "title": title, "body": body,
-                            "url": client.host+"/v1/posts/"+mid, "created_at": timestamp(post["created_at"]),
+                        message = {"id": mid, "thread_id": thread, "provider_seq": seq, "kind": kind,
+                            "parent_id": parent, "author": original["author"], "title": title, "body": body,
+                            "url": client.host+"/v1/posts/"+mid, "created_at": original["created_at"],
                             "discovery": discovery,
-                            "addressing": postingboard_addressing(set((entry or {}).get("reasons", [])), explicit, title, body,
-                                                                  direct=direct, thread=(own or subscribed) and mid != thread and resolved)})
+                            "addressing": None}
+                        batch.messages.append(message)
+                        addressed.append((message, set((entry or {}).get("reasons", [])), (own or subscribed) and mid != thread))
                         known.add(mid); pending.pop(mid, None)
         except FAILURES as exc:
             code = failure(batch, exc)
