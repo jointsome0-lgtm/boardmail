@@ -1,5 +1,6 @@
 """Shared CLI/MCP commands and safe, transport-independent results."""
 from copy import deepcopy
+import errno
 import math
 import sqlite3
 
@@ -9,11 +10,46 @@ from .config import MailError
 
 LOOKUP_ADAPTERS = ("postingboard", "the-colony", "moltbook", "clawdchat", "botnet")
 EXPAND_LIMIT = 20
+LOCAL_FAILURES = (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError)
 
 
 def error_result(error):
-    return {"event": "error", "error": error, "next_action": next_action(error),
-            "history_complete": False}, 5 if error in ("database_missing", "config_missing") else 2
+    result = {"event": "error", "error": error, "next_action": next_action(error),
+              "history_complete": False}
+    if error == "message_not_found":
+        result["identifier_hint"] = ("Use the source and remote message id returned by list. "
+                                     "arrival_seq is a local arrival cursor, not a remote message id.")
+    return result, 5 if error in ("database_missing", "config_missing") else 2
+
+
+def local_state_result(exc, source=None, message_id=None):
+    """Fixed diagnostic codes; exception prose never enters the shared result."""
+    result, code = error_result("local_state_error")
+    reason = None
+    if isinstance(exc, OSError):
+        if exc.errno == errno.EROFS:
+            reason = "read_only"
+        elif exc.errno in (errno.EACCES, errno.EPERM):
+            reason = "permission_denied"
+    elif isinstance(exc, sqlite3.Error):
+        sqlite_code = getattr(exc, "sqlite_errorcode", None)
+        if type(sqlite_code) is int:
+            if sqlite_code & 0xff == sqlite3.SQLITE_READONLY:
+                reason = "read_only"
+            elif sqlite_code & 0xff == sqlite3.SQLITE_PERM:
+                reason = "permission_denied"
+    if reason is not None:
+        result["reason"] = reason
+    try:
+        config.identifier(source)
+        config.identifier(message_id)
+    except (ValueError, TypeError, AttributeError):
+        pass
+    else:
+        result["recovery"] = {"command": "reply show", "tool": "boardmail_reply_show",
+                              "arguments": {"source": source, "id": message_id}, "read_only": True}
+        result["send_allowed"] = False
+    return result, code
 
 
 def outcome(operation):
@@ -21,8 +57,8 @@ def outcome(operation):
         result, code = operation()
     except MailError as exc:
         return error_result(str(exc))
-    except (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError):
-        return error_result("local_state_error")
+    except LOCAL_FAILURES as exc:
+        return local_state_result(exc)
     except KeyboardInterrupt:
         result, code = {"event": "cancelled"}, 4
     result.setdefault("history_complete", False)
@@ -49,13 +85,16 @@ def execute(store, command, *, sources=None, after=0, limit=None, unread=False, 
         with store.connect() as db:
             return {'event': 'reply_attempts', **replies.pending(db, after, replies.PAGE_SIZE if limit is None else limit),
                     'collection_performed': False, 'publication_performed': False}, 0
-    if command == 'reply_verify':
-        if any(value is not None for value in (body, readback_body, replace_key)) or local:
-            raise MailError('invalid_arguments')
-        return verification.execute(store, sources, source, id, key=key, ref=ref)
     if command.startswith('reply_'):
-        return replies.execute(store, command.removeprefix('reply_'), source, id, body=body,
-                               key=key, readback_body=readback_body, ref=ref, replace_key=replace_key)
+        try:
+            if command == 'reply_verify':
+                if any(value is not None for value in (body, readback_body, replace_key)) or local:
+                    raise MailError('invalid_arguments')
+                return verification.execute(store, sources, source, id, key=key, ref=ref)
+            return replies.execute(store, command.removeprefix('reply_'), source, id, body=body,
+                                   key=key, readback_body=readback_body, ref=ref, replace_key=replace_key)
+        except LOCAL_FAILURES as exc:
+            return local_state_result(exc, source, id)
     if limit is None:
         limit = EXPAND_LIMIT if command == "expand" else 100
     if command in ("subscribe", "unsubscribe", "subscriptions"):
