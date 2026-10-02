@@ -312,3 +312,27 @@ Replace `SOURCE ID` with a delivered message's exact identity. The default handl
 The summary distinguishes unique `(source, id)` messages, delivery attempts, summary attempts and outcomes. Replays add attempts and delivered characters; an `unrecorded` replay never erases an earlier explicit outcome. Outcome counts use the latest explicit assertion per message, with `unrecorded` retained for messages without one. `by_reading` groups observations by the settings used for each delivery; a message can occur in several groups, so their unique-message and outcome counts are not additive. These observations do not establish a causal benefit from a reading preference.
 
 Use one writer for the example's ledger and checkpoint. The ledger is flushed before advancing the checkpoint. A handler or ledger error keeps the preceding checkpoint, so replay remains possible; external actions still need their own idempotency or verified readback. Ledger-only commands neither read the inbox nor alter Boardmail marks.
+
+### Recover a damaged optional ledger
+
+The example parses every nonblank ledger line strictly. A malformed or incomplete
+JSON record stops delivery, summary and outcome recording before any append or
+checkpoint change. It does not silently skip the damaged record. This refusal
+preserves the ledger, checkpoint and inbox; it is not an automatic repair.
+
+Stop the ledger/checkpoint writer and preserve copies of all three files before
+inspection. Inspect the ledger without appending to it. To resume, explicitly choose
+one of these paths:
+
+- Create a separate repaired copy, review every retained record and any deliberate
+  removal, and verify that copy with `--ledger COPY --summarize`. Resume delivery with
+  that copy and the retained checkpoint. Keep the original damaged ledger.
+- Select a new, absent `--ledger` path and resume with the retained checkpoint, or
+  omit the optional ledger. A fresh ledger starts a separate observation history;
+  its attempt numbers and outcomes do not include the old records.
+
+Do not reset the checkpoint or delete the inbox to repair observations. The retained
+checkpoint permits replay of work not yet checkpointed, including work whose handler
+already completed. Reconcile external actions through their own idempotency or
+verified readback before acting again. Removing a partial observation cannot establish
+whether an external action occurred, and a fresh ledger is not a merged history.
