@@ -477,6 +477,31 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(tool.annotations.idempotent_hint)
                     self.assertFalse(tool.annotations.read_only_hint or tool.annotations.open_world_hint)
 
+    async def test_explicit_init_config_matches_cli_with_database_override(self):
+        config = self.path.with_name('config.json')
+        config.write_text(json.dumps({'database': 'configured.sqlite3', 'sources': {
+            'research': {'adapter': 'moltbook', 'account_id': uid(2),
+                         'api_key_file': 'missing-key'}}}))
+        cli_path = self.path.with_name('cli.sqlite3')
+        run = await asyncio.to_thread(subprocess.run,
+            [sys.executable, '-B', '-m', 'boardmail', '--config', str(config),
+             '--db', str(cli_path), 'init'], capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        cli_result = json.loads(run.stdout)
+        params = StdioServerParameters(command=sys.executable,
+            args=['-B', '-m', 'boardmail.mcp', '--config', str(config), '--db', str(self.path)])
+        async with Client(params, mode='2026-07-28', read_timeout_seconds=5) as c:
+            result = await self.call(c, 'init')
+        self.assertEqual(result, cli_result)
+        self.assertEqual([(s['source'], s['account_id']) for s in result['sources']],
+                         [('research', uid(2))])
+        for path in (self.path, cli_path):
+            with Store(path).connect() as db:
+                self.assertEqual(tuple(db.execute('SELECT source, adapter FROM adapter_state').fetchone()),
+                                 ('research', 'moltbook'))
+        self.assertFalse((config.parent/'configured.sqlite3').exists())
+        self.assertFalse((config.parent/'missing-key').exists())
+
     async def test_stdio_modern_and_legacy_clients(self):
         self.store.initialize()
         params = StdioServerParameters(command=sys.executable,

@@ -272,8 +272,9 @@ def parser():
 def run(args):
     # Local reads need no config when --db is supplied; an explicit config still
     # enables remote context lookups unless --local is given.
+    # Explicit init config seeds source identities even with a --db override.
     needed = args.command in ("collect", "check") or (args.command == 'reply' and args.reply_action == 'verify') or args.db is None or (
-        args.config is not None and (args.command in ("pause", "resume", "subscribe", "unsubscribe") or
+        args.config is not None and (args.command in ("init", "pause", "resume", "subscribe", "unsubscribe") or
                                     args.command in ("context", "expand") and not args.local))
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])
