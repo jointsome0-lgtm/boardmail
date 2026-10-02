@@ -214,6 +214,40 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(result['brief']['root']['body'], 'new context')
         self.assertEqual(result['brief']['parent']['status'], 'same_as_root')
 
+    def test_failed_cache_only_collector_rejects_stale_context_and_preserves_marks(self):
+        for existing_progress in (False, True):
+            with self.subTest(existing_progress=existing_progress):
+                store = Store(Path(self.temp.name) / f'cache-{existing_progress}.sqlite3')
+                store.initialize()
+                if existing_progress:
+                    store.save_collection('moltbook', uid(2), 'moltbook', 0,
+                                          Batch(state={'cursor': 'saved'}))
+                store.save('moltbook', uid(2), [mail(20)])
+                for action in ('read', 'needs_reply'):
+                    store.mark('moltbook', uid(20), action)
+                store.mark('moltbook', uid(20), 'replied', ref='https://example.invalid/reply')
+                saved = store.show('moltbook', uid(20))
+                _, state, revision = store.collection_state('moltbook', uid(2), 'moltbook')
+                root = dict(mail(100), body='new context')
+                partial = Batch(originals=[root], state=state, complete=False, error='source_timeout')
+                validate(partial)
+                self.assertEqual(store.save_collection('moltbook', uid(2), 'moltbook', revision, partial),
+                                 (0, False))
+                self.assertEqual(store.collection_state('moltbook', uid(2), 'moltbook')[2], revision + 1)
+
+                stale = Batch(messages=[mail(20), dict(mail(10), parent_id=uid(100), addressing='direct')],
+                              originals=[dict(root, body='stale context')], state={'cursor': 'stale'})
+                validate(stale)
+                self.assertEqual(store.save_collection('moltbook', uid(2), 'moltbook', revision, stale),
+                                 (1, True))
+                _, current_state, current_revision = store.collection_state('moltbook', uid(2), 'moltbook')
+                self.assertEqual((current_state, current_revision), (state, revision + 1))
+                self.assertEqual(store.show('moltbook', uid(20)), saved)
+                incoming = next(m for m in store.page(context='brief')['messages'] if m['id'] == uid(10))
+                self.assertEqual(incoming['brief']['root']['body'], 'new context')
+                health = store.status()['sources'][0]
+                self.assertEqual((health['error'], health['backlog_pending']), ('source_timeout', True))
+
     def test_invalid_adapter_metadata_is_rejected_but_omitted_metadata_works(self):
         validate(Batch(messages=[mail(10)]))
         for batch in (Batch(messages=[dict(mail(10), addressing='probably-direct')]),

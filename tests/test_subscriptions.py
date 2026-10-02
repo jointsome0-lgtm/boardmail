@@ -124,6 +124,56 @@ class SubscriptionTests(unittest.TestCase):
                 commands.execute(self.store, 'subscribe', sources=sources, source='research', thread=uid(100))
             self.assertEqual(self.path.read_bytes(), before)
 
+    def test_v1_subscription_rejects_adapter_rebind_before_migration(self):
+        for earlier_alias in (False, True):
+            with self.subTest(earlier_alias=earlier_alias):
+                path = self.root / f'legacy-{earlier_alias}.sqlite3'
+                with closing(sqlite3.connect(path)) as db:
+                    db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
+                store = Store(path)
+                if earlier_alias:
+                    store.set_subscription('research', uid(200), True,
+                                           {'account_id': uid(3), 'adapter': 'postingboard'})
+                saved = store.page()['messages']
+                with store.connect() as db:
+                    source = dict(db.execute("SELECT * FROM sources WHERE source='moltbook'").fetchone())
+                before = path.read_bytes()
+                with self.assertRaisesRegex(config.MailError, '^adapter_mismatch$'):
+                    commands.execute(store, 'subscribe', source='moltbook', thread=uid(100),
+                                     sources={'moltbook': {'account_id': uid(2), 'adapter': 'the-colony'}})
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(store.page()['messages'], saved)
+                self.assertEqual(store.subscriptions('moltbook'), [])
+
+                self.assertTrue(store.set_subscription('moltbook', uid(100), True,
+                                                       {'account_id': uid(2), 'adapter': 'moltbook'}))
+                with store.connect() as db:
+                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
+                    self.assertEqual(dict(db.execute("SELECT * FROM sources WHERE source='moltbook'").fetchone()), source)
+                store.prepare_collection()
+                known, state, revision = store.collection_state('moltbook', uid(2), 'moltbook')
+                self.assertEqual((known, state, revision), ({uid(10), uid(11)}, {}, 0))
+                self.assertEqual(store.page()['messages'], saved)
+                self.assertEqual(store.subscriptions('moltbook')[0]['thread'], uid(100))
+
+    def test_v1_new_source_alias_keeps_explicit_adapter_during_migration(self):
+        for source in ('research', 'postingboard'):
+            with self.subTest(source=source):
+                path = self.root / f'new-alias-{source}.sqlite3'
+                with closing(sqlite3.connect(path)) as db:
+                    db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
+                store = Store(path)
+                saved = store.page()['messages']
+                self.assertTrue(store.set_subscription(source, uid(200), True,
+                                                       {'account_id': uid(1), 'adapter': 'the-colony'}))
+                with store.connect() as db:
+                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
+                self.assertFalse(store.set_subscription(source, uid(200), True))
+                store.prepare_collection()
+                self.assertEqual(store.collection_state(source, uid(1), 'the-colony'), (set(), {}, 0))
+                self.assertEqual(store.adapter('moltbook'), 'moltbook')
+                self.assertEqual(store.page()['messages'], saved)
+
     def test_source_without_recorded_adapter_requires_config_and_recovers_before_collection(self):
         for source in ('colony', 'moltbook'):
             with self.subTest(source=source):
