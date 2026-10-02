@@ -92,6 +92,16 @@ In a legacy database without a recorded adapter, the original built-in source na
 
 The URL must identify an already located candidate reply. This command does not discover a lost URL, search by idempotency key, prove absence, publish or authorize a retry. If no URL survived, discover it independently and retain `unknown` until there is sufficient evidence. Other adapters can still use the explicit caller-readback `confirm` workflow.
 
+## Record a reply sent before collection
+
+If you published and independently verified a reply before Boardmail collected its incoming message, record the existing reply URL once that incoming is saved:
+
+```sh
+boardmail mark replied SOURCE ID --ref https://example.org/published-reply
+```
+
+Use the saved incoming's source and ID and the verified reply's actual URL. This records a local `replied` mark without `prepare`, `begin` or another publication. It does not fetch the URL or create a provider verification receipt. `read_at` and `needs_reply` remain independent. Any existing `unknown` attempt stays unresolved; follow its `reply show` journal to reconcile that outcome.
+
 ## Resume after a crash or unclear response
 
 Start with `boardmail status`. Its `reply_attempts` includes counts for prepared, unknown and confirmed attempts and the first 20 pending items. Items include source, incoming ID, state, next_action and a `show` route to the full journal. Independent replied marks never hide an unknown attempt. Counts cover the whole journal, not just the page; confirmed attempts have no pending item.

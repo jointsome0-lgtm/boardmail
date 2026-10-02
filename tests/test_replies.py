@@ -1,6 +1,6 @@
 """Interrupted publishers and local recovery; every message and external effect is invented."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
+from contextlib import closing, contextmanager
 import hashlib
 import json
 from pathlib import Path
@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +17,49 @@ from boardmail import commands, replies
 from boardmail.store import Store
 from examples.fixtures import uid
 from test_mail import mail
+
+
+def run_reply_workers(operations):
+    """Join every worker before propagating errors; no unbounded executor shutdown."""
+    outcomes = [None] * len(operations)
+
+    def invoke(index, operation):
+        try:
+            outcomes[index] = (True, operation())
+        except BaseException as exc:
+            outcomes[index] = (False, exc, exc.__traceback__)
+
+    workers = [threading.Thread(target=invoke, args=(index, operation), daemon=True)
+               for index, operation in enumerate(operations)]
+    for worker in workers:
+        worker.start()
+    deadline = time.monotonic() + 10
+    for worker in workers:
+        worker.join(timeout=max(0, deadline - time.monotonic()))
+    if any(worker.is_alive() for worker in workers):
+        raise AssertionError('Reply race worker exceeded the bounded join')
+    for outcome in outcomes:
+        if not outcome[0]:
+            raise outcome[1].with_traceback(outcome[2])
+    return [outcome[1] for outcome in outcomes]
+
+
+class WriteBarrierStore(Store):
+    """Gate only the first write, before Store acquires its real SQLite transaction."""
+    def __init__(self, path, before_write, after_write=None):
+        super().__init__(path)
+        self.before_write, self.after_write = before_write, after_write
+
+    @contextmanager
+    def connect(self, *, write=False, create=False):
+        gate = self.before_write if write else None
+        if gate is not None:
+            self.before_write = None
+            gate()
+        with super().connect(write=write, create=create) as db:
+            yield db
+        if gate is not None and self.after_write is not None:
+            self.after_write()
 
 
 class ReplyRecoveryTests(unittest.TestCase):
@@ -284,6 +328,100 @@ os._exit(79)
         self.assertEqual((code, result['error']), (2, 'reply_already_started'))
         self.assertEqual(self.path.read_bytes(), original)
         self.assertEqual(self.command('show')[0]['reply']['idempotency_key'], key)
+
+    def test_concurrent_replacement_and_begin_preserve_body_key_binding_in_both_orders(self):
+        for index, first_action in enumerate(('replace', 'begin')):
+            with self.subTest(first_commit=first_action):
+                target = uid(10 + index)
+                prepared = self.command('prepare', id=target, body=self.body)[0]['reply']
+                old_key = prepared['idempotency_key']
+                new_body = self.body + 'Replacement text.\r\n'
+                incoming = self.store.show('moltbook', target)
+                barrier, acquired = threading.Barrier(2), threading.Event()
+                second_begin, committed = threading.Event(), threading.Event()
+                worker, observed, connections = threading.local(), [], []
+                sqlite_connect = sqlite3.connect
+
+                class ContendingConnection(sqlite3.Connection):
+                    def execute(connection, sql, *args):
+                        if sql != 'BEGIN IMMEDIATE' or worker.action == first_action:
+                            return super().execute(sql, *args)
+                        if not acquired.wait(timeout=5):
+                            raise AssertionError('The first reply transaction did not acquire its lock')
+
+                        def authorizer(operation, argument, *_):
+                            if operation == sqlite3.SQLITE_TRANSACTION and argument == 'BEGIN':
+                                # This callback runs inside the second real SQLite BEGIN,
+                                # before the first transaction is allowed to continue.
+                                observed.append((acquired.is_set(), committed.is_set()))
+                                second_begin.set()
+                            return sqlite3.SQLITE_OK
+
+                        connection.set_authorizer(authorizer)
+                        try:
+                            return super().execute(sql, *args)
+                        finally:
+                            connection.set_authorizer(None)
+
+                class HeldStore(Store):
+                    @contextmanager
+                    def connect(store, *, write=False, create=False):
+                        with super().connect(write=write, create=create) as db:
+                            if write:
+                                acquired.set()
+                                if not second_begin.wait(timeout=5):
+                                    raise AssertionError('The second SQLite BEGIN did not start')
+                            yield db
+                        if write:
+                            committed.set()
+
+                def connect(*args, **kwargs):
+                    db = sqlite_connect(*args, factory=ContendingConnection, **kwargs)
+                    connections.append(db)
+                    return db
+
+                stores = {action: (HeldStore(self.path) if action == first_action else Store(self.path))
+                          for action in ('replace', 'begin')}
+
+                def invoke(action):
+                    worker.action = action
+                    barrier.wait(timeout=5)
+                    options = {'body': new_body, 'replace_key': old_key} if action == 'replace' else {'key': old_key}
+                    return commands.outcome(lambda: replies.execute(stores[action],
+                        'prepare' if action == 'replace' else 'begin', 'moltbook', target, **options))
+
+                with patch('boardmail.store.sqlite3.connect', connect):
+                    replaced, begun = run_reply_workers([lambda: invoke('replace'), lambda: invoke('begin')])
+                self.assertEqual(observed, [(True, False)])
+                self.assertTrue(committed.is_set())
+                self.assertEqual(len(connections), 2)
+                self.assertIsNot(connections[0], connections[1])
+                shown = self.command('show', id=target)[0]['reply']
+                self.assertEqual(self.store.show('moltbook', target), incoming)
+                if first_action == 'replace':
+                    self.assertEqual((replaced[1], replaced[0]['changed'], replaced[0]['send_allowed']),
+                                     (0, True, False))
+                    self.assertEqual((begun[1], begun[0]['error']), (2, 'reply_key_mismatch'))
+                    new_key = replaced[0]['reply']['idempotency_key']
+                    self.assertNotEqual(new_key, old_key)
+                    self.assertEqual((shown['state'], shown['body'], shown['idempotency_key']),
+                                     ('prepared', new_body, new_key))
+                    stale, code = self.command('begin', id=target, key=old_key)
+                    self.assertEqual((code, stale['error']), (2, 'reply_key_mismatch'))
+                    first_send, code = self.command('begin', id=target, key=new_key)
+                    self.assertEqual((code, first_send['send_allowed'], first_send['reply']['body']),
+                                     (0, True, new_body))
+                    active_key = new_key
+                else:
+                    self.assertEqual((begun[1], begun[0]['changed'], begun[0]['send_allowed']), (0, True, True))
+                    self.assertEqual((replaced[1], replaced[0]['error']), (2, 'reply_already_started'))
+                    self.assertEqual((shown['state'], shown['body'], shown['idempotency_key']),
+                                     ('unknown', self.body, old_key))
+                    self.assertEqual(begun[0]['reply'], shown)
+                    active_key = old_key
+                repeat, code = self.command('begin', id=target, key=active_key)
+                self.assertEqual((code, repeat['send_allowed']), (0, False))
+                self.assertEqual(repeat['reply']['body_sha256'], replies.digest(repeat['reply']['body']))
 
     def test_confirmation_requires_started_key_matching_readback_and_consistent_reference(self):
         key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']

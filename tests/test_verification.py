@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, uid
 from test_clawdchat import FixtureClient as ClawdClient, original as clawd_original
 from test_mail import mail
+from test_replies import WriteBarrierStore, run_reply_workers
 
 
 class VerificationTests(unittest.TestCase):
@@ -177,6 +179,115 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         self.assertEqual((code, confirmed['confirmation_basis']), (0, 'caller_supplied_readback'))
         self.assertEqual(confirmed['reply_candidates'], [])
         self.assertIsNone(confirmed['verification_receipt'])
+
+    def test_concurrent_candidate_admission_keeps_exactly_eight_and_reads_only_the_winner(self):
+        self.setup_source('postingboard')
+        existing = [providers.parent_reference(self.adapter, self.root, uid(400 + i)) for i in range(7)]
+        with patch.object(verification, 'read', side_effect=TimeoutError()):
+            for ref in existing:
+                self.assertEqual(self.call(ref=ref)[1], 1)
+        contenders = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in (500, 501)]
+        barrier = threading.Barrier(2)
+        stores = [WriteBarrierStore(self.path, lambda: barrier.wait(timeout=5)) for _ in contenders]
+
+        def invoke(index):
+            return commands.outcome(lambda: verification.execute(stores[index], {self.source: self.settings},
+                self.source, self.target, key=self.key, ref=contenders[index]))
+
+        with patch.object(verification, 'read', side_effect=TimeoutError()) as read:
+            results = run_reply_workers([lambda: invoke(0), lambda: invoke(1)])
+        self.assertEqual(sorted(code for _, code in results), [1, 2])
+        winner = next(i for i, (_, code) in enumerate(results) if code == 1)
+        loser = 1 - winner
+        self.assertEqual(results[winner][0]['verification']['reason'], 'network_error')
+        self.assertEqual(results[loser][0]['error'], 'reply_candidate_limit')
+        read.assert_called_once()
+        self.assertEqual(read.call_args.args[2], uid(500 + winner))
+        shown = self.call('show')[0]
+        self.assertEqual({item['reply_ref'] for item in shown['reply_candidates']},
+                         {*existing, contenders[winner]})
+        self.assertEqual(len(shown['reply_candidates']), 8)
+        self.assertEqual(shown['reply'], self.before_result['reply'])
+        self.assertEqual(shown['message'], self.before_result['message'])
+        self.assertIsNone(shown['verification_receipt'])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM reply_candidates').fetchone()[0], 8)
+
+    def test_concurrent_valid_provider_reads_confirm_only_one_exact_url_and_receipt(self):
+        self.setup_source('postingboard')
+        self.client.others[uid(321)] = named(321, 301, 1, body=self.body, reply_to=310)
+        refs = [self.ref, providers.parent_reference(self.adapter, self.root, uid(321))]
+        barrier, original_read = threading.Barrier(2), verification.read
+
+        def provider_return(*args):
+            observed = original_read(*args)
+            barrier.wait(timeout=5)  # Both valid originals exist before either confirmation write.
+            return observed
+
+        def invoke(index):
+            return commands.outcome(lambda: verification.execute(Store(self.path), {self.source: self.settings},
+                self.source, self.target, key=self.key, ref=refs[index]))
+
+        with patch.object(providers, 'Client', return_value=self.client), \
+                patch.object(verification, 'read', side_effect=provider_return) as read:
+            results = run_reply_workers([lambda: invoke(0), lambda: invoke(1)])
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(sorted(code for _, code in results), [0, 2])
+        winner = next(i for i, (_, code) in enumerate(results) if code == 0)
+        self.assertEqual(results[1 - winner][0]['error'], 'reply_reference_conflict')
+        confirmed = results[winner][0]
+        shown = self.call('show')[0]
+        self.assertEqual((shown['reply']['state'], shown['reply']['reply_ref'], shown['message']['reply_ref']),
+                         ('confirmed', refs[winner], refs[winner]))
+        self.assertEqual(shown['verification_receipt'], confirmed['verification_receipt'])
+        self.assertEqual(shown['verification_receipt']['reply_id'], uid(320 + winner))
+        self.assertEqual(shown['verification_receipt']['reply_ref'], refs[winner])
+        self.assertEqual(shown['verification_receipt']['idempotency_key'], self.key)
+        self.assertEqual(shown['reply']['body'], self.body)
+        self.assertFalse(confirmed['send_allowed'] or confirmed['publication_performed'])
+        self.assertEqual(shown['message']['read_at'], self.before_result['message']['read_at'])
+        self.assertEqual(shown['message']['needs_reply'], self.before_result['message']['needs_reply'])
+        self.assertEqual(shown['reply_candidates'], [])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM reply_candidates').fetchone()[0], 2)
+            evidence = json.loads(db.execute('SELECT evidence FROM reply_verifications').fetchone()[0])
+        self.assertEqual(evidence, shown['verification_receipt'])
+
+    def test_concurrent_failed_provider_return_cannot_overwrite_committed_success(self):
+        self.setup_source('postingboard')
+        barrier, committed = threading.Barrier(2), threading.Event()
+        original_read, snapshot, worker = verification.read, {}, threading.local()
+
+        def provider_return(*args):
+            barrier.wait(timeout=5)
+            if worker.fail:
+                if not committed.wait(timeout=5):
+                    raise AssertionError('Successful verification did not commit')
+                raise TimeoutError()
+            return original_read(*args)
+
+        def invoke(fail):
+            worker.fail = fail
+            outcome = commands.outcome(lambda: verification.execute(Store(self.path), {self.source: self.settings},
+                self.source, self.target, key=self.key, ref=self.ref))
+            if not fail:
+                snapshot['bytes'] = self.path.read_bytes()
+                committed.set()
+            return outcome
+
+        with patch.object(providers, 'Client', return_value=self.client), \
+                patch.object(verification, 'read', side_effect=provider_return):
+            succeeded, failed = run_reply_workers([lambda: invoke(False), lambda: invoke(True)])
+        self.assertEqual((succeeded[1], failed[1]), (0, 1))
+        self.assertEqual(failed[0]['verification']['reason'], 'network_error')
+        self.assertFalse(failed[0]['last_check_saved'] or failed[0]['remote_verified'])
+        self.assertEqual(failed[0]['reply']['state'], 'confirmed')
+        self.assertEqual(failed[0]['verification_receipt'], succeeded[0]['verification_receipt'])
+        self.assertEqual(failed[0]['reply'], succeeded[0]['reply'])
+        self.assertEqual(failed[0]['message'], succeeded[0]['message'])
+        self.assertEqual(failed[0]['reply_candidates'], [])
+        self.assertEqual(self.call('show')[0]['verification_receipt'], succeeded[0]['verification_receipt'])
+        self.assertEqual(self.path.read_bytes(), snapshot['bytes'])
 
     def test_last_check_keeps_the_last_committed_failure_within_one_second(self):
         self.setup_source('postingboard')
