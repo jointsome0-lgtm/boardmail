@@ -749,6 +749,14 @@ def postingboard_addressing(reasons, explicit, title, body, *, direct=False, thr
                               thread=thread or "reply_to_your_thread" in reasons)
 
 
+def postingboard_discovery_kind(discovery, reasons, mention, body, parent, root):
+    """Use the retained discovery for singular and watched-page originals alike."""
+    if discovery is None: return None
+    if discovery.startswith("search:") or "mention" in reasons or (mention and mention.search(body)):
+        return "mention"
+    return "reply_to_comment" if parent and parent != root else "reply_to_post"
+
+
 def resolve_postingboard(client, mid, entry, mention, known, batch, pending, explicit=None):
     try:
         post = client.get("/v1/posts/"+mid, authenticated=True)["post"]
@@ -763,12 +771,7 @@ def resolve_postingboard(client, mid, entry, mention, known, batch, pending, exp
     discovery = discovery_of(entry, client.settings, message["title"], message["body"])
     own = post.get("agent_id") is not None and uuid(post["agent_id"]) == client.owner
     if own: addressing.cache_original(batch, message)
-    if discovery is None or own:
-        kind = None
-    elif discovery.startswith("search:") or "mention" in entry["reasons"] or (mention and mention.search(message["body"])):
-        kind = "mention"
-    else:
-        kind = "reply_to_comment" if parent and parent != root else "reply_to_post"
+    kind = None if own else postingboard_discovery_kind(discovery, entry["reasons"], mention, message["body"], parent, root)
     if kind:
         batch.messages.append({**message, "parent_id": parent, "kind": kind, "discovery": discovery,
             "addressing": postingboard_addressing(set(entry.get("reasons", [])), explicit, message["title"], message["body"])})
@@ -827,18 +830,20 @@ def postingboard_items(client, raw, thread, mention, known, batch, *, cursors=No
                     # A watched page can supply the full original of a pending discovery
                     # candidate; its retained reason completes that discovery here.
                     entry = pending.get(mid)
-                    addressed = entry is not None and "mention" in entry["reasons"]
-                    kind = ("mention" if addressed or (mention and mention.search(body)) else "reply_to_post" if own and mid != thread
-                            else "thread_activity" if subscribed and mid != thread else None)
+                    parent = (uuid(post["reply_to_id"]) if post.get("reply_to_id") else None) or (entry or {}).get("parent")
+                    retained = discovery_of(entry, client.settings, title, body) if entry else None
+                    kind = postingboard_discovery_kind(retained, (entry or {}).get("reasons", []), mention, body, parent, thread)
+                    if kind is None:
+                        kind = ("mention" if mention and mention.search(body) else "reply_to_post" if own and mid != thread
+                                else "thread_activity" if subscribed and mid != thread else None)
                     # A subscribed foreign root delivers its other-author replies as thread activity.
-                    discovery = (discovery_of(entry, client.settings, title, body) if entry else None) or (
+                    discovery = retained or (
                         "subscription" if kind == "thread_activity" or (subscribed and thread not in client.settings.get("threads", [])) else "thread")
                     if author_id == client.owner:
                         pending.pop(mid, None)
                         if mid != thread: addressing.cache_original(batch, postingboard_post(client, post, mid, thread, title, seq=seq))
                     elif kind:
                         author = text(post["author"]) if post.get("author") is not None else None
-                        parent = (uuid(post["reply_to_id"]) if post.get("reply_to_id") else None) or (entry or {}).get("parent")
                         # A flat reply in our thread is thread activity. An explicit target
                         # we authored makes it direct; a target this page never showed stays unknown.
                         direct = parent is not None and parent in ours

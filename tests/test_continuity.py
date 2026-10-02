@@ -235,6 +235,64 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self.collect(cfg)['added'], 0)
         self.assertEqual(self.store.show('postingboard', uid(399)), {**found, 'read_at': self.store.show('postingboard', uid(399))['read_at']})
 
+    def test_foreign_watched_page_resolves_pending_direct_reply_after_restart(self):
+        cfg = {**self.cfg, 'inbox': True, 'threads': [], 'mention_aliases': []}
+        addressed = named(399, 302, reply_to=313, body='The watched page has the complete answer.')
+        self.fixture.comments[uid(302)] = [addressed, named(398, 302), named(397, 302, reply_to=313)]
+        self.fixture.inbox = [(9001, addressed, ['direct_reply'])]
+        get = self.fixture.get
+        def unavailable_original(path, params=None, **kw):
+            if path == '/v1/posts/' + uid(399): raise MailError('source_timeout')
+            return get(path, params, **kw)
+        self.fixture.get = unavailable_original
+        first = self.collect(cfg)
+        self.assertEqual((first['added'], first['sources'][0]['error']), (0, 'source_timeout'))
+        self.assertEqual(self.state()['pending'][uid(399)]['reasons'], ['direct_reply'])
+
+        # A new Store resolves saved discovery from a complete page in a foreign root.
+        cfg = {**cfg, 'threads': [uid(302)]}
+        result = self.collect(cfg)
+        self.assertEqual((result['added'], result['sources'][0]['error']), (1, 'source_timeout'))
+        found = self.store.show('postingboard', uid(399))
+        self.assertEqual((found['kind'], found['discovery'], found['addressing']),
+                         ('reply_to_comment', 'inbox:direct_reply', 'direct'))
+        self.assertEqual((found['thread_id'], found['parent_id'], found['body']),
+                         (uid(302), uid(313), addressed['body']))
+        self.assertEqual(self.state()['pending'], {})
+        self.assertEqual([m['id'] for m in self.store.page()['messages']], [uid(399)],
+                         'Unrelated foreign-root replies remain excluded')
+        for action in ('read', 'needs_reply', 'replied'):
+            self.store.mark('postingboard', uid(399), action,
+                            ref='https://example.invalid/reply' if action == 'replied' else None)
+        saved = self.store.show('postingboard', uid(399))
+        self.store = Store(self.path)
+        self.fixture.get = get
+        self.fixture.inbox.append((9002, addressed, ['direct_reply']))
+        self.assertEqual(self.collect(cfg)['added'], 0)
+        self.assertEqual(self.store.show('postingboard', uid(399)), saved)
+        self.assertEqual(self.state()['inbox_after'], 9002)
+        self.assertEqual(self.state()['pending'], {})
+
+    def test_foreign_watched_page_resolves_pending_plain_search_match(self):
+        cfg = {**self.cfg, 'inbox': False, 'threads': [uid(302)],
+               'mention_aliases': [], 'alias_search': ['meliora']}
+        addressed = named(399, 302, body='Thanks Meliora, the summary helped.')
+        self.fixture.comments[uid(302)] = [addressed, named(398, 302)]
+        self.fixture.search['meliora'] = [addressed]
+        get = self.fixture.get
+        def unavailable_original(path, params=None, **kw):
+            if path == '/v1/posts/' + uid(399): raise MailError('source_timeout')
+            return get(path, params, **kw)
+        self.fixture.get = unavailable_original
+        result = self.collect(cfg)
+        self.assertEqual((result['added'], result['sources'][0]['error']), (1, 'source_timeout'))
+        found = self.store.show('postingboard', uid(399))
+        self.assertEqual((found['kind'], found['discovery'], found['addressing']),
+                         ('mention', 'search:meliora', None))
+        self.assertEqual(found['body'], addressed['body'])
+        self.assertEqual(self.state()['pending'], {})
+        self.assertEqual([m['id'] for m in self.store.page()['messages']], [uid(399)])
+
     def test_alias_named_inbox_never_reads_the_native_inbox(self):
         cfg = {**self.cfg, 'inbox': False, 'threads': [], 'alias_search': ['inbox']}
         self.fixture.others = {uid(700): named(700, 700, body='My inbox is empty today.')}
