@@ -26,6 +26,7 @@ MAX_PENDING_PARENTS = 20
 MAX_SERVED = 200            # Parents a retained page may queue before it is consumed with an error.
 KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
          "mention_post": "mention", "mention_comment": "mention"}
+UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -446,6 +447,15 @@ def _progress(progress):
     return skip, progress.get("done") is True, pending, deferred, served
 
 
+def _comment_page(raw, offset):
+    comments, total = raw["comments"], raw["total"]
+    if not isinstance(comments, list) or type(total) is not int or not 0 <= total < 2**63:
+        raise ValueError()
+    if not comments and offset < total:
+        raise MailError("pagination_no_progress")
+    return comments, total
+
+
 def _scan(client, root, progress, batch, seen, mention):
     """One subscribed thread: root as context, then saved parent work, then top-level
     pages from the saved offset. Every listing read is delivered at once and the
@@ -497,10 +507,19 @@ def _scan(client, root, progress, batch, seen, mention):
             if pending or deferred:
                 work = pending if pending else deferred
                 parent, offset, own = work[0]
-                raw = client.get(path, {"parent_id": parent, "max_depth": 20, "limit": COMMENT_PAGE, "skip": offset})
-                children, total = raw["comments"], raw["total"]
-                if not isinstance(children, list) or type(total) is not int:
-                    raise ValueError()
+                try:
+                    raw = client.get(path, {"parent_id": parent, "max_depth": 20, "limit": COMMENT_PAGE, "skip": offset})
+                except MailError as exc:
+                    if str(exc) not in UNAVAILABLE_ORIGINALS:
+                        raise
+                    # Retire only this unit for the cycle. Independent work can
+                    # finish; a later head sweep may rediscover this parent.
+                    work.pop(0)
+                    served.pop(parent, None)
+                    batch.unavailable += 1
+                    _error(batch, exc)
+                    continue
+                children, total = _comment_page(raw, offset)
                 work.pop(0)
                 full = _walk(client, children, pending, served.setdefault(parent, []), nodes, deferred=deferred)
                 if retained(full, parent):
@@ -512,9 +531,7 @@ def _scan(client, root, progress, batch, seen, mention):
                 done, skip = False, 0
                 break
             raw = client.get(path, {"max_depth": 20, "limit": COMMENT_PAGE, "skip": skip, "sort": "new"})
-            top, total = raw["comments"], raw["total"]
-            if not isinstance(top, list) or type(total) is not int or not 0 <= total < 2**63:
-                raise ValueError()
+            top, total = _comment_page(raw, skip)
             full = _walk(client, top, pending, served.setdefault("head", []), nodes, deferred=deferred)
             if retained(full, "head"):
                 continue  # The queue drains first; this page is reread at the same offset.
@@ -565,7 +582,7 @@ def _subscribed(client, selected, batch, seen, mention):
             _scan(client, root, progress, batch, seen, mention)
         except FAILURES as exc:
             code = str(exc) if isinstance(exc, MailError) else "invalid_response"
-            if code in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
+            if code in UNAVAILABLE_ORIGINALS:
                 progress.clear()
                 batch.unavailable += 1
                 continue
