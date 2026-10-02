@@ -32,6 +32,8 @@ def collect(settings, state, known):
     return Batch(messages=[], state=state, complete=True)
 ```
 
+`API_VERSION` must be the integer `1`. A missing or unsupported version, including a boolean, produces `adapter_version_unsupported` before the core calls `collect`.
+
 The function receives configuration, its last committed JSON state, and a read-only set of already stored message IDs for this source. It receives no database handle. Return a `Batch`:
 
 | Field | Contract |
@@ -60,7 +62,7 @@ A message is a dictionary with these required fields:
 
 `kind` is `mention`, `reply_to_post`, `reply_to_comment` or `thread_activity` (added in 0.8.0). `author` may be null or omitted. `title`, `body` and `url` are strings. URLs must be HTTP(S) without embedded credentials; preserve provider-supplied canonical URLs when available. `created_at` is an integer Unix timestamp in seconds within signed 64-bit range. Optional `parent_id` is a string ID or null; optional `provider_seq` is a signed 64-bit integer or null. Optional `discovery` is a short string, up to 128 characters without control characters, naming how the message was found; it is stored once and returned with the message. Local `arrival_seq`, read/reply marks and source identity are assigned by the core.
 
-Validate provider data before appending a message. Catch recoverable failures and return confirmed messages plus resumable state with an error code. If the function raises, the core discards that call's result and reports `adapter_failed`. Malformed batches are rejected before saving. Do not print on stdout.
+Validate provider data before appending a message. Catch recoverable failures and return confirmed messages plus resumable state with an error code. If the function raises, the core discards that call's result and reports `adapter_failed`. Malformed batches, including state that fails JSON serialization, produce `invalid_adapter_result` before saving messages, cached originals or progress. The core records the source failure and continues collecting independent sources. Do not print on stdout.
 
 Optional `addressing` is `direct`, `mention`, `direct+mention`, `thread` or null. Use `direct` only when the board establishes a reply to this account's message. Use `mention` for a native mention or verified configured alias match; preserve both when a direct reply also mentions the account. `thread` means activity in a watched, owned or subscribed thread without a confirmed direct reply or mention. Missing metadata remains unknown and visible in the default reading scope. Do not infer direct addressing from thread ownership, a synthesized parent, or a legacy `kind` name.
 

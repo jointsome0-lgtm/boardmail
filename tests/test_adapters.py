@@ -1,5 +1,5 @@
 """Public extension, durable progress and 0.1 database compatibility contracts."""
-from contextlib import closing
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
 from unittest.mock import patch
@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import providers
+from boardmail import cli, providers
 from boardmail.adapters import Batch, collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
@@ -217,6 +217,128 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result['errors'][0]['next_action'],'check_trusted_adapter_code')
         self.assertEqual(self.store.page()['messages'],[])
         self.assertEqual(self.store.collection_state('custom','demo-agent',str(adapter))[1],{})
+
+    def extension_checkpoint(self):
+        cfg = {'account_id': 'demo-agent', 'adapter': self.root/'custom.py'}
+        self.store.save_collection('custom', cfg['account_id'], str(cfg['adapter']), 0,
+                                   Batch(messages=[mail(10)], state={'cursor': 'saved'}, originals=[mail(20)]))
+        self.store.mark('custom', uid(10), 'read')
+        self.store.mark('custom', uid(10), 'needs_reply')
+        with self.store.connect() as db:
+            originals = [tuple(row) for row in db.execute('SELECT * FROM originals WHERE source=?', ('custom',))]
+        return cfg, (self.store.collection_state('custom', cfg['account_id'], str(cfg['adapter'])),
+                     self.store.show('custom', uid(10)), originals)
+
+    def assert_extension_checkpoint(self, cfg, before):
+        self.assertEqual(self.store.collection_state('custom', cfg['account_id'], str(cfg['adapter'])), before[0])
+        self.assertEqual(self.store.show('custom', uid(10)), before[1])
+        with self.store.connect() as db:
+            self.assertEqual([tuple(row) for row in db.execute('SELECT * FROM originals WHERE source=?', ('custom',))], before[2])
+
+    def test_state_serializer_failure_returns_json_preserves_progress_and_continues(self):
+        cfg, before = self.extension_checkpoint()
+        rejected = Batch(messages=[mail(11)], state={'cursor': 'next'}, originals=[{**mail(20), 'body': 'replacement'}, mail(21)])
+        accepted = Batch(messages=[mail(30)], state={'cursor': 'independent'})
+        later = {**cfg, 'adapter': self.root/'later.py'}
+        config = self.root/'config.json'
+        config.write_text(json.dumps({'database': str(self.db), 'sources': {
+            'custom': {**cfg, 'adapter': str(cfg['adapter'])},
+            'later': {**later, 'adapter': str(later['adapter'])}}}))
+        serialize = json.dumps
+        def fail_target(value, *args, **kwargs):
+            if value is rejected.state:
+                raise RecursionError('synthetic serializer diagnostic must stay private')
+            return serialize(value, *args, **kwargs)
+        def module(path):
+            batch = rejected if str(path) == str(cfg['adapter']) else accepted
+            return {'API_VERSION': 1, 'collect': lambda *_: batch}
+        output = io.StringIO()
+        with patch('boardmail.adapters.runpy.run_path', side_effect=module), \
+             patch('boardmail.adapters.json.dumps', side_effect=fail_target), redirect_stdout(output):
+            code = cli.main(['--config', str(config), 'collect'])
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 1)
+        self.assertEqual(result['errors'], [{'source': 'custom', 'error': 'invalid_adapter_result',
+                                            'next_action': 'check_trusted_adapter_code'}])
+        self.assertEqual(result['added'], 1)
+        self.assertTrue(result['failed'])
+        self.assertFalse(result['history_complete'])
+        self.assertNotIn('synthetic serializer diagnostic', output.getvalue())
+        self.assertEqual({s['source']: s['error'] for s in result['sources']},
+                         {'custom': 'invalid_adapter_result', 'later': None})
+        self.assert_extension_checkpoint(cfg, before)
+        self.assertEqual(self.store.collection_state('later', later['account_id'], str(later['adapter'])),
+                         ({uid(30)}, {'cursor': 'independent'}, 1))
+
+    def test_extension_versions_are_rejected_before_collection(self):
+        cfg, before = self.extension_checkpoint()
+        calls = []
+        for version in (None, 2, True, '1'):
+            with self.subTest(version=version):
+                module = {'collect': lambda *_: calls.append('collected')}
+                if version is not None: module['API_VERSION'] = version
+                with patch('boardmail.adapters.runpy.run_path', return_value=module):
+                    result = collect_all(self.store, {'custom': cfg})
+                self.assertEqual(result['errors'][0]['error'], 'adapter_version_unsupported')
+                self.assertEqual(result['errors'][0]['next_action'], 'check_trusted_adapter_code')
+                self.assertEqual(result['added'], 0)
+                self.assert_extension_checkpoint(cfg, before)
+        self.assertEqual(calls, [])
+
+    def test_invalid_extension_contract_matrix_preserves_committed_data(self):
+        cfg, before = self.extension_checkpoint()
+        # Each ordinary batch has new mail and cache changes that must not commit.
+        cases = {
+            'not_batch': lambda b: {'messages': b.messages, 'state': b.state},
+            'messages_not_list': lambda b: Batch(messages=tuple(b.messages), state=b.state),
+            'state_not_object': lambda b: Batch(messages=b.messages, state=[]),
+            'complete_not_bool': lambda b: Batch(messages=b.messages, complete=1),
+            'unavailable_not_count': lambda b: Batch(messages=b.messages, unavailable=True),
+            'error_prose': lambda b: Batch(messages=b.messages, error='provider failed'),
+            'state_not_json': lambda b: Batch(messages=b.messages, state={'cursor': object()}),
+            'state_nonfinite': lambda b: Batch(messages=b.messages, state={'cursor': float('nan')}),
+            'numeric_id': lambda b: Batch(messages=[{**b.messages[0], 'id': 11}], state=b.state),
+            'missing_title': lambda b: Batch(messages=[{k: v for k, v in b.messages[0].items() if k != 'title'}], state=b.state),
+            'non_utf8_body': lambda b: Batch(messages=[{**b.messages[0], 'body': '\ud800'}], state=b.state),
+            'bool_timestamp': lambda b: Batch(messages=[{**b.messages[0], 'created_at': True}], state=b.state),
+            'sequence_out_of_range': lambda b: Batch(messages=[{**b.messages[0], 'provider_seq': 2**63}], state=b.state),
+            'non_http_url': lambda b: Batch(messages=[{**b.messages[0], 'url': 'ftp://example.invalid/item'}], state=b.state),
+            'url_credentials': lambda b: Batch(messages=[{**b.messages[0], 'url': 'https://user:pass@example.invalid/item'}], state=b.state),
+            'unknown_kind': lambda b: Batch(messages=[{**b.messages[0], 'kind': 'notification'}], state=b.state),
+            'unknown_addressing': lambda b: Batch(messages=[{**b.messages[0], 'addressing': 'inferred'}], state=b.state),
+            'invalid_cached_original': lambda b: Batch(messages=b.messages, state=b.state, originals=[{**mail(20), 'created_at': None}]),
+        }
+        for name, malformed in cases.items():
+            with self.subTest(contract=name):
+                batch = malformed(Batch(messages=[mail(11)], state={'cursor': 'next'}))
+                # Preserve invalid originals/container fields; otherwise exercise cache atomicity too.
+                if isinstance(batch, Batch) and name != 'invalid_cached_original':
+                    batch.originals = [{**mail(20), 'body': 'replacement'}, mail(21)]
+                with patch('boardmail.adapters.runpy.run_path', return_value={'API_VERSION': 1, 'collect': lambda *_: batch}):
+                    result = collect_all(self.store, {'custom': cfg})
+                self.assertEqual(result['errors'][0]['error'], 'invalid_adapter_result')
+                self.assertEqual(result['errors'][0]['next_action'], 'check_trusted_adapter_code')
+                self.assertEqual(result['added'], 0)
+                self.assert_extension_checkpoint(cfg, before)
+
+    def test_valid_extension_optional_fields_bounds_and_replay(self):
+        cfg, _ = self.extension_checkpoint()
+        item = {**mail(11), 'author': None, 'parent_id': None, 'provider_seq': None, 'created_at': -(2**63)}
+        cached = {**mail(21), 'created_at': 2**63-1}
+        del cached['kind']
+        batch = Batch(messages=[mail(10), item], state={'cursor': 'next'}, originals=[cached])
+        with patch('boardmail.adapters.runpy.run_path', return_value={'API_VERSION': 1, 'collect': lambda *_: batch}):
+            first = collect_all(self.store, {'custom': cfg})
+            replay = collect_all(self.store, {'custom': cfg})
+        self.assertFalse(first['failed'])
+        self.assertEqual(first['added'], 1)
+        self.assertFalse(replay['failed'])
+        self.assertEqual(replay['added'], 0)
+        self.assertEqual(self.store.collection_state('custom', cfg['account_id'], str(cfg['adapter']))[1], {'cursor': 'next'})
+        self.assertIsNotNone(self.store.show('custom', uid(10))['read_at'])
+        self.assertTrue(self.store.show('custom', uid(10))['needs_reply'])
+        with self.store.connect() as db:
+            self.assertIsNotNone(db.execute('SELECT 1 FROM originals WHERE source=? AND id=?', ('custom', uid(21))).fetchone())
 
     def test_bad_original_does_not_block_a_sibling_and_remains_retryable(self):
         for source, good, bad in (('postingboard',311,312),('moltbook',211,212)):

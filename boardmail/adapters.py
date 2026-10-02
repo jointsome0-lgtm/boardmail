@@ -70,6 +70,9 @@ def validate(batch):
         raise MailError("invalid_adapter_result")
     try:
         json.dumps(batch.state, allow_nan=False)
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError):
+        raise MailError("invalid_adapter_result") from None
+    try:
         for item in batch.messages + batch.originals:
             for key in ("id", "thread_id"):
                 identifier(item[key])
