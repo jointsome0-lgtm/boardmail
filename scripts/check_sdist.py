@@ -48,85 +48,95 @@ def distribution(path):
             'members': members}
 
 
+def captured_text(value):
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    return value or ''
+
+
 def check(args, report):
     report['sdist'] = distribution(args.sdist)
-    with tempfile.TemporaryDirectory(prefix='boardmail-sdist-') as name:
-        work = Path(name)
-        env = {'PATH': os.defpath, 'LANG': 'C.UTF-8',
-               'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
-               'PIP_CONFIG_FILE': os.devnull, 'PIP_NO_INDEX': '1',
-               'PIP_DISABLE_PIP_VERSION_CHECK': '1'}
-        for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
-                    'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
-            path = work/key.lower()
-            path.mkdir(mode=0o700)
-            env[key] = str(path)
+    work = None
+    try:
+        with tempfile.TemporaryDirectory(prefix='boardmail-sdist-') as name:
+            work = Path(name)
+            env = {'PATH': os.defpath, 'LANG': 'C.UTF-8',
+                   'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
+                   'PIP_CONFIG_FILE': os.devnull, 'PIP_NO_INDEX': '1',
+                   'PIP_DISABLE_PIP_VERSION_CHECK': '1'}
+            for key in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
+                        'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
+                path = work/key.lower()
+                path.mkdir(mode=0o700)
+                env[key] = str(path)
 
-        def run(command, cwd, environment):
-            record = {'command': list(map(str, command)), 'cwd': str(cwd)}
-            try:
-                result = subprocess.run(command, cwd=cwd, env=environment,
-                                        capture_output=True, text=True, timeout=180)
-            except subprocess.TimeoutExpired:
-                report['commands'].append({**record, 'exit_code': None, 'timed_out': True})
-                raise
-            report['commands'].append({'command': list(map(str, command)), 'cwd': str(cwd),
-                                       'exit_code': result.returncode,
-                                       'stdout': result.stdout, 'stderr': result.stderr})
-            if result.returncode:
-                raise RuntimeError('Command failed: ' + ' '.join(map(str, command)))
-            return result.stdout
+            def run(command, cwd, environment):
+                record = {'command': list(map(str, command)), 'cwd': str(cwd)}
+                try:
+                    result = subprocess.run(command, cwd=cwd, env=environment,
+                                            capture_output=True, text=True, timeout=180)
+                except subprocess.TimeoutExpired as exc:
+                    report['commands'].append({**record, 'exit_code': None, 'timed_out': True,
+                                               'stdout': captured_text(exc.stdout),
+                                               'stderr': captured_text(exc.stderr)})
+                    raise
+                report['commands'].append({'command': list(map(str, command)), 'cwd': str(cwd),
+                                           'exit_code': result.returncode,
+                                           'stdout': result.stdout, 'stderr': result.stderr})
+                if result.returncode:
+                    raise RuntimeError('Command failed: ' + ' '.join(map(str, command)))
+                return result.stdout
 
-        unpacked = work/'unpacked'
-        with tarfile.open(args.sdist) as archive:
-            archive.extractall(unpacked, filter='data')
-        roots = list(unpacked.iterdir())
-        if len(roots) != 1 or not roots[0].is_dir():
-            raise ValueError('Expected one source-distribution root')
-        source = roots[0]
-        missing = [path for path in REQUIRED if not (source/path).is_file()]
-        if missing:
-            raise ValueError('Source distribution lacks: ' + ', '.join(missing))
-        report['required_files_present'] = REQUIRED
-        rebuilt = work/'build-output'
-        rebuilt.mkdir()
-        build = ('from setuptools.build_meta import build_wheel; '
-                 'print(build_wheel(' + repr(str(rebuilt)) + '))')
-        run([sys.executable, '-B', '-c', build], source, env)
-        wheels = list(rebuilt.glob('*.whl'))
-        if len(wheels) != 1:
-            raise ValueError('Expected one rebuilt wheel')
-        if args.rebuilt_wheel_dir:
-            args.rebuilt_wheel_dir.mkdir(parents=True, exist_ok=True)
-            destination = args.rebuilt_wheel_dir/wheels[0].name
-            shutil.copyfile(wheels[0], destination)
-            wheels = [destination]
-        candidates = [('rebuilt', wheels[0])]
-        if args.wheel:
-            candidates.append(('direct', args.wheel))
-        report['wheels'] = []
-        for label, wheel in candidates:
-            artifact = distribution(wheel)
-            artifact['label'] = label
-            report['wheels'].append(artifact)
-            smoke = work/label
-            smoke.mkdir()
-            for directory in ('examples', 'tests'):
-                shutil.copytree(source/directory, smoke/directory)
-            guard = smoke/'guard'
-            guard.mkdir()
-            (guard/'sitecustomize.py').write_text(GUARD)
-            prefix = smoke/'venv'
-            run([sys.executable, '-B', '-m', 'venv', str(prefix)], smoke, env)
-            python = prefix/'bin/python'
-            runtime_env = {**env, 'PYTHONPATH': os.pathsep.join(map(str, (guard, smoke, smoke/'tests')))}
-            install = [str(python), '-B', '-m', 'pip', 'install', '--no-index']
-            if args.mcp_wheels:
-                install.extend(['--find-links', str(args.mcp_wheels), str(wheel) + '[mcp]'])
-            else:
-                install.extend(['--no-deps', str(wheel)])
-            run(install, smoke, runtime_env)
-            proof = '''import importlib.metadata, inspect, json, pathlib, sys
+            unpacked = work/'unpacked'
+            with tarfile.open(args.sdist) as archive:
+                archive.extractall(unpacked, filter='data')
+            roots = list(unpacked.iterdir())
+            if len(roots) != 1 or not roots[0].is_dir():
+                raise ValueError('Expected one source-distribution root')
+            source = roots[0]
+            missing = [path for path in REQUIRED if not (source/path).is_file()]
+            if missing:
+                raise ValueError('Source distribution lacks: ' + ', '.join(missing))
+            report['required_files_present'] = REQUIRED
+            rebuilt = work/'build-output'
+            rebuilt.mkdir()
+            build = ('from setuptools.build_meta import build_wheel; '
+                     'print(build_wheel(' + repr(str(rebuilt)) + '))')
+            run([sys.executable, '-B', '-c', build], source, env)
+            wheels = list(rebuilt.glob('*.whl'))
+            if len(wheels) != 1:
+                raise ValueError('Expected one rebuilt wheel')
+            if args.rebuilt_wheel_dir:
+                args.rebuilt_wheel_dir.mkdir(parents=True, exist_ok=True)
+                destination = args.rebuilt_wheel_dir/wheels[0].name
+                shutil.copyfile(wheels[0], destination)
+                wheels = [destination]
+            candidates = [('rebuilt', wheels[0])]
+            if args.wheel:
+                candidates.append(('direct', args.wheel))
+            report['wheels'] = []
+            for label, wheel in candidates:
+                artifact = distribution(wheel)
+                artifact['label'] = label
+                report['wheels'].append(artifact)
+                smoke = work/label
+                smoke.mkdir()
+                for directory in ('examples', 'tests', 'scripts'):
+                    shutil.copytree(source/directory, smoke/directory)
+                guard = smoke/'guard'
+                guard.mkdir()
+                (guard/'sitecustomize.py').write_text(GUARD)
+                prefix = smoke/'venv'
+                run([sys.executable, '-B', '-m', 'venv', str(prefix)], smoke, env)
+                python = prefix/'bin/python'
+                runtime_env = {**env, 'PYTHONPATH': os.pathsep.join(map(str, (guard, smoke, smoke/'tests')))}
+                install = [str(python), '-B', '-m', 'pip', 'install', '--no-index']
+                if args.mcp_wheels:
+                    install.extend(['--find-links', str(args.mcp_wheels), str(wheel) + '[mcp]'])
+                else:
+                    install.extend(['--no-deps', str(wheel)])
+                run(install, smoke, runtime_env)
+                proof = '''import importlib.metadata, inspect, json, pathlib, sys
 import boardmail
 assert getattr(sys, "_boardmail_artifact_guard_active", False)
 prefix = pathlib.Path(sys.prefix).resolve()
@@ -139,13 +149,15 @@ print(json.dumps({"prefix": str(prefix), "origins": paths,
                   "network_guard_active": True,
                   "entry_points": {name: entries[name].value for name in ("boardmail", "boardmail-mcp")}}))
 '''
-            artifact['installed_origin_proof'] = json.loads(run([str(python), '-B', '-c', proof], smoke, runtime_env))
-            for command in ('boardmail', 'boardmail-mcp'):
-                run([str(prefix/'bin'/command), '--help'], smoke, runtime_env)
-            tests = ['discover', '-s', 'tests', '-v'] if args.full_suite else ['-v', *SMOKE_TESTS]
-            run([str(python), '-B', '-m', 'unittest', *tests], smoke, runtime_env)
-            run([str(python), '-B', 'examples/demo.py'], smoke, runtime_env)
-    report['temporary_state_removed_after_check'] = not work.exists()
+                artifact['installed_origin_proof'] = json.loads(run([str(python), '-B', '-c', proof], smoke, runtime_env))
+                for command in ('boardmail', 'boardmail-mcp'):
+                    run([str(prefix/'bin'/command), '--help'], smoke, runtime_env)
+                tests = ['discover', '-s', 'tests', '-v'] if args.full_suite else ['-v', *SMOKE_TESTS]
+                run([str(python), '-B', '-m', 'unittest', *tests], smoke, runtime_env)
+                run([str(python), '-B', 'examples/demo.py'], smoke, runtime_env)
+    finally:
+        if work is not None:
+            report['temporary_state_removed_after_check'] = not work.exists()
 
 
 def main(argv=None):
