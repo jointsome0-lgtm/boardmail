@@ -377,13 +377,13 @@ def _node(client, node, post_id, title):
     return message, own
 
 
-def _walk(client, nodes, pending, served, out):
+def _walk(client, nodes, pending, served, out, *, deferred=()):
     """Flatten a listed tree into ``out``. A node whose replies were cut by depth or
     paging is queued once, with its ownership, so a later pass can still address its
     children; ``served`` remembers what this unit already queued. Returns True when
     the queue was full for some node, so the caller retains the unit instead of
     silently dropping that branch."""
-    stack, queued, full = list(nodes), {entry[0] for entry in pending}, False
+    stack, queued, full = list(nodes), {entry[0] for entry in [*pending, *deferred]}, False
     while stack:
         node = stack.pop()
         if not isinstance(node, dict):
@@ -409,7 +409,7 @@ def _walk(client, nodes, pending, served, out):
 
 def _progress(progress):
     """Saved position of one root, verified: head offset, cycle phase, parent queue and
-    the parents each retained unit already queued."""
+    deferred page boundaries and the parents each retained unit already queued."""
     skip = progress.get("skip")
     skip = skip if type(skip) is int and skip >= 0 else 0
     pending = []
@@ -423,12 +423,27 @@ def _progress(progress):
                     pending.append([entry[0], entry[1], entry[2]])
             except (ValueError, TypeError, AttributeError):
                 continue
+    deferred = []
+    # Older collectors kept one retained page in the active queue. Move that
+    # extra entry aside so a popped active parent always frees a discovery slot.
+    if len(pending) > MAX_PENDING_PARENTS:
+        deferred.append(pending.pop())
+    if isinstance(progress.get("deferred"), list):
+        for entry in progress["deferred"][:MAX_SERVED]:
+            try:
+                if (isinstance(entry, list) and len(entry) == 3 and uuid(entry[0]) == entry[0]
+                        and type(entry[1]) is int and entry[1] >= 0 and entry[2] in (True, False, None)
+                        and entry[0] not in {e[0] for e in pending + deferred}
+                        and len(deferred) < MAX_SERVED):
+                    deferred.append([entry[0], entry[1], entry[2]])
+            except (ValueError, TypeError, AttributeError):
+                continue
     served = {}
     if isinstance(progress.get("served"), dict):
         for unit, ids in progress["served"].items():
             if isinstance(ids, list) and all(isinstance(i, str) for i in ids):
                 served[unit] = list(ids)[:MAX_SERVED]
-    return skip, progress.get("done") is True, pending, served
+    return skip, progress.get("done") is True, pending, deferred, served
 
 
 def _scan(client, root, progress, batch, seen, mention):
@@ -442,15 +457,17 @@ def _scan(client, root, progress, batch, seen, mention):
     addressing.cache_original(batch, message)
     title = message["title"]
     path = "/posts/" + root + "/comments"
-    skip, done, pending, served = _progress(progress)
+    skip, done, pending, deferred, served = _progress(progress)
     tree = {root: root_own}
-    for parent, _, own in pending:
+    for parent, _, own in pending + deferred:
         tree.setdefault(parent, own)
     nodes, interrupted = [], None
 
     def save():
         progress.clear()
         progress["skip"], progress["pending"] = skip, pending
+        if deferred:
+            progress["deferred"] = deferred
         if done:
             progress["done"] = True
         if served:
@@ -465,21 +482,31 @@ def _scan(client, root, progress, batch, seen, mention):
         served.pop(unit, None)
         return False
 
+    def defer(parent, offset, own):
+        # Deferred pages do not consume discovery slots. Keep this metadata
+        # bounded too; exhaustion is explicit, like the existing served bound.
+        if len(deferred) < MAX_SERVED:
+            deferred.append([parent, offset, own])
+        else:
+            served.pop(parent, None)
+            _error(batch, MailError("pending_overflow"))
+
     try:
         while True:
             save()
-            if pending:
-                parent, offset, own = pending[0]
+            if pending or deferred:
+                work = pending if pending else deferred
+                parent, offset, own = work[0]
                 raw = client.get(path, {"parent_id": parent, "max_depth": 20, "limit": COMMENT_PAGE, "skip": offset})
                 children, total = raw["comments"], raw["total"]
                 if not isinstance(children, list) or type(total) is not int:
                     raise ValueError()
-                pending.pop(0)
-                full = _walk(client, children, pending, served.setdefault(parent, []), nodes)
+                work.pop(0)
+                full = _walk(client, children, pending, served.setdefault(parent, []), nodes, deferred=deferred)
                 if retained(full, parent):
-                    pending.append([parent, offset, own])  # Reread after its queued children are serviced.
+                    defer(parent, offset, own)  # Reread after its queued children are serviced.
                 elif children and offset + len(children) < total:
-                    pending.append([parent, offset + len(children), own])
+                    defer(parent, offset + len(children), own)
                 continue
             if done:
                 done, skip = False, 0
@@ -488,7 +515,7 @@ def _scan(client, root, progress, batch, seen, mention):
             top, total = raw["comments"], raw["total"]
             if not isinstance(top, list) or type(total) is not int or not 0 <= total < 2**63:
                 raise ValueError()
-            full = _walk(client, top, pending, served.setdefault("head", []), nodes)
+            full = _walk(client, top, pending, served.setdefault("head", []), nodes, deferred=deferred)
             if retained(full, "head"):
                 continue  # The queue drains first; this page is reread at the same offset.
             skip += len(top)

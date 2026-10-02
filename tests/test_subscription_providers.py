@@ -475,6 +475,76 @@ class ClawdThreadClient(ClawdChatClient):
                 "returned_count": len(selected), "max_depth": params.get("max_depth", 2), "parent_id": params.get("parent_id")}
 
 
+class DepthLimitedClawdClient(ClawdThreadClient):
+    """One finite tree; every response expands exactly the requested relative depth.
+
+    Pagination selects only this page's roots. Counts use the entire underlying
+    tree, including descendants hidden by the depth boundary. No shallow reply is
+    omitted, and no saved provider progress is injected into the collector.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.originals[uid(100)] = clawd_original(100, title="Finite deep tree")
+        self.forest, self.nodes, self.edges = [], {}, {}
+        next_id = 1000
+
+        def chain(parent, length):
+            nonlocal next_id
+            first = None
+            for _ in range(length):
+                mid = uid(next_id)
+                next_id += 1
+                self.nodes[mid] = clawd_original(next_id - 1, parent_id=parent)
+                self.edges[mid] = []
+                if parent is None:
+                    self.forest.append(mid)
+                else:
+                    self.edges[parent].append(mid)
+                first = first or mid
+                parent = mid
+            return first, parent
+
+        # Twenty depth-20 cut parents fill the ordinary queue. Their parent
+        # listings each expose two chains through depth 40. Those cut nodes still
+        # have descendants through depth 61, so the finite frontier can need more
+        # work before any queued unit reaches a leaf.
+        for _ in range(20):
+            _, parent = chain(None, 20)
+            chain(parent, 41)
+            chain(parent, 41)
+        self.originals[uid(100)]["comment_count"] = len(self.nodes)
+
+    def get(self, path, params=None, *, authenticated=False):
+        if not path.endswith("/comments"):
+            return super().get(path, params, authenticated=authenticated)
+        if self.requests >= self.limit:
+            raise MailError("budget_exhausted")
+        self.requests += 1
+        self.calls.append((path, dict(params), authenticated))
+        assert not authenticated
+        assert path == "/posts/" + uid(100) + "/comments"
+        depth, skip, limit = params["max_depth"], params["skip"], params["limit"]
+        assert depth == 20 and skip >= 0 and limit > 0
+        parent = params.get("parent_id")
+        roots = self.edges[parent] if parent is not None else self.forest
+
+        def expand(mid, remaining):
+            children = self.edges[mid]
+            replies = [expand(child, remaining - 1) for child in children] if remaining > 1 else []
+            return {**self.nodes[mid], "replies": replies, "reply_count": len(children),
+                    "has_more_replies": len(replies) < len(children)}
+
+        selected = [expand(mid, depth) for mid in roots[skip:skip + limit]]
+
+        def count(nodes):
+            return sum(1 + count(node["replies"]) for node in nodes)
+
+        return {"success": True, "comments": selected, "total": len(roots),
+                "comment_count": len(self.nodes), "returned_count": count(selected),
+                "max_depth": depth, "parent_id": parent}
+
+
 def node(n, parent=None, author=2, replies=(), more=False, **changes):
     return {**clawd_original(n, parent_id=uid(parent) if parent else None, author={"id": uid(author), "name": "agent-" + str(author)}, **changes),
             "replies": list(replies), "reply_count": len(replies) + (1 if more else 0), "has_more_replies": more}
@@ -627,6 +697,64 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         self.assertEqual(known, {uid(n) for n in (11, 12, 13, 14, 15)})
         self.assertTrue(batches[-1].complete)
         self.assertEqual(heads, 1, 'Saved work completes before another head scan')
+
+    def test_depth_limited_finite_tree_drains_from_empty_state_at_default_bounds(self):
+        self.assert_finite_tree_drains(DepthLimitedClawdClient())
+
+    def test_depth_limited_tree_preserves_parent_pagination_between_passes(self):
+        with patch.object(clawd, "COMMENT_PAGE", 1):
+            client = DepthLimitedClawdClient()
+            self.assert_finite_tree_drains(client)
+        self.assertTrue(any(params.get("parent_id") and params["skip"] == 1
+                            for path, params, _ in client.calls if path.endswith("/comments")))
+
+    def test_deferred_parent_keeps_ownership_and_next_offset_across_restart(self):
+        client = DepthLimitedClawdClient()
+        parent = client.forest[0]
+        for _ in range(19):
+            parent = client.edges[parent][0]
+        client.nodes[parent]["author"] = {"id": uid(1), "name": "reader"}
+        second_child = client.edges[parent][1]
+        state, known, retained = {}, set(), False
+        with patch.object(clawd, "COMMENT_PAGE", 1), patch.object(clawd, "MAX_REQUESTS", 4), \
+                patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
+            for _ in range(8):
+                client.requests = 0
+                batch = self.collect(client, [100], state, known)
+                self.assertIsNone(batch.error)
+                known.update(by_id(batch))
+                state = json.loads(json.dumps(batch.state))
+                pages = state["subscriptions"]["roots"][uid(100)].get("deferred", [])
+                retained = retained or [parent, 1, True] in pages
+                if second_child in by_id(batch):
+                    self.assertEqual(by_id(batch)[second_child]["addressing"], "direct")
+                    break
+        self.assertTrue(retained, "The next direct-child page retains its parent's ownership")
+        self.assertIn(second_child, known)
+
+    def assert_finite_tree_drains(self, client):
+        self.assertEqual(len(client.nodes), 2040)
+        state, known, completed = {}, set(), False
+        for _ in range(12):
+            client.requests = 0
+            batch = self.collect(client, [100], state, known)
+            self.assertIsNone(batch.error)
+            self.assertLessEqual(client.requests, clawd.MAX_REQUESTS)
+            delivered = set(by_id(batch))
+            self.assertFalse(delivered & known, "Saved arrivals are not delivered twice")
+            known.update(delivered)
+            state = json.loads(json.dumps(batch.state))
+            progress = state["subscriptions"]["roots"][uid(100)]
+            self.assertLessEqual(len(progress["pending"]), clawd.MAX_PENDING_PARENTS)
+            self.assertLessEqual(len(progress.get("deferred", [])), clawd.MAX_SERVED)
+            queued = [entry[0] for entry in progress["pending"] + progress.get("deferred", [])]
+            self.assertEqual(len(queued), len(set(queued)), "Work units are not duplicated across queues")
+            if batch.complete:
+                completed = True
+                break
+        self.assertTrue(completed, "The finite depth-respecting tree must finish under identical budgets")
+        self.assertEqual(known, set(client.nodes), "Every finite branch must be collected")
+        self.assertEqual(state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
 
     def test_full_parent_queue_retains_the_page_until_its_children_are_serviced(self):
         client = ClawdThreadClient()
