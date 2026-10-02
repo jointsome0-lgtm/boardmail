@@ -237,6 +237,17 @@ def resolve(store, source, adapter, lookup, mid, root=None):
     remote = lookup(mid, lookup_root) if lookup is not None else ("unknown", None, None)
     if remote[2] is not None:
         remote = (remote[0], remote[1], {"source": source, **remote[2]})
+    if root is not None:
+        # Relatives must belong to the requested thread. A current original can
+        # replace a conflicting local relative; the primary target keeps its snapshot.
+        relations = remote[2] or stored
+        if relations is not None and relations["thread_id"] != root:
+            found = element("unavailable", error="invalid_response", id=mid)
+            if lookup is not None:
+                found["remote_status"] = remote[0]
+            return found, None, True
+        if stored is not None and stored["thread_id"] != root:
+            stored = None
     if stored is not None:
         found = element("available", stored, origin="local")
         if lookup is not None:
@@ -335,7 +346,7 @@ def expand(store, source, thread, after, through, limit, settings, *, client_fac
         # The thread is the trusted relationship: an original that now belongs elsewhere
         # is rejected by the lookup instead of attaching another thread's root here.
         target, relations, authoritative = root if mid == thread else resolver(mid, thread)
-        if relations["thread_id"] != thread:
+        if relations is None or relations["thread_id"] != thread:
             target = element("unavailable", error="invalid_response", id=mid)
             relations, authoritative = None, True
             parent = element("unknown")

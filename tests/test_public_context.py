@@ -168,6 +168,65 @@ class PublicContextTests(unittest.TestCase):
         self.assertEqual((code, result['parent']['error']), (1, 'invalid_response'))
         self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
 
+    def test_conflicting_stored_root_is_rejected_locally_and_after_lookup_failure(self):
+        source = 'clawdchat'
+        cfg = {'account_id': uid(1), 'adapter': source}
+        target = dict(mail(10), parent_id=uid(100))
+        self.store.save(source, uid(1), [target, dict(mail(100), thread_id=uid(999))])
+        for action in ('read', 'needs_reply', 'replied'):
+            self.store.mark(source, uid(10), action,
+                            ref='https://example.invalid/reply' if action == 'replied' else None)
+        saved = self.store.show(source, uid(10))
+        brief = self.store.page(context='brief')['messages'][0]['brief']
+        self.assertEqual(brief['root']['reason'], 'thread_mismatch')
+        before = self.path.read_bytes()
+        client = ClawdClient()
+        with patch.object(client, 'get', side_effect=MailError('http_503')):
+            for local in (True, False):
+                with self.subTest(local=local), patch.object(adapter_clawdchat, 'Client', return_value=client) as factory:
+                    result, code = commands.execute(self.store, 'context', source=source, id=uid(10),
+                                                    sources={source: cfg}, local=local)
+                    if local: factory.assert_not_called()
+                    self.assertEqual((code, result['complete']), (1, False))
+                    for role in ('root', 'parent'):
+                        self.assertEqual((result[role]['status'], result[role]['error'], result[role]['id']),
+                                         ('unavailable', 'invalid_response', uid(100)))
+                        self.assertIsNone(result[role]['message'])
+                    self.assertEqual(result['target']['message'], saved)
+                    self.assertEqual(result['target']['status'], 'available')
+                    self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
+                    self.assertEqual(self.path.read_bytes(), before)
+
+    def test_current_originals_replace_conflicting_stored_relatives(self):
+        self.setup_source('clawdchat')
+        self.store.save(self.source, uid(1), [
+            dict(mail(100), thread_id=uid(999)), dict(mail(11), thread_id=uid(999))])
+        saved = self.store.show(self.source, self.target)
+        before = self.path.read_bytes()
+        result, code = self.context()
+        self.assertEqual((code, result['complete']), (0, True))
+        for role, expected in (('root', self.root), ('parent', self.parent)):
+            self.assertEqual((result[role]['status'], result[role]['origin'], result[role]['id']),
+                             ('available', 'remote', expected))
+            self.assertEqual(result[role]['message']['thread_id'], self.root)
+        self.assertEqual(result['target']['message'], saved)
+        self.assertEqual(result['target']['current_message']['body'], 'Current reply.')
+        self.assertEqual(result['previous_exchange']['status'], 'linked')
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_matching_local_fourclaw_anchor_and_botnet_absent_parent_stay_available(self):
+        self.store.save('fourclaw', 'reader', [mail(100),
+                        dict(mail(10), parent_id=uid(100)), mail(11)])
+        self.store.save('botnet', 'reader', [mail(100), dict(mail(20), id='opaque:message-20')])
+        before = self.path.read_bytes()
+        with patch.object(providers, 'Client', side_effect=AssertionError('remote client')):
+            for mid in (uid(10), uid(11)):
+                result, code = commands.execute(self.store, 'context', source='fourclaw', id=mid, local=True)
+                self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, uid(100)))
+            result, code = commands.execute(self.store, 'context', source='botnet', id='opaque:message-20', local=True)
+            self.assertEqual((code, result['complete'], result['parent']['status']), (0, True, 'none'))
+        self.assertEqual(self.path.read_bytes(), before)
+
 
 if __name__ == '__main__':
     unittest.main()
