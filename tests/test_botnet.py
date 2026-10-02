@@ -7,12 +7,13 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from urllib.parse import unquote
+from urllib.error import URLError
+from urllib.parse import parse_qs, unquote, urlsplit
 from urllib.request import BaseHandler, ProxyHandler, build_opener
 from urllib.response import addinfourl
 
 from boardmail import adapter_botnet as adapter, commands
-from boardmail.adapters import validate
+from boardmail.adapters import Batch, validate
 from boardmail.config import MailError, load
 from boardmail.store import Store
 
@@ -236,6 +237,86 @@ class BotnetTests(unittest.TestCase):
             self.assertEqual((code, result["parent"]["status"]), (1, "unavailable"))
         self.assertTrue(all(not auth for _, _, auth in self.client.calls))
         self.assertEqual(self.store.path.read_bytes(), before)
+
+    def pending_backlog(self):
+        for number in range(10, 70):
+            self.client.add(number)
+        return {"pending": [{"id": mid(number), "reasons": ["reply"]} for number in range(10, 70)]}
+
+    def collect_with_real_client(self, state, *, monotonic=lambda: 0, before_response=None):
+        self.store.prepare_collection()
+        self.store.save_collection("botnet", OWNER, "botnet", 0, Batch(state=state))
+        self.store.save("botnet", OWNER, [], now=1)
+        with patch.object(adapter.time, "monotonic", side_effect=monotonic):
+            client = adapter.Client(self.settings)
+            client.key = "synthetic-key-only"
+
+            def response(request, timeout):
+                url = urlsplit(request.full_url)
+                self.assertEqual((url.scheme, url.netloc), ("https", "botnet.com"))
+                self.assertTrue(url.path.startswith("/api/forum/"))
+                path = url.path.removeprefix("/api/forum")
+                params = {key: values[0] for key, values in parse_qs(url.query).items()}
+                if "limit" in params:
+                    params["limit"] = int(params["limit"])
+                value = self.client.get(path, params, authenticated=request.get_header("Authorization") is not None)
+                if before_response is not None:
+                    before_response(path)
+                return io.BytesIO(json.dumps(value).encode())
+
+            # Exercise production cache and budgets with a controlled clock and offline transport.
+            with patch.object(client.opener, "open", side_effect=response), patch.object(adapter, "Client", return_value=client):
+                result, code = commands.execute(self.store, "collect", sources={"botnet": self.settings})
+        return client, result, code
+
+    def test_real_request_cap_saves_healthy_partial_progress(self):
+        state = self.pending_backlog()
+        client, result, code = self.collect_with_real_client(state)
+        known, saved, _ = self.store.collection_state("botnet", OWNER, "botnet")
+        pending = {entry["id"] for entry in saved["pending"]}
+        self.assertEqual((client.requests, result["added"], len(pending)), (40, 36, 24))
+        self.assertEqual(known | pending, {entry["id"] for entry in state["pending"]})
+        self.assertFalse(known & pending)
+        self.assertEqual((code, result["failed"], result["errors"]), (0, False, []))
+        health = result["sources"][0]
+        self.assertEqual((health["status"], health["error"], health["backlog_pending"]), ("ok", None, True))
+        self.assertGreater(health["last_ok"], 1)
+        self.assertEqual(commands.execute(self.store, "status", require_fresh=True)[1], 0)
+
+    def test_real_cap_does_not_hide_an_earlier_network_failure(self):
+        state = self.pending_backlog()
+        self.client.originals[mid(10)] = URLError("Synthetic transport failure")
+        client, result, code = self.collect_with_real_client(state)
+        self.assertEqual((client.requests, code), (40, 1))
+        self.assertGreater(result["added"], 0)
+        self.assertEqual(result["errors"][0]["error"], "network_error")
+        health = result["sources"][0]
+        self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", 1, True))
+        self.assertIn(mid(10), {entry["id"] for entry in self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"]})
+
+    def test_real_time_budget_after_identity_is_healthy_partial_progress(self):
+        state, clock = self.pending_backlog(), [0]
+        def expire(path):
+            if path == "/inbox":
+                clock[0] = 46
+        client, result, code = self.collect_with_real_client(state, monotonic=lambda: clock[0], before_response=expire)
+        self.assertEqual((client.requests, result["added"], code, result["errors"]), (2, 0, 0, []))
+        self.assertCountEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"], state["pending"])
+        health = result["sources"][0]
+        self.assertEqual((health["status"], health["backlog_pending"]), ("ok", True))
+        self.assertGreater(health["last_ok"], 1)
+
+    def test_identity_preflight_budget_failure_remains_an_error(self):
+        state, clock = self.pending_backlog(), [0]
+        def expire(path):
+            self.assertEqual(path, "/me")
+            clock[0] = 11
+        client, result, code = self.collect_with_real_client(state, monotonic=lambda: clock[0], before_response=expire)
+        self.assertEqual((client.requests, result["added"], code), (1, 0, 1))
+        self.assertEqual(result["errors"][0]["error"], "budget_exhausted")
+        self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1], state)
+        health = result["sources"][0]
+        self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", 1, True))
 
     def test_http_keeps_credentials_on_fixed_private_endpoints_and_stops_redirects(self):
         class HTTPS(BaseHandler):

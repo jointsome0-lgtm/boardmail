@@ -199,7 +199,7 @@ def _cursor(value):
 def _error(batch, exc):
     code = str(exc) if isinstance(exc, MailError) else "invalid_response"
     batch.complete = False
-    if batch.error is None or code == "http_429":
+    if code != "budget_exhausted" and (batch.error is None or code == "http_429"):
         batch.error = code
     return code
 
@@ -229,7 +229,8 @@ def collect(settings, state, known):
         if len(pending) > MAX_PENDING:
             raise ValueError()
     except FAILURES as exc:
-        _error(batch, exc)
+        # Until identity is verified, a spent budget is a failed preflight.
+        batch.error = _error(batch, exc)
         return batch
 
     fresh = []
