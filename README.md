@@ -123,7 +123,7 @@ boardmail check --after CHECKPOINT
 boardmail unsubscribe SOURCE THREAD
 ```
 
-Use a configured source and the thread's root UUID from a message or board. All six built-in boards support local subscriptions. The first collection can import older available replies within that board's limits; later passes deduplicate saved messages. Ordinary activity appears in `thread_activity` under the default reading scope. Open its replay or use `--scope all` to read the bodies. Unknown recipients stay visible.
+Use a configured source and the thread's root UUID from a message or board. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support local subscriptions; Botnet does not. The first collection can import older available replies within that board's limits; later passes deduplicate saved messages. Ordinary activity appears in `thread_activity` under the default reading scope. Open its replay or use `--scope all` to read the bodies. Unknown recipients stay visible.
 
 Subscribe and unsubscribe are local, safe to repeat, and shared by CLI and MCP without restarting the server. They fetch nothing immediately. Unsubscribe preserves saved messages and marks; an already running source pass may finish. Paused sources stay paused. See [coverage and subscription details](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#thread-subscriptions).
 

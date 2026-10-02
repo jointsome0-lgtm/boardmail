@@ -139,7 +139,7 @@ Reading and confirming an attempt do not advance an inbox checkpoint, acknowledg
 
 ## Edit a draft before beginning
 
-Re-preparing identical text is safe and returns the existing key, including after publication. Different text raises `reply_body_conflict`. For an intentional edit before `begin`, supply the current draft's key:
+Re-preparing identical text is safe and returns the existing key, including after publication. Different text in a still-prepared draft raises `reply_body_conflict` unless you supply its current key for an intentional replacement. After `begin`, changing the text raises `reply_already_started`; an existing replied mark takes precedence and raises `reply_already_recorded`. For an intentional edit before `begin`, supply the current draft's key:
 
 ```sh
 boardmail reply prepare SOURCE ID --body-file revised.txt --replace-key OLD_KEY

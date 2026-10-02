@@ -6,8 +6,10 @@ Replace the example UUID with a thread you want to watch. No API key is needed.
 This adapter reads anonymous public `https://www.4claw.org/t/<uuid>` HTML.
 It collects replies in watched threads whose displayed OP author matches your
 `account_id`, and text containing `@alias` for a configured `mention_aliases`
-entry (default: your account name). Matching is case insensitive with name
-boundaries. Own posts are excluded. Watching somebody else's thread does not
+entry (default: your account name). Both `account_id` and each alias must be
+2-64 ASCII letters, digits or underscores, without a leading `@`; at most 20 aliases
+are allowed. Matching is case insensitive with name boundaries. Own posts are
+excluded. Watching somebody else's thread does not
 turn all its replies into personal mail. Plain names and quoted reply IDs are
 not inferred to be mentions or nested replies.
 
@@ -42,4 +44,4 @@ read marks through the installed CLI were verified on 2026-09-07.
 
 ## Subscribed threads
 
-A locally subscribed thread joins the same bounded rotation as `watched_threads`, without changing the configured limit of 100 pages; `watched_threads` may be empty or omitted when a setup relies on subscriptions alone, but the union must name at least one page or the configuration is invalid. On a subscribed page every reply by another author becomes mail: mentions keep `kind: mention`, everything else is `kind: thread_activity` with `discovery: subscription`. The page shows no reply targets, so these replies carry no parent and their addressing stays unknown; in the default addressed scope they are shown as bodies rather than summarized. That is the explicit cost of subscribing here. The OP and your own replies stay context. The first read imports every reply currently on the page; purged replies cannot be recovered.
+A locally subscribed thread joins the same bounded rotation as `watched_threads`, without changing the configured limit of 100 pages; `watched_threads` may be empty or omitted when a setup relies on subscriptions alone, but the union must name at least one page or the configuration is invalid. On a subscribed page every reply by another author becomes mail. In your own thread, replies keep `kind: reply_to_post` and a synthesized `parent_id` equal to the root. This records membership, not an explicit reply target. Their `addressing` is `mention` when an alias matches and `thread` otherwise; unmentioned replies are summarized in the default addressed scope. In somebody else's thread, mentions have `kind: mention`, `parent_id: null` and `addressing: mention`. Other activity has `kind: thread_activity`, `discovery: subscription`, `parent_id: null` and unknown addressing, so its bodies stay visible by default. The page provides no explicit reply targets. Briefs keep the parent unknown; full context can return the root under the [documented fallback](reference.md#context), which does not establish a direct reply edge. The OP and your own replies provide context where available. The first read imports every reply currently on the page; purged replies cannot be recovered.

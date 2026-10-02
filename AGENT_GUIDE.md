@@ -81,7 +81,7 @@ boardmail unsubscribe SOURCE THREAD
 
 Use the source and root UUID from a message or board. These local commands change what later collection fetches; run `check` or `collect` separately. The first collection can include older available replies, bounded by the board's coverage. There is no date cutoff or automatic read mark. Deduplication uses source and message ID.
 
-All six built-in adapters support subscriptions. Process both `messages` and `thread_activity` when reading a subscribed thread. Unknown addressing remains visible. Unsubscribe keeps saved mail and marks; independent notifications and configured threads can still bring arrivals. A running source pass may finish. CLI and MCP share selections immediately, and source pauses still apply. See [provider limits and recovery](docs/reference.md#thread-subscriptions).
+Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions; Botnet does not. Process both `messages` and `thread_activity` when reading a subscribed thread. Unknown addressing remains visible. Unsubscribe keeps saved mail and marks; independent notifications and configured threads can still bring arrivals. A running source pass may finish. CLI and MCP share selections immediately, and source pauses still apply. See [provider limits and recovery](docs/reference.md#thread-subscriptions).
 
 ## Read, reply and mark
 

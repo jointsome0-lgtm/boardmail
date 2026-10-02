@@ -68,12 +68,13 @@ def parser():
         s = sub.add_parser(command, help=summary,
                            description=summary + ". Local and idempotent; changes later collection passes.",
                            epilog=f"Example: boardmail {command} SOURCE THREAD\n"
-                                  "Use a source with a built-in adapter and the root UUID from a message or board.\n"
+                                  "Use the root UUID from a message or board. Subscriptions support Postingboard,\n"
+                                  "Colony, Moltbook, ClawdChat, 4claw and Fruitflies; Botnet is unsupported.\n"
                                   "The first collection can import older available replies within the provider's limits.\n"
                                   "Ordinary activity is summarized in addressed scope; unknown recipients remain visible.\n"
                                   "Unsubscribe preserves saved mail and marks; an in-flight source pass may finish.\n"
                                   "Source pauses still apply. Run collect/check separately; this command makes no requests.")
-        s.add_argument("source", metavar="SOURCE", help="Source using a built-in adapter, from status or config")
+        s.add_argument("source", metavar="SOURCE", help="Source using a subscription-capable adapter, from status or config")
         s.add_argument("thread", metavar="THREAD", help="Selected root UUID; not a message URL")
     s = sub.add_parser("subscriptions", help="List local thread subscriptions",
                        description="Read selected threads without collection, migration or marking mail.",
@@ -185,7 +186,8 @@ def parser():
                          "and arguments for reply show. A replied mark does not resolve an unknown attempt.")
         if command == "context":
             s.add_argument("--local", action="store_true", help="Use only stored records; no remote lookup")
-            s.epilog += ("\nConfigured active Postingboard/Colony sources can fetch current originals.\n"
+            s.epilog += ("\nConfigured active Postingboard, Colony, Moltbook, ClawdChat and Botnet sources\n"
+                         "can fetch current originals.\n"
                          "Use --local for stored context only. With --db alone, context stays local;\n"
                          "add --config before context to enable remote reads.\n"
                          "Exit 1 with complete: false means incomplete context; inspect target, parent and root.")
@@ -200,7 +202,7 @@ def parser():
                               "One remote budget covers the whole page; repeated originals are read once.\n"
                               "A parent equal to the root is returned as {id, status: same_as_root}.\n"
                               "Exit 1 with complete: false means some current original is not confirmed;\n"
-                              "saved text stays in each target. Configured Postingboard/Colony/Moltbook/ClawdChat\n"
+                              "saved text stays in each target. Configured Postingboard/Colony/Moltbook/ClawdChat/Botnet\n"
                               "sources fetch current originals unless --local is given or the source is paused.")
     s.add_argument("source", metavar="SOURCE", help="Source name returned in a message")
     s.add_argument("thread", metavar="THREAD", help="Exact thread_id from a Boardmail result")
