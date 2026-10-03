@@ -92,6 +92,16 @@ In a legacy database without a recorded adapter, the original built-in source na
 
 The URL must identify an already located candidate reply. This command does not discover a lost URL, search by idempotency key, prove absence, publish or authorize a retry. If no URL survived, discover it independently and retain `unknown` until there is sufficient evidence. Other adapters can still use the explicit caller-readback `confirm` workflow.
 
+## Record a reply sent before collection
+
+If you published and independently verified a reply before Boardmail collected its incoming message, record the existing reply URL once that incoming is saved:
+
+```sh
+boardmail mark replied SOURCE ID --ref https://example.org/published-reply
+```
+
+Use the saved incoming's source and ID and the verified reply's actual URL. This records a local `replied` mark without `prepare`, `begin` or another publication. It does not fetch the URL or create a provider verification receipt. `read_at` and `needs_reply` remain independent. Any existing `unknown` attempt stays unresolved; follow its `reply show` journal to reconcile that outcome.
+
 ## Resume after a crash or unclear response
 
 Start with `boardmail status`. Its `reply_attempts` includes counts for prepared, unknown and confirmed attempts and the first 20 pending items. Items include source, incoming ID, state, next_action and a `show` route to the full journal. Independent replied marks never hide an unknown attempt. Counts cover the whole journal, not just the page; confirmed attempts have no pending item.
@@ -139,7 +149,7 @@ Reading and confirming an attempt do not advance an inbox checkpoint, acknowledg
 
 ## Edit a draft before beginning
 
-Re-preparing identical text is safe and returns the existing key, including after publication. Different text raises `reply_body_conflict`. For an intentional edit before `begin`, supply the current draft's key:
+Re-preparing identical text is safe and returns the existing key, including after publication. Different text in a still-prepared draft raises `reply_body_conflict` unless you supply its current key for an intentional replacement. After `begin`, changing the text raises `reply_already_started`; an existing replied mark takes precedence and raises `reply_already_recorded`. For an intentional edit before `begin`, supply the current draft's key:
 
 ```sh
 boardmail reply prepare SOURCE ID --body-file revised.txt --replace-key OLD_KEY

@@ -318,9 +318,66 @@ class CLITests(unittest.TestCase):
         self.db=Path(self.temp.name)/'mail.sqlite3'
         self.command=[sys.executable,'-m','boardmail','--db',str(self.db)]
 
-    def invoke(self,*args):
-        result=subprocess.run([*self.command,*args],capture_output=True,text=True,timeout=5)
+    def invoke(self,*args,database=None):
+        command = self.command if database is None else [*self.command[:-1], str(database)]
+        result=subprocess.run([*command,*args],capture_output=True,text=True,timeout=5)
         return result.returncode,json.loads(result.stdout)
+
+    def init_config(self):
+        config = Path(self.temp.name)/'config.json'
+        config.write_text(json.dumps({'database': 'configured.sqlite3', 'sources': {
+            'research': {'adapter': 'moltbook', 'account_id': uid(2),
+                         'api_key_file': 'missing-key'}}}))
+        return config
+
+    def test_init_explicit_config_seeds_the_override_database(self):
+        config = self.init_config()
+        code, result = self.invoke('--config', str(config), 'init')
+        self.assertEqual(code, 0, result)
+        self.assertEqual([(s['source'], s['account_id']) for s in result['sources']],
+                         [('research', uid(2))])
+        with Store(self.db).connect() as db:
+            self.assertEqual(tuple(db.execute('SELECT source, adapter FROM adapter_state').fetchone()),
+                             ('research', 'moltbook'))
+        self.assertFalse((config.parent/'configured.sqlite3').exists())
+        self.assertFalse((config.parent/'missing-key').exists())
+
+    def test_init_missing_or_invalid_explicit_config_creates_no_database(self):
+        config = Path(self.temp.name)/'config.json'
+        cases = ((None, 5, 'config_missing'), ('{broken', 2, 'invalid_config'),
+                 ('{"database":"configured.sqlite3","sources":{}}', 2, 'invalid_config'))
+        for index, (contents, code, error) in enumerate(cases):
+            with self.subTest(contents=contents):
+                if contents is not None:
+                    config.write_text(contents)
+                database = config.parent/f'case-{index}.sqlite3'
+                actual, result = self.invoke('--config', str(config), 'init', database=database)
+                self.assertEqual((actual, result.get('error')), (code, error), result)
+                self.assertFalse(database.exists())
+                self.assertFalse((config.parent/'configured.sqlite3').exists())
+
+    def test_db_only_init_and_local_status_do_not_load_config(self):
+        code, result = self.invoke('init')
+        self.assertEqual((code, result['sources']), (0, []))
+        before = self.db.read_bytes()
+        config = Path(self.temp.name)/'config.json'
+        for contents in (None, '{broken'):
+            with self.subTest(contents=contents):
+                if contents is not None:
+                    config.write_text(contents)
+                code, result = self.invoke('--config', str(config), 'status')
+                self.assertEqual((code, result['sources']), (0, []))
+                self.assertEqual(self.db.read_bytes(), before)
+
+    def test_init_with_explicit_config_preserves_an_existing_database(self):
+        self.assertEqual(self.invoke('init')[0], 0)
+        Store(self.db).save('moltbook', uid(2), [mail(10)])
+        before = self.db.read_bytes()
+        config = self.init_config()
+        code, result = self.invoke('--config', str(config), 'init')
+        self.assertEqual((code, result['error']), (2, 'database_exists'))
+        self.assertEqual(self.db.read_bytes(), before)
+        self.assertFalse((config.parent/'configured.sqlite3').exists())
 
     def test_missing_state_config_bad_input_and_zero_timeout(self):
         self.assertEqual(self.invoke('wait','--timeout','0'),(5,{'event':'error','error':'database_missing','next_action':'run_init','history_complete':False}))

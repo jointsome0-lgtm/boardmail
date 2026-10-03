@@ -1,8 +1,10 @@
 # Releasing Boardmail
 
 The `publish.yml` workflow runs manually. Its default `build-only` mode builds
-a source distribution and a wheel, checks their metadata, and tests the installed
-wheel with MCP support. Pushes and tags do not trigger it. The `publish` job runs
+a source distribution and a wheel, checks their metadata, rebuilds a wheel from
+the unpacked source distribution, and tests both installed wheels with MCP support.
+Tests, examples and the migration fixture come from the source archive, not the
+checkout. Pushes and tags do not trigger it. The `publish` job runs
 only when a maintainer selects `publish` on `main`.
 
 ## One-time owner setup
@@ -55,3 +57,32 @@ See [PyPI's security guidance](https://docs.pypi.org/trusted-publishers/security
 For later releases, update both version locations and use that version in the
 installation check. Existing PyPI files cannot be overwritten; inspect a partial
 failure before retrying rather than treating duplicate files as success.
+
+## Check standalone artifacts
+
+The source distribution includes the source examples, tests, SQL migration fixture,
+guides and this artifact checker. The wheel installs the `boardmail` package and
+its console entry points; it does not install those ancillary files.
+
+With the declared `setuptools>=77` backend already available, run:
+
+```sh
+python -B scripts/check_sdist.py dist/boardmail-VERSION.tar.gz \
+  --wheel dist/boardmail-VERSION-py3-none-any.whl --report artifact-check.json
+```
+
+The checker inventories both archives, unpacks the sdist outside the checkout,
+rebuilds its wheel, and installs each wheel in a disposable environment. It verifies
+installed module and entry-point origins, runs both help commands, the offline demo,
+and focused custom-adapter, migration and consumer-recovery tests. It uses only the
+archive's tests and examples. Installation uses `--no-index`; the checker makes no
+provider requests. It preserves neither the temporary inboxes nor the environments.
+Use `--rebuilt-wheel-dir PATH` to keep the rebuilt artifact.
+
+The publish workflow first downloads the declared MCP dependency wheels, then passes
+their directory with `--mcp-wheels PATH --full-suite` to run every bundled test against
+both installations. Without that directory, the checker installs the dependency-free
+runtime and runs the focused smoke by default; `--full-suite` can skip optional MCP
+tests. Its Python socket guard is cooperative
+fixture isolation, not operating-system containment. A local pass does not validate
+the complete Python-version matrix or the later integrated release artifacts.

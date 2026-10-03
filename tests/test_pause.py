@@ -1,6 +1,7 @@
 """Source pause contracts with invented mail and no board requests."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from copy import deepcopy
 import json
 from pathlib import Path
 import shutil
@@ -15,7 +16,7 @@ from unittest.mock import patch
 from boardmail import commands, config, providers
 from boardmail.adapters import Batch, collect_all
 from boardmail.store import Store
-from examples.fixtures import settings, uid
+from examples.fixtures import original, settings, uid
 from test_mail import mail
 
 
@@ -166,6 +167,92 @@ class PauseTests(unittest.TestCase):
         self.assertIsNone(result['target']['differs_from_saved'])
         self.assertEqual(code, 1)  # The missing root remains explicitly unknown.
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_builtin_pages_resume_after_pause_and_reopen_without_losing_marks(self):
+        source, owner, root = 'the-colony', uid(1), uid(400)
+        sources = {source: settings()[source]}
+        self.store.initialize(sources)
+        self.store.set_subscription(source, root, True)
+        post = {**original(400, 400, colony=True), 'title': 'Synthetic subscribed discussion'}
+        pages = {
+            1: [original(411, 400, colony=True), original(412, 400, author=1, colony=True)],
+            2: [{**original(413, 400, colony=True), 'parent_id': uid(412)}],
+        }
+        calls = []
+
+        class PageClient:
+            """Only these finite invented routes exist; unexpected requests fail."""
+            host = 'https://example.invalid'
+
+            def __init__(client, requested_source, config):
+                self.assertEqual(requested_source, source)
+                client.source, client.settings, client.owner = requested_source, config, owner
+
+            def get(client, path, params=None, *, authenticated=False):
+                params = dict(params or {})
+                calls.append((path, params, authenticated))
+                self.assertEqual(authenticated, path in ('/agents/me', '/notifications'))
+                if path == '/agents/me':
+                    return {'id': owner}
+                if path == '/notifications':
+                    return []
+                if path == '/posts/' + root:
+                    return deepcopy(post)
+                self.assertEqual(path, '/posts/' + root + '/comments')
+                self.assertEqual(params.get('limit'), 2)
+                self.assertEqual(params.get('sort'), 'oldest')
+                number = params['page']
+                self.assertIn(number, pages)
+                return {'items': deepcopy(pages[number]), 'page': number, 'has_more': number == 1}
+
+        def progress(store):
+            return store.collection_state(source, owner, source)
+
+        with patch.object(providers, 'PAGE_SIZE', 2), patch.object(providers, 'MAX_PAGES', 1):
+            first = collect_all(self.store, sources, client_factory=PageClient)
+            self.assertEqual((first['added'], first['failed']), (1, False))
+            checkpoint = progress(self.store)
+            root_progress = checkpoint[1]['subscriptions']['roots'][root]
+            self.assertEqual(root_progress['page'], 2)
+            self.assertTrue(root_progress['owners'][uid(412)])
+            self.assertTrue(first['sources'][0]['backlog_pending'])
+            for mark in ('read', 'needs_reply'):
+                self.store.mark(source, uid(411), mark)
+            self.store.mark(source, uid(411), 'replied', ref='https://example.invalid/reply')
+            marked = self.store.show(source, uid(411))
+            self.store.set_paused(source, True)
+            reopened = Store(self.path)
+            paused_calls = list(calls)
+            with patch.object(providers, 'Client', side_effect=AssertionError('paused client loaded')):
+                paused = collect_all(reopened, sources, client_factory=lambda *_: self.fail('paused client created'))
+            self.assertEqual((paused['added'], paused['failed']), (0, False))
+            self.assertEqual(calls, paused_calls)
+            self.assertEqual(progress(reopened), checkpoint)
+            self.assertEqual(reopened.show(source, uid(411)), marked)
+            self.assertTrue(reopened.is_paused(source))
+            reopened.set_paused(source, False)
+            resumed = collect_all(reopened, sources, client_factory=PageClient)
+            self.assertEqual((resumed['added'], resumed['failed']), (1, False))
+            self.assertFalse(resumed['sources'][0]['backlog_pending'])
+            completed = progress(reopened)
+            self.assertNotIn('page', completed[1]['subscriptions']['roots'][root])
+            self.assertEqual(completed[2], checkpoint[2] + 1)
+            self.assertEqual(reopened.show(source, uid(413))['addressing'], 'direct')
+            self.assertEqual(reopened.show(source, uid(411)), marked)
+            self.assertEqual([call[1]['page'] for call in calls if call[0].endswith('/comments')], [1, 2])
+            # A later cycle revisits the head but does not duplicate old mail or marks.
+            replay = collect_all(reopened, sources, client_factory=PageClient)
+            self.assertEqual((replay['added'], replay['failed']), (0, False))
+            self.assertEqual(reopened.show(source, uid(411)), marked)
+            self.assertTrue(reopened.set_subscription(source, root, False))
+            boundary = len(calls)
+            unsubscribed = collect_all(Store(self.path), sources, client_factory=PageClient)
+            self.assertEqual((unsubscribed['added'], unsubscribed['failed']), (0, False))
+            self.assertFalse(any(path.startswith('/posts/') for path, _, _ in calls[boundary:]))
+            self.assertNotIn('subscriptions', progress(reopened)[1])
+            self.assertEqual(reopened.subscriptions(source), [])
+            self.assertEqual(reopened.show(source, uid(411)), marked)
+            self.assertEqual(progress(reopened)[0], {uid(411), uid(413)})
 
 
 if __name__ == '__main__':

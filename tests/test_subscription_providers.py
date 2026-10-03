@@ -475,6 +475,114 @@ class ClawdThreadClient(ClawdChatClient):
                 "returned_count": len(selected), "max_depth": params.get("max_depth", 2), "parent_id": params.get("parent_id")}
 
 
+class DepthLimitedClawdClient(ClawdThreadClient):
+    """One finite tree; every response expands exactly the requested relative depth.
+
+    Pagination selects only this page's roots. Counts use the entire underlying
+    tree, including descendants hidden by the depth boundary. No shallow reply is
+    omitted, and no saved provider progress is injected into the collector.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.originals[uid(100)] = clawd_original(100, title="Finite deep tree")
+        self.forest, self.nodes, self.edges = [], {}, {}
+        next_id = 1000
+
+        def chain(parent, length):
+            nonlocal next_id
+            first = None
+            for _ in range(length):
+                mid = uid(next_id)
+                next_id += 1
+                self.nodes[mid] = clawd_original(next_id - 1, parent_id=parent)
+                self.edges[mid] = []
+                if parent is None:
+                    self.forest.append(mid)
+                else:
+                    self.edges[parent].append(mid)
+                first = first or mid
+                parent = mid
+            return first, parent
+
+        # Twenty depth-20 cut parents fill the ordinary queue. Their parent
+        # listings each expose two chains through depth 40. Those cut nodes still
+        # have descendants through depth 61, so the finite frontier can need more
+        # work before any queued unit reaches a leaf.
+        for _ in range(20):
+            _, parent = chain(None, 20)
+            chain(parent, 41)
+            chain(parent, 41)
+        self.originals[uid(100)]["comment_count"] = len(self.nodes)
+
+    def get(self, path, params=None, *, authenticated=False):
+        if not path.endswith("/comments"):
+            return super().get(path, params, authenticated=authenticated)
+        if self.requests >= self.limit:
+            raise MailError("budget_exhausted")
+        self.requests += 1
+        self.calls.append((path, dict(params), authenticated))
+        assert not authenticated
+        assert path == "/posts/" + uid(100) + "/comments"
+        depth, skip, limit = params["max_depth"], params["skip"], params["limit"]
+        assert depth == 20 and skip >= 0 and limit > 0
+        parent = params.get("parent_id")
+        roots = self.edges[parent] if parent is not None else self.forest
+
+        def expand(mid, remaining):
+            children = self.edges[mid]
+            replies = [expand(child, remaining - 1) for child in children] if remaining > 1 else []
+            return {**self.nodes[mid], "replies": replies, "reply_count": len(children),
+                    "has_more_replies": len(replies) < len(children)}
+
+        selected = [expand(mid, depth) for mid in roots[skip:skip + limit]]
+
+        def count(nodes):
+            return sum(1 + count(node["replies"]) for node in nodes)
+
+        return {"success": True, "comments": selected, "total": len(roots),
+                "comment_count": len(self.nodes), "returned_count": count(selected),
+                "max_depth": depth, "parent_id": parent}
+
+
+class DefensiveClawdClient(DepthLimitedClawdClient):
+    """Small finite trees with the same depth/count contract, plus explicit faults.
+
+    Keys select one head or direct-child page, not an entire root. Empty faults
+    deliberately contradict that page's remaining total; ordinary responses
+    still come from the complete edge map and expand all shallow replies.
+    """
+
+    def __init__(self):
+        ClawdThreadClient.__init__(self)
+        self.originals[uid(100)] = clawd_original(100, title="Defensive finite tree")
+        self.forest, self.nodes, self.edges, self.faults = [], {}, {}, {}
+
+    def chain(self, first, length, parent=None):
+        for number in range(first, first + length):
+            mid = uid(number)
+            self.nodes[mid] = clawd_original(number, parent_id=parent)
+            self.edges[mid] = []
+            if parent is None:
+                self.forest.append(mid)
+            else:
+                self.edges[parent].append(mid)
+            parent = mid
+        self.originals[uid(100)]["comment_count"] = len(self.nodes)
+        return parent
+
+    def get(self, path, params=None, *, authenticated=False):
+        if not path.endswith("/comments"):
+            return super().get(path, params, authenticated=authenticated)
+        raw = super().get(path, params, authenticated=authenticated)
+        fault = self.faults.get((params.get("parent_id"), params["skip"]))
+        if isinstance(fault, str):
+            raise MailError(fault)
+        if fault is not None:
+            raw.update(fault)
+        return raw
+
+
 def node(n, parent=None, author=2, replies=(), more=False, **changes):
     return {**clawd_original(n, parent_id=uid(parent) if parent else None, author={"id": uid(author), "name": "agent-" + str(author)}, **changes),
             "replies": list(replies), "reply_count": len(replies) + (1 if more else 0), "has_more_replies": more}
@@ -628,6 +736,64 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         self.assertTrue(batches[-1].complete)
         self.assertEqual(heads, 1, 'Saved work completes before another head scan')
 
+    def test_depth_limited_finite_tree_drains_from_empty_state_at_default_bounds(self):
+        self.assert_finite_tree_drains(DepthLimitedClawdClient())
+
+    def test_depth_limited_tree_preserves_parent_pagination_between_passes(self):
+        with patch.object(clawd, "COMMENT_PAGE", 1):
+            client = DepthLimitedClawdClient()
+            self.assert_finite_tree_drains(client)
+        self.assertTrue(any(params.get("parent_id") and params["skip"] == 1
+                            for path, params, _ in client.calls if path.endswith("/comments")))
+
+    def test_deferred_parent_keeps_ownership_and_next_offset_across_restart(self):
+        client = DepthLimitedClawdClient()
+        parent = client.forest[0]
+        for _ in range(19):
+            parent = client.edges[parent][0]
+        client.nodes[parent]["author"] = {"id": uid(1), "name": "reader"}
+        second_child = client.edges[parent][1]
+        state, known, retained = {}, set(), False
+        with patch.object(clawd, "COMMENT_PAGE", 1), patch.object(clawd, "MAX_REQUESTS", 4), \
+                patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
+            for _ in range(8):
+                client.requests = 0
+                batch = self.collect(client, [100], state, known)
+                self.assertIsNone(batch.error)
+                known.update(by_id(batch))
+                state = json.loads(json.dumps(batch.state))
+                pages = state["subscriptions"]["roots"][uid(100)].get("deferred", [])
+                retained = retained or [parent, 1, True] in pages
+                if second_child in by_id(batch):
+                    self.assertEqual(by_id(batch)[second_child]["addressing"], "direct")
+                    break
+        self.assertTrue(retained, "The next direct-child page retains its parent's ownership")
+        self.assertIn(second_child, known)
+
+    def assert_finite_tree_drains(self, client):
+        self.assertEqual(len(client.nodes), 2040)
+        state, known, completed = {}, set(), False
+        for _ in range(12):
+            client.requests = 0
+            batch = self.collect(client, [100], state, known)
+            self.assertIsNone(batch.error)
+            self.assertLessEqual(client.requests, clawd.MAX_REQUESTS)
+            delivered = set(by_id(batch))
+            self.assertFalse(delivered & known, "Saved arrivals are not delivered twice")
+            known.update(delivered)
+            state = json.loads(json.dumps(batch.state))
+            progress = state["subscriptions"]["roots"][uid(100)]
+            self.assertLessEqual(len(progress["pending"]), clawd.MAX_PENDING_PARENTS)
+            self.assertLessEqual(len(progress.get("deferred", [])), clawd.MAX_SERVED)
+            queued = [entry[0] for entry in progress["pending"] + progress.get("deferred", [])]
+            self.assertEqual(len(queued), len(set(queued)), "Work units are not duplicated across queues")
+            if batch.complete:
+                completed = True
+                break
+        self.assertTrue(completed, "The finite depth-respecting tree must finish under identical budgets")
+        self.assertEqual(known, set(client.nodes), "Every finite branch must be collected")
+        self.assertEqual(state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
+
     def test_full_parent_queue_retains_the_page_until_its_children_are_serviced(self):
         client = ClawdThreadClient()
         client.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
@@ -670,6 +836,165 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         self.assertEqual(batch.unavailable, 1)
         self.assertIn(uid(11), by_id(batch))
         self.assertEqual(batch.state["subscriptions"]["next"], uid(100))
+
+    def test_unavailable_child_retires_only_its_unit_and_retries_next_cycle(self):
+        for code in ("http_403", "http_404", "http_410"):
+            with self.subTest(code=code):
+                client = DefensiveClawdClient()
+                client.chain(101, 21)
+                client.chain(201, 21)
+                client.chain(301, 1)
+                client.faults[(uid(220), 0)] = code
+                with patch.object(clawd, "COMMENT_PAGE", 2):
+                    batch = self.collect(client, [100])
+                self.assertEqual(set(by_id(batch)), set(client.nodes) - {uid(221)},
+                                 "The independent parent and later head page still drain")
+                self.assertEqual((batch.error, batch.complete, batch.unavailable), (code, False, 1))
+                self.assertIn(uid(100), {item["id"] for item in batch.originals})
+                self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
+                client.requests = 0
+                client.faults.clear()
+                with patch.object(clawd, "COMMENT_PAGE", 2):
+                    retry = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+                self.assertEqual(set(by_id(retry)), {uid(221)})
+                self.assertEqual((retry.error, retry.complete, retry.unavailable), (None, True, 0))
+
+    def test_child_unavailability_keeps_healthy_root_offset_and_sibling_checkpoint(self):
+        client = DefensiveClawdClient()
+        client.chain(101, 21)
+        client.chain(201, 21)
+        client.chain(301, 1)
+        client.faults[(uid(220), 0)] = "http_404"
+        with patch.object(clawd, "COMMENT_PAGE", 2), patch.object(clawd, "MAX_REQUESTS", 5), \
+                patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
+            batch = self.collect(client, [100])
+        progress = batch.state["subscriptions"]["roots"][uid(100)]
+        self.assertEqual(progress, {"skip": 2, "pending": [[uid(120), 0, False]]})
+        self.assertEqual((batch.error, batch.complete, batch.unavailable), ("http_404", False, 1))
+        client.requests = 0
+        client.calls.clear()
+        resumed = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+        self.assertEqual(set(by_id(resumed)), {uid(121), uid(301)})
+        self.assertEqual([p.get("parent_id") for path, p, _ in client.calls if path.endswith("/comments")],
+                         [uid(120), None], "The failed parent is not retried ahead of healthy saved work")
+        self.assertTrue(resumed.complete)
+
+    def test_unavailable_deferred_child_page_does_not_block_later_head(self):
+        client = DefensiveClawdClient()
+        parent = client.chain(101, 20)
+        client.chain(121, 1, parent)
+        client.chain(122, 1, parent)
+        client.chain(301, 1)
+        client.faults[(parent, 1)] = "http_410"
+        with patch.object(clawd, "COMMENT_PAGE", 1):
+            batch = self.collect(client, [100])
+        self.assertEqual(set(by_id(batch)), set(client.nodes) - {uid(122)})
+        self.assertEqual((batch.error, batch.complete, batch.unavailable), ("http_410", False, 1))
+        listing = [(p.get("parent_id"), p["skip"]) for path, p, _ in client.calls if path.endswith("/comments")]
+        self.assertEqual(listing, [(None, 0), (parent, 0), (parent, 1), (None, 1)])
+
+    def test_unavailable_root_still_resets_only_that_root(self):
+        for code in ("http_403", "http_404", "http_410"):
+            with self.subTest(code=code):
+                client = DefensiveClawdClient()
+                client.chain(11, 1)
+                client.originals[uid(101)] = MailError(code)
+                state = {"subscriptions": {"next": uid(101), "roots": {
+                    uid(101): {"skip": 7, "pending": [[uid(12), 0, False]]}}}}
+                batch = self.collect(client, [101, 100], state)
+                self.assertEqual(set(by_id(batch)), {uid(11)})
+                self.assertEqual(batch.state["subscriptions"]["roots"][uid(101)], {})
+                self.assertEqual((batch.error, batch.complete, batch.unavailable), (None, True, 1))
+
+    def test_empty_nonterminal_head_retains_offset_and_resumes_without_duplicates(self):
+        client = DefensiveClawdClient()
+        for number in (11, 12, 13):
+            client.chain(number, 1)
+        client.faults[(None, 1)] = {"comments": [], "returned_count": 0}
+        with patch.object(clawd, "COMMENT_PAGE", 1):
+            batch = self.collect(client, [100])
+        self.assertEqual(set(by_id(batch)), {uid(11)})
+        self.assertEqual((batch.error, batch.complete), ("pagination_no_progress", False))
+        self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 1, "pending": []})
+        client.requests = 0
+        client.faults.clear()
+        retry = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+        self.assertEqual(set(by_id(retry)), {uid(12), uid(13)})
+        self.assertEqual((retry.error, retry.complete), (None, True))
+
+    def test_empty_nonterminal_parent_retains_active_or_deferred_position_and_ownership(self):
+        for offset in (0, 1):
+            with self.subTest(offset=offset):
+                client = DefensiveClawdClient()
+                parent = client.chain(101, 20)
+                client.nodes[parent]["author"] = {"id": uid(1), "name": "me"}
+                client.chain(121, 1, parent)
+                client.chain(122, 1, parent)
+                client.chain(301, 1)
+                client.faults[(parent, offset)] = {"comments": [], "returned_count": 0}
+                with patch.object(clawd, "COMMENT_PAGE", 1):
+                    batch = self.collect(client, [100])
+                self.assertEqual((batch.error, batch.complete), ("pagination_no_progress", False))
+                progress = batch.state["subscriptions"]["roots"][uid(100)]
+                self.assertEqual(progress["skip"], 1)
+                self.assertEqual(progress["pending"] + progress.get("deferred", []), [[parent, offset, True]])
+                self.assertEqual(bool(progress.get("deferred")), offset == 1)
+                client.requests = 0
+                client.faults.clear()
+                retry = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+                self.assertEqual(set(by_id(retry)), {uid(121), uid(122), uid(301)} - set(by_id(batch)))
+                self.assertEqual(by_id(retry)[uid(122)]["addressing"], "direct")
+                self.assertEqual((retry.error, retry.complete), (None, True))
+
+    def test_empty_terminal_pages_finish_when_counts_shrink(self):
+        client = DefensiveClawdClient()
+        empty = self.collect(client, [100])
+        self.assertEqual((empty.error, empty.complete, empty.messages), (None, True, []))
+        for parent_page in (False, True):
+            with self.subTest(parent_page=parent_page):
+                client = DefensiveClawdClient()
+                if parent_page:
+                    parent = client.chain(101, 20)
+                    client.chain(121, 1, parent)
+                    client.chain(122, 1, parent)
+                else:
+                    client.chain(121, 1)
+                    client.chain(122, 1)
+                cap = 5 if parent_page else 4
+                with patch.object(clawd, "COMMENT_PAGE", 1), patch.object(clawd, "MAX_REQUESTS", cap), \
+                        patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
+                    first = self.collect(client, [100])
+                self.assertFalse(first.complete)
+                self.assertIsNone(first.error)
+                if parent_page:
+                    client.edges[parent].remove(uid(122))
+                else:
+                    client.forest.remove(uid(122))
+                del client.nodes[uid(122)], client.edges[uid(122)]
+                client.originals[uid(100)]["comment_count"] = len(client.nodes)
+                client.requests = 0
+                client.calls.clear()
+                final = self.collect(client, [100], json.loads(json.dumps(first.state)), set(by_id(first)))
+                self.assertEqual((final.error, final.complete, final.messages), (None, True, []))
+                listing = [p for path, p, _ in client.calls if path.endswith("/comments")]
+                self.assertEqual(listing[0]["skip"], 1, "The checkpoint is tested against a now-terminal empty page")
+                self.assertEqual(listing[0].get("parent_id"), parent if parent_page else None)
+
+    def test_parent_page_totals_use_the_same_validation_as_head_pages(self):
+        for parent_page in (False, True):
+            for total in (-1, True, 2**63, "1"):
+                with self.subTest(parent_page=parent_page, total=total):
+                    client = DefensiveClawdClient()
+                    parent = client.chain(101, 21)
+                    key = (uid(120), 0) if parent_page else (None, 0)
+                    client.faults[key] = {"total": total}
+                    batch = self.collect(client, [100])
+                    self.assertEqual((batch.error, batch.complete), ("invalid_response", False))
+                    progress = batch.state["subscriptions"]["roots"][uid(100)]
+                    if parent_page:
+                        self.assertEqual(progress["pending"], [[uid(120), 0, False]])
+                    else:
+                        self.assertEqual(progress, {"skip": 0, "pending": []})
 
 
 class FourclawSubscriptionTests(unittest.TestCase):

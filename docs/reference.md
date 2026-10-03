@@ -4,7 +4,7 @@ For the first run, use the [README](../README.md). For a consumer loop, use the 
 
 ## Configuration and upgrades
 
-The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local commands need no config when `--db` is supplied; an explicit `--config` also enables remote `context` and `expand` unless `--local` is given.
+The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local reads need no config when `--db` is supplied; an explicit `--config` also enables remote `context` and `expand` unless `--local` is given.
 
 Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
 
@@ -12,7 +12,9 @@ Unknown settings for built-in adapters return `invalid_config`, including settin
 
 Built-ins other than Botnet accept optional `mention_aliases`: nonblank strings up to 100 characters, stripped and deduplicated. 4claw also enforces its handle rules. Collectors match explicit `@aliases` and names from the existing verified profile where available. Postingboard also retains its existing literal alias/search discovery. Aliases are source configuration, distinct from consumer reading preferences; Fruitflies can discover them in its already scanned feed.
 
-`init` creates a new database and refuses any existing file. It is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. Optional `discovery`/`addressing` columns and the public-original cache are added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. They ignore the new reading preferences. Local reads do not migrate existing databases. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
+`init` creates a new database and refuses any existing file. With explicit `--config`, it validates the config before creating the database and seeds the configured source, account and adapter identities, including when `--db` overrides the configured path. Missing or invalid explicit config fails without creating a database. `boardmail --db PATH init` without `--config` creates an empty inbox without loading config. Initialization reads no credential files and makes no provider requests.
+
+`init` is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. Optional `discovery`/`addressing` columns and the public-original cache are added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. They ignore the new reading preferences. Local reads do not migrate existing databases. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
 
 Package installation is separate from collection and database migration. Boardmail has no automatic package updater. For an unpinned registry installation, run `uv tool upgrade boardmail`; existing version constraints remain in effect. To switch from a Git or wheel installation, or replace an old pin, use `uv tool install --force 'boardmail>=0.14.0'`. Use `'boardmail[mcp]>=0.14.0'` if your installation needs MCP. Stop running collectors and MCP servers before replacing their environment, back up the config and database, then restart them. See the [release notes](../CHANGELOG.md) and [uv's tool upgrade guide](https://docs.astral.sh/uv/guides/tools/#upgrading-tools).
 
@@ -310,3 +312,27 @@ Replace `SOURCE ID` with a delivered message's exact identity. The default handl
 The summary distinguishes unique `(source, id)` messages, delivery attempts, summary attempts and outcomes. Replays add attempts and delivered characters; an `unrecorded` replay never erases an earlier explicit outcome. Outcome counts use the latest explicit assertion per message, with `unrecorded` retained for messages without one. `by_reading` groups observations by the settings used for each delivery; a message can occur in several groups, so their unique-message and outcome counts are not additive. These observations do not establish a causal benefit from a reading preference.
 
 Use one writer for the example's ledger and checkpoint. The ledger is flushed before advancing the checkpoint. A handler or ledger error keeps the preceding checkpoint, so replay remains possible; external actions still need their own idempotency or verified readback. Ledger-only commands neither read the inbox nor alter Boardmail marks.
+
+### Recover a damaged optional ledger
+
+The example parses every nonblank ledger line strictly. A malformed or incomplete
+JSON record stops delivery, summary and outcome recording before any append or
+checkpoint change. It does not silently skip the damaged record. This refusal
+preserves the ledger, checkpoint and inbox; it is not an automatic repair.
+
+Stop the ledger/checkpoint writer and preserve copies of all three files before
+inspection. Inspect the ledger without appending to it. To resume, explicitly choose
+one of these paths:
+
+- Create a separate repaired copy, review every retained record and any deliberate
+  removal, and verify that copy with `--ledger COPY --summarize`. Resume delivery with
+  that copy and the retained checkpoint. Keep the original damaged ledger.
+- Select a new, absent `--ledger` path and resume with the retained checkpoint, or
+  omit the optional ledger. A fresh ledger starts a separate observation history;
+  its attempt numbers and outcomes do not include the old records.
+
+Do not reset the checkpoint or delete the inbox to repair observations. The retained
+checkpoint permits replay of work not yet checkpointed, including work whose handler
+already completed. Reconcile external actions through their own idempotency or
+verified readback before acting again. Removing a partial observation cannot establish
+whether an external action occurred, and a fresh ledger is not a merged history.

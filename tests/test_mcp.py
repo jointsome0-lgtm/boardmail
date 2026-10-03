@@ -1,6 +1,8 @@
 """Real SDK clients, invented public mail, and the modern HTTP request path."""
 import asyncio
+from contextlib import asynccontextmanager
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -477,6 +479,31 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(tool.annotations.idempotent_hint)
                     self.assertFalse(tool.annotations.read_only_hint or tool.annotations.open_world_hint)
 
+    async def test_explicit_init_config_matches_cli_with_database_override(self):
+        config = self.path.with_name('config.json')
+        config.write_text(json.dumps({'database': 'configured.sqlite3', 'sources': {
+            'research': {'adapter': 'moltbook', 'account_id': uid(2),
+                         'api_key_file': 'missing-key'}}}))
+        cli_path = self.path.with_name('cli.sqlite3')
+        run = await asyncio.to_thread(subprocess.run,
+            [sys.executable, '-B', '-m', 'boardmail', '--config', str(config),
+             '--db', str(cli_path), 'init'], capture_output=True, text=True, timeout=10)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        cli_result = json.loads(run.stdout)
+        params = StdioServerParameters(command=sys.executable,
+            args=['-B', '-m', 'boardmail.mcp', '--config', str(config), '--db', str(self.path)])
+        async with Client(params, mode='2026-07-28', read_timeout_seconds=5) as c:
+            result = await self.call(c, 'init')
+        self.assertEqual(result, cli_result)
+        self.assertEqual([(s['source'], s['account_id']) for s in result['sources']],
+                         [('research', uid(2))])
+        for path in (self.path, cli_path):
+            with Store(path).connect() as db:
+                self.assertEqual(tuple(db.execute('SELECT source, adapter FROM adapter_state').fetchone()),
+                                 ('research', 'moltbook'))
+        self.assertFalse((config.parent/'configured.sqlite3').exists())
+        self.assertFalse((config.parent/'missing-key').exists())
+
     async def test_stdio_modern_and_legacy_clients(self):
         self.store.initialize()
         params = StdioServerParameters(command=sys.executable,
@@ -537,3 +564,262 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.json()['result']['structuredContent']['event'],'timeout')
                 response = await request('tools/list', **{'Host':'evil.example'})
                 self.assertEqual(response.status_code,421)
+
+
+@unittest.skipIf(Client is None, 'Install the optional MCP extra to test stdio lifecycle')
+class MCPLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    """Real subprocess transport with finite, private observation fixtures."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root/'mail.sqlite3'
+        self.store = Store(self.path)
+        self.source_root = Path(__file__).resolve().parents[1]
+        self.env = {'PATH': os.environ.get('PATH', ''), 'LANG': 'C.UTF-8',
+                    'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
+                    'PYTHONPATH': os.pathsep.join((str(self.source_root), os.environ.get('PYTHONPATH', '')))}
+        if 'BOARDMAIL_LIFECYCLE_FIXTURE_END' in os.environ:
+            self.env['BOARDMAIL_LIFECYCLE_FIXTURE_END'] = os.environ['BOARDMAIL_LIFECYCLE_FIXTURE_END']
+        for variable in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
+                         'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
+            directory = self.root/variable.lower()
+            directory.mkdir(mode=0o700)
+            self.env[variable] = str(directory)
+
+    SERVER_DEADLINE = '''import os, signal, time
+remaining = float(os.environ.get('BOARDMAIL_LIFECYCLE_FIXTURE_END', time.monotonic() + 15)) - time.monotonic()
+signal.signal(signal.SIGALRM, lambda *args: os._exit(124))
+signal.setitimer(signal.ITIMER_REAL, max(0.001, min(15, remaining)))
+'''
+
+    async def until(self, predicate, seconds=3):
+        deadline = asyncio.get_running_loop().time() + seconds
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                self.fail('Lifecycle observation did not finish within its bound')
+            await asyncio.sleep(0.01)
+
+    @asynccontextmanager
+    async def stdio(self, *arguments, observer=None):
+        import anyio
+        from anyio.abc import ObjectReceiveStream
+        from mcp.client.stdio import stdio_client
+
+        processes, frames = [], []
+        original_spawn = anyio.open_process
+        async def spawn(*args, **kwargs):
+            process = await original_spawn(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        class ObservedRead(ObjectReceiveStream):
+            async def receive(inner):
+                frame = await incoming.receive()
+                frames.append(frame)
+                return frame
+            async def aclose(inner):
+                await incoming.aclose()
+
+        # SDK children have separate process groups; a fixture deadline bounds them
+        # even if the outer test runner exits. A deadline exit can never satisfy exit 0.
+        script = self.SERVER_DEADLINE + (observer or "import runpy; runpy.run_module('boardmail.mcp', run_name='__main__')")
+        launch = ['-B', '-c', script, *([str(self.root)] if observer is not None else [])]
+        params = StdioServerParameters(command=sys.executable, args=[*launch, *arguments],
+                                       env=self.env, cwd=self.source_root)
+        with (self.root/'server-stderr.txt').open('w') as stderr:
+            @asynccontextmanager
+            async def transport():
+                nonlocal incoming
+                async with stdio_client(params, errlog=stderr) as (incoming, outgoing):
+                    yield ObservedRead(), outgoing
+            incoming = None
+            # Observe the public process API; transport and client keep their normal behavior.
+            with patch.object(anyio, 'open_process', side_effect=spawn):
+                async with Client(transport(), mode='2026-07-28', read_timeout_seconds=5) as client:
+                    yield client, processes, frames
+
+    def assert_frames(self, frames):
+        self.assertTrue(frames)
+        for frame in frames:
+            self.assertNotIsInstance(frame, Exception)
+            self.assertEqual(frame.message.model_dump(by_alias=True)['jsonrpc'], '2.0')
+
+    async def call(self, client, name, arguments=None):
+        reply = await asyncio.wait_for(client.call_tool('boardmail_' + name, arguments or {}), 3)
+        self.assertFalse(reply.is_error, reply)
+        self.assertEqual(json.loads(reply.content[0].text), reply.structured_content)
+        return reply.structured_content
+
+    async def test_stdio_startup_config_errors_leave_stdout_empty(self):
+        config = self.root/'config.json'
+        for contents, code, error in ((None, 5, 'config_missing'),
+                                      ('{private-fixture-marker', 2, 'invalid_config'),
+                                      ('{"database":"unused.sqlite3","sources":{}}', 2, 'invalid_config')):
+            with self.subTest(error=error, contents=contents):
+                if contents is not None:
+                    config.write_text(contents)
+                run = await asyncio.to_thread(subprocess.run,
+                    [sys.executable, '-B', '-m', 'boardmail.mcp', '--config', str(config),
+                     '--db', str(self.path)], cwd=self.source_root, env=self.env,
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual((run.returncode, run.stdout), (code, ''))
+                self.assertLess(len(run.stderr), 1024)
+                self.assertEqual(len(run.stderr.splitlines()), 1)
+                self.assertEqual(json.loads(run.stderr)['error'], error)
+                self.assertNotIn('private-fixture-marker', run.stderr)
+                self.assertFalse(self.path.exists())
+
+    WAIT_OBSERVER = '''import json, sys
+from pathlib import Path
+from boardmail.store import Store
+from boardmail.mcp import main
+directory = Path(sys.argv.pop(1))
+original_wait = Store.wait
+def observed_wait(self, *args, **kwargs):
+    (directory/'wait-started').touch()
+    result = original_wait(self, *args, **kwargs)
+    pending = directory/'wait-finished.tmp'
+    pending.write_text(json.dumps(result))
+    pending.replace(directory/'wait-finished')
+    return result
+Store.wait = observed_wait
+raise SystemExit(main())
+'''
+
+    def wait_fixture(self):
+        self.store.initialize()
+        self.store.save('fixture', uid(2), [mail(10)])
+        return self.path.read_bytes()
+
+    def assert_cancelled_wait(self, before):
+        result = json.loads((self.root/'wait-finished').read_text())
+        self.assertEqual((result['event'], result['next_after'], result['scanned']), ('cancelled', 1, 0))
+        self.assertEqual(result['next_action'], 'keep_checkpoint')
+        self.assertEqual((result['messages'], result['thread_activity']), ([], []))
+        self.assertEqual(self.path.read_bytes(), before)
+
+    @unittest.skipUnless(os.name == 'posix', 'Observes the SDK POSIX subprocess API')
+    async def test_stdio_wait_cancellation_finishes_worker_and_keeps_checkpoint(self):
+        before = self.wait_fixture()
+        async with self.stdio('--db', str(self.path), observer=self.WAIT_OBSERVER) as (client, processes, frames):
+            waiter = asyncio.create_task(client.call_tool('boardmail_wait', {'after': 1, 'timeout': 60}))
+            try:
+                await self.until((self.root/'wait-started').exists)
+                self.assertEqual((await self.call(client, 'status'))['counts']['latest_arrival'], 1)
+                waiter.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await waiter
+                await self.until((self.root/'wait-finished').exists)
+                self.assert_cancelled_wait(before)
+                timeout = await self.call(client, 'wait', {'after': 1, 'timeout': 0})
+                self.assertEqual((timeout['event'], timeout['next_after']), ('timeout', 1))
+                self.assert_frames(frames)
+            finally:
+                waiter.cancel()
+                await asyncio.gather(waiter, return_exceptions=True)
+        self.assertEqual([process.returncode for process in processes], [0])
+
+    @unittest.skipUnless(os.name == 'posix', 'Observes the SDK POSIX subprocess API')
+    async def test_stdio_eof_during_wait_exits_cleanly_and_finishes_worker(self):
+        before = self.wait_fixture()
+        async with self.stdio('--db', str(self.path), observer=self.WAIT_OBSERVER) as (client, processes, frames):
+            waiter = asyncio.create_task(client.call_tool('boardmail_wait', {'after': 1, 'timeout': 60}))
+            try:
+                await self.until((self.root/'wait-started').exists)
+                await self.call(client, 'status')
+                self.assertEqual(len(processes), 1)
+                process = processes[0]
+                await process.stdin.aclose()  # Real pipe EOF while the production worker is active.
+                await self.until(lambda: process.returncode is not None)
+                self.assertEqual(process.returncode, 0)  # Before SDK context cleanup can terminate it.
+                await self.until((self.root/'wait-finished').exists)
+                self.assert_cancelled_wait(before)
+                self.assert_frames(frames)
+            finally:
+                waiter.cancel()
+                await asyncio.gather(waiter, return_exceptions=True)
+        self.assertEqual(process.returncode, 0)
+
+    async def noisy_collection(self, cancel_first):
+        adapter = self.root/'noisy.py'
+        adapter.write_text('''import json, sys, time
+from pathlib import Path
+from boardmail.adapters import Batch
+API_VERSION = 1
+print('harmless-adapter-stdout-marker')
+print('harmless-adapter-stderr-marker', file=sys.stderr)
+def collect(settings, state, known):
+    directory = Path(settings['config_dir'])
+    active = directory/'active'
+    active.touch(exist_ok=False)
+    number = state.get('passes', 0) + 1
+    def record(event):
+        with (directory/'order.jsonl').open('a') as stream:
+            stream.write(json.dumps([event, number]) + '\\n')
+    try:
+        record('start')
+        (directory/('started-' + str(number))).touch()
+        print('harmless-adapter-stdout-marker')
+        print('harmless-adapter-stderr-marker', file=sys.stderr)
+        if number == 1:
+            deadline = time.monotonic() + 5
+            while not (directory/'release').exists():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Finite fixture release deadline')
+                time.sleep(0.01)
+        message = dict(id='one', thread_id='root', kind='mention', parent_id=None,
+                       author='Invented', title='', body='Invented lifecycle fixture',
+                       url='https://example.invalid/one', created_at=1)
+        return Batch(messages=[] if 'one' in known else [message], state={'passes': number})
+    finally:
+        record('end')
+        active.unlink()
+''')
+        config = self.root/'config.json'
+        config.write_text(json.dumps({'database': str(self.path), 'sources': {
+            'fixture': {'adapter': str(adapter), 'account_id': 'invented-account'}}}))
+        async with self.stdio('--config', str(config)) as (client, processes, frames):
+            await self.call(client, 'init')
+            first = asyncio.create_task(self.call(client, 'collect'))
+            other = None
+            try:
+                await self.until((self.root/'started-1').exists)
+                other = asyncio.create_task(self.call(client, 'check'))
+                await asyncio.sleep(0)
+                # This result must cross actual stdio while the adapter owns redirected streams.
+                status = await self.call(client, 'status')
+                self.assertEqual(status['counts']['total'], 0)
+                self.assertFalse((self.root/'started-2').exists())
+                if cancel_first:
+                    first.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await first
+                (self.root/'release').touch()
+                if cancel_first:
+                    checked = await other
+                    self.assertEqual((checked['collection']['added'], checked['scanned']), (0, 1))
+                else:
+                    collected, checked = await asyncio.gather(first, other)
+                    self.assertEqual((collected['added'], checked['collection']['added']), (1, 0))
+                self.assertEqual(checked['next_after'], 1)
+                self.assertEqual((await self.call(client, 'status'))['counts']['total'], 1)
+                self.assertEqual([json.loads(line) for line in (self.root/'order.jsonl').read_text().splitlines()],
+                                 [['start', 1], ['end', 1], ['start', 2], ['end', 2]])
+                self.assert_frames(frames)
+                wire = '\n'.join(frame.message.model_dump_json(by_alias=True) for frame in frames)
+                self.assertNotIn('harmless-adapter-', wire)
+            finally:
+                (self.root/'release').touch(exist_ok=True)
+                await asyncio.gather(first, *([other] if other else []), return_exceptions=True)
+        self.assertEqual([process.returncode for process in processes], [0])
+        self.assertNotIn('harmless-adapter-', (self.root/'server-stderr.txt').read_text())
+
+    @unittest.skipUnless(os.name == 'posix', 'Observes the SDK POSIX subprocess API')
+    async def test_stdio_noisy_adapter_keeps_frames_and_serializes_collectors(self):
+        await self.noisy_collection(cancel_first=False)
+
+    @unittest.skipUnless(os.name == 'posix', 'Observes the SDK POSIX subprocess API')
+    async def test_stdio_cancelled_noisy_collect_keeps_lock_until_worker_finishes(self):
+        await self.noisy_collection(cancel_first=True)

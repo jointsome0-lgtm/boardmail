@@ -239,6 +239,48 @@ class ExpandReuseTests(unittest.TestCase):
         self.path = Path(self.temp.name) / 'mail.sqlite3'
         self.store = Store(self.path); self.store.initialize()
 
+    def test_conflicting_saved_relatives_require_local_integrity_or_current_originals(self):
+        cfg = {'account_id': uid(1), 'adapter': 'clawdchat'}
+        self.store.save('clawdchat', uid(1), [
+            dict(mail(100), thread_id=uid(999)), dict(mail(11), thread_id=uid(999)),
+            dict(mail(12), parent_id=uid(100)), dict(mail(13), parent_id=uid(11))])
+        self.store.mark('clawdchat', uid(12), 'read')
+        self.store.mark('clawdchat', uid(13), 'needs_reply')
+        saved = {mid: self.store.show('clawdchat', mid) for mid in (uid(12), uid(13))}
+        before = self.path.read_bytes()
+        client = ClawdClient()
+        client.originals = {uid(100): clawd_original(100, title='Current thread'),
+                            uid(11): clawd_original(11, content='Current parent.'),
+                            uid(12): clawd_original(12, parent_id=uid(100)),
+                            uid(13): clawd_original(13, parent_id=uid(11))}
+        get = client.get
+        def unavailable(*args, **kwargs):
+            raise MailError('http_503')
+        for mode in ('local', 'unavailable', 'current'):
+            with self.subTest(mode=mode):
+                client.get = get if mode == 'current' else unavailable
+                with patch.object(adapter_clawdchat, 'Client', return_value=client) as factory:
+                    result, code = commands.execute(self.store, 'expand', source='clawdchat', thread=uid(100),
+                                                    through=4, sources={'clawdchat': cfg}, local=mode == 'local')
+                    if mode == 'local': factory.assert_not_called()
+                self.assertEqual([item['id'] for item in result['items']], [uid(12), uid(13)])
+                self.assertEqual((code, result['complete']), (0, True) if mode == 'current' else (1, False))
+                for item in result['items']:
+                    self.assertEqual(item['target']['message'], saved[item['id']])
+                    self.assertEqual(item['complete'], mode == 'current')
+                self.assertEqual(result['items'][0]['parent'], {'id': uid(100), 'status': 'same_as_root'})
+                if mode == 'current':
+                    self.assertEqual(result['root']['origin'], 'remote')
+                    self.assertEqual(result['root']['message']['thread_id'], uid(100))
+                    self.assertEqual(result['items'][1]['parent']['message']['body'], 'Current parent.')
+                else:
+                    self.assertEqual((result['root']['status'], result['root']['error'], result['root']['message']),
+                                     ('unavailable', 'invalid_response', None))
+                    self.assertEqual((result['items'][1]['parent']['status'], result['items'][1]['parent']['error']),
+                                     ('unavailable', 'invalid_response'))
+                self.assertFalse(result['checkpoint_safe'])
+                self.assertEqual(self.path.read_bytes(), before)
+
     def test_moltbook_comment_pages_are_read_once_for_every_target_and_parent(self):
         cfg = {**settings()['moltbook'], 'adapter': 'moltbook'}
         client = FixtureClient('moltbook', cfg)

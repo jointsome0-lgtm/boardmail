@@ -105,6 +105,39 @@ class AgentLoopTests(unittest.TestCase):
                                      '--ledger', str(self.ledger), '--once'])
         self.assertFalse(checkpoint.exists())
 
+    def test_malformed_tail_refuses_changes_and_explicit_fresh_ledger_can_resume(self):
+        store = Store(self.root/'inbox.sqlite3')
+        store.initialize()
+        store.save('moltbook', uid(2), [dict(mail(10), addressing='direct')])
+        checkpoint = self.root/'after.txt'
+        checkpoint.write_text('0\n')
+        agent_loop.append_ledger(self.ledger, {'event': 'delivery', 'source': 'moltbook', 'id': uid(10),
+            'arrival_seq': 1, 'attempt': 1, 'reading': {'scope': 'addressed', 'context': 'brief'},
+            'delivered_chars': 14, 'outcome': 'unrecorded'})
+        with self.ledger.open('ab') as stream:
+            stream.write(b'{"event":"delivery",')
+        before = {path: path.read_bytes() for path in (self.ledger, checkpoint, store.path)}
+        delivery = ['--db', str(store.path), '--checkpoint', str(checkpoint), '--once']
+        for mode in (delivery, ['--summarize'],
+                     ['--record-outcome', 'moltbook', uid(10), '--outcome', 'resolved']):
+            with self.subTest(mode=mode), patch.object(agent_loop, 'deliver') as handler, \
+                    patch.object(agent_loop.subprocess, 'run') as command:
+                with self.assertRaises(json.JSONDecodeError):
+                    agent_loop.main(['--ledger', str(self.ledger), *mode])
+                handler.assert_not_called()
+                command.assert_not_called()
+                for path, content in before.items():
+                    self.assertEqual(path.read_bytes(), content)
+        fresh = self.root/'fresh-delivery.jsonl'
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(agent_loop.main(['--ledger', str(fresh), *delivery]), 0)
+        self.assertEqual(checkpoint.read_text(), '1\n')
+        entries = agent_loop.load_ledger(fresh)
+        self.assertEqual([(row['id'], row['attempt'], row['outcome']) for row in entries],
+                         [(uid(10), 1, 'unrecorded')])
+        self.assertEqual(self.ledger.read_bytes(), before[self.ledger])
+        self.assertEqual(store.path.read_bytes(), before[store.path])
+
 
 if __name__ == '__main__':
     unittest.main()

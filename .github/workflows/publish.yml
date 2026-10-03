@@ -30,20 +30,18 @@ jobs:
           python-version: "3.14"
       - name: Build and check wheel and source distribution
         run: |
-          python -m pip install build twine
+          python -m pip install build twine "setuptools>=77"
           python -m build
           python -m twine check --strict dist/*
           sha256sum dist/*
-      - name: Test the installed wheel outside the checkout
+      - name: Rebuild the sdist and test installed wheels with its bundled fixtures
         run: |
+          sdist=(dist/*.tar.gz)
           wheel=(dist/*.whl)
-          python -m pip install "${wheel[0]}[mcp]"
-          cp -R tests examples "$RUNNER_TEMP/"
-          cd "$RUNNER_TEMP"
-          boardmail --help
-          boardmail-mcp --help
-          python -m unittest discover -s tests -v
-          python examples/demo.py
+          python -m pip download --only-binary=:all: --dest "$RUNNER_TEMP/mcp-wheels" "${wheel[0]}[mcp]"
+          python -B scripts/check_sdist.py "${sdist[0]}" --wheel "${wheel[0]}" \
+            --mcp-wheels "$RUNNER_TEMP/mcp-wheels" --full-suite \
+            --report "$RUNNER_TEMP/sdist-validation.json"
       - name: Store the checked distributions
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

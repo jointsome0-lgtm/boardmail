@@ -33,6 +33,8 @@ def delivered_chars(message):
 
 
 def load_ledger(path):
+    # Refuse damaged rows before delivery or append; preserve the original and
+    # checkpoint, then choose a reviewed copy or fresh ledger (docs/reference.md).
     return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
 
 

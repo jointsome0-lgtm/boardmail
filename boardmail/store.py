@@ -7,7 +7,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from .config import COVERAGE, SUBSCRIPTION_ADAPTERS, MailError
+from .config import COVERAGE, LEGACY_ADAPTERS, SUBSCRIPTION_ADAPTERS, MailError
 from . import reader, replies, tags
 
 STALE_AFTER = 540
@@ -147,7 +147,12 @@ class Store:
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
                 adapter = str(settings.get("adapter", source))
-                if progress is not None and progress["adapter"] != adapter:
+                previous_adapter = progress["adapter"] if progress is not None else None
+                if (previous_adapter is None and row is not None and source in LEGACY_ADAPTERS
+                        and db.execute("PRAGMA user_version").fetchone()[0] == 1):
+                    # Version 1 used fixed source names before adapter bindings existed.
+                    previous_adapter = source
+                if previous_adapter is not None and previous_adapter != adapter:
                     raise MailError("adapter_mismatch")
             else:
                 if progress is None:
@@ -202,9 +207,9 @@ class Store:
                 state = json.dumps(batch.state, allow_nan=False)
                 unchanged = (json.dumps(json.loads(state), sort_keys=True) ==
                              json.dumps(json.loads(row["state"]) if row else {}, sort_keys=True))
-                # A failed preflight has health to report, but cannot invalidate
-                # a concurrent collector's checkpoint when it made no progress.
-                advance = not (batch.error and not batch.messages and unchanged)
+                # A failed preflight reports health without invalidating a concurrent
+                # collector's checkpoint. Cached originals also count as progress.
+                advance = not (batch.error and not batch.messages and not batch.originals and unchanged)
                 db.execute("""INSERT INTO adapter_state VALUES (?,?,?,?,?) ON CONFLICT(source) DO UPDATE SET
                     revision=excluded.revision,state=excluded.state,backlog_pending=excluded.backlog_pending""",
                     (source, adapter, revision+int(advance), state, not batch.complete))
