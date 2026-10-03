@@ -5,7 +5,6 @@ from pathlib import Path
 import sqlite3
 import threading
 import time
-from urllib.parse import urlsplit
 
 from .config import COVERAGE, LEGACY_ADAPTERS, SUBSCRIPTION_ADAPTERS, MailError
 from . import reader, replies, tags
@@ -387,9 +386,7 @@ class Store:
                    "unread": ("read_at=NULL", ()), "needs_reply": ("needs_reply=1", ()),
                    "clear_reply": ("needs_reply=0", ())}
         if action == "replied":
-            parsed = urlsplit(ref or "")
-            if parsed.scheme not in ("http","https") or not parsed.netloc or parsed.username or parsed.password:
-                raise MailError("reply_ref_required")
+            replies.reference(ref)
             clauses[action] = ("replied_at=?,reply_ref=?", (int(time.time()),ref))
         if action not in clauses or (ref is not None and action != "replied"):
             raise MailError("invalid_mark")
