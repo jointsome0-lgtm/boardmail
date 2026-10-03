@@ -444,6 +444,56 @@ os._exit(79)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.store.show('moltbook', uid(10))['reply_ref'], self.ref)
 
+    def test_invalid_reply_marks_preserve_message_and_unknown_attempt(self):
+        self.store.mark('moltbook', uid(10), 'read')
+        self.store.mark('moltbook', uid(10), 'needs_reply')
+        key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']
+        self.command('begin', key=key)
+        invalid_refs = (
+            'https://board.example.invalid:wrong-port/reply/1',
+            'https://board.example.invalid:65536/reply/1',
+            'https://[broken/reply/1',
+            'https://@board.example.invalid/reply/1',
+            'https://:@board.example.invalid/reply/1',
+            'https://board.example.invalid/reply/1\n',
+            'https://board.example.invalid/reply/\t1',
+            'https://board.example.invalid/reply/1\x7f',
+        )
+        for ref in invalid_refs:
+            with self.subTest(ref=ref):
+                before = self.path.read_bytes()
+                message_before = self.store.show('moltbook', uid(10))
+                attempt_before = self.command('show')[0]['reply']
+                result, code = commands.outcome(lambda: commands.execute(
+                    self.store, 'mark', source='moltbook', id=uid(10), action='replied', ref=ref))
+                self.assertEqual(code, 2)
+                self.assertEqual(result['error'], 'reply_ref_required')
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertEqual(self.store.show('moltbook', uid(10)), message_before)
+                self.assertEqual(self.command('show')[0]['reply'], attempt_before)
+
+    def test_valid_reply_marks_and_corrected_mark_allow_confirmation(self):
+        self.store.mark('moltbook', uid(10), 'read')
+        self.store.mark('moltbook', uid(10), 'needs_reply')
+        key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']
+        self.command('begin', key=key)
+        attempt_before = self.command('show')[0]['reply']
+        for ref in ('http://board.example.invalid:8080/reply/1?view=full#reply',
+                    'https://[::1]:443/reply/1', self.ref + '-incorrect'):
+            with self.subTest(ref=ref):
+                result, code = commands.outcome(lambda: commands.execute(
+                    self.store, 'mark', source='moltbook', id=uid(10), action='replied', ref=ref))
+                self.assertEqual((code, result['message']['reply_ref']), (0, ref))
+                self.assertEqual(self.command('show')[0]['reply'], attempt_before)
+        result, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
+        self.assertEqual((code, result['error']), (2, 'reply_reference_conflict'))
+        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        result, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
+        self.assertEqual((code, result['reply']['state']), (0, 'confirmed'))
+        self.assertEqual(result['message']['reply_ref'], self.ref)
+        self.assertIsNotNone(result['message']['read_at'])
+        self.assertTrue(result['message']['needs_reply'])
+
     def test_legacy_reply_mark_is_never_overwritten_or_mistaken_for_verification(self):
         self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
         before = self.path.read_bytes()
