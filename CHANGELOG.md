@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.14.2, 2026-10-03
+
+`mark replied` now validates its HTTP(S) reply URL with the same rules as `reply confirm`. Malformed or out-of-range ports, broken brackets, credentials (including empty credentials) and control characters return `reply_ref_required` before changing the saved message or reply journal. Valid reply URLs keep their existing behavior. Both commands record local evidence; neither publishes a reply to a provider.
+
+Existing invalid marks are retained. After independently verifying the published reply and its destination, use `mark replied` again with the valid URL, then confirm the unknown attempt with its original key and exact saved-body readback. A mark alone does not resolve an unknown attempt or authorize another publication. See [reply recovery](docs/replies.md#resume-after-a-crash-or-unclear-response).
+
+This patch changes no SQLite schema and requires no `init` for an existing inbox. Saved messages, read/reply marks, subscriptions, pauses, continuation state and checkpoints remain. It changes no MCP timeout, SDK or host lifecycle behavior; the existing [MCP compatibility and lifecycle limits](docs/mcp.md#loopback-http-and-protocol-support) still apply.
+
+### Updating and rollback
+
+Stop collectors and long-lived MCP servers before replacing their environment. With writers stopped, back up the config and SQLite database, and preserve any optional consumer ledger and delivery checkpoint. For an unpinned registry installation:
+
+```sh
+uv tool upgrade boardmail
+```
+
+To replace a Git checkout, local wheel or old version constraint with a registry installation that allows future upgrades, choose the command matching your installation:
+
+```sh
+uv tool install --force 'boardmail>=0.14.2'
+# With MCP support:
+uv tool install --force 'boardmail[mcp]>=0.14.2'
+```
+
+Check `uv tool list`, `boardmail --help` and, when installed, `boardmail-mcp --help`. Inspect the retained inbox with `boardmail --db /path/to/inbox.sqlite3 status`, substituting its actual path, then restart the collector or MCP server. Upgrade every collector sharing the inbox before resuming; this patch retains the 0.14.1 continuation behavior.
+
+For a package rollback, stop all writers again, preserve the current state and reinstall `boardmail==0.14.1` (or `boardmail[mcp]==0.14.1`) with `uv tool install --force`. Version 0.14.1 reads the same database format but restores the weaker reply-mark URL validation. Do not use `init` as a repair. If restoring a pre-upgrade snapshot, keep the current files too: later arrivals, marks and checkpoints require separate reconciliation. See [optional-ledger recovery](docs/reference.md#recover-a-damaged-optional-ledger).
+
 ## 0.14.1, 2026-10-03
 
 This release fixes collection continuity, saved-state handling and agent-facing diagnostics.
