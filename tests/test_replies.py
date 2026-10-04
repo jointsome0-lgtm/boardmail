@@ -472,6 +472,73 @@ os._exit(79)
                 self.assertEqual(self.store.show('moltbook', uid(10)), message_before)
                 self.assertEqual(self.command('show')[0]['reply'], attempt_before)
 
+    def test_reply_reference_1024_character_boundary_accepts_mark_and_confirm(self):
+        for number, (scheme, character) in enumerate(
+                ((scheme, character) for scheme in ('http', 'https') for character in ('a', 'я')), 20):
+            with self.subTest(scheme=scheme, character=character):
+                target = uid(number)
+                self.store.save('moltbook', uid(2), [mail(number)])
+                self.store.mark('moltbook', target, 'read')
+                self.store.mark('moltbook', target, 'needs_reply')
+                prefix = scheme + '://board.example.invalid/reply/'
+                ref = prefix + character * (1024 - len(prefix))
+                self.assertEqual(len(ref), 1024)
+                if character == 'я':
+                    self.assertGreater(len(ref.encode('utf-8')), 1024)
+                prepared, code = self.command('prepare', id=target, body=self.body)
+                self.assertEqual(code, 0)
+                key = prepared['reply']['idempotency_key']
+                self.command('begin', id=target, key=key)
+                attempt_before = self.command('show', id=target)[0]['reply']
+                self.assertEqual(attempt_before['state'], 'unknown')
+                marked, code = commands.outcome(lambda: commands.execute(
+                    self.store, 'mark', source='moltbook', id=target, action='replied', ref=ref))
+                self.assertEqual((code, marked['message']['reply_ref']), (0, ref))
+                self.assertEqual(self.command('show', id=target)[0]['reply'], attempt_before)
+                confirmed, code = self.command('confirm', id=target, key=key, ref=ref, readback_body=self.body)
+                self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
+                self.assertEqual(confirmed['reply']['idempotency_key'], key)
+                self.assertEqual(confirmed['reply']['body'], self.body)
+                self.assertEqual(confirmed['reply']['body_sha256'], replies.digest(self.body))
+                self.assertEqual(confirmed['reply']['readback_sha256'], replies.digest(self.body))
+                self.assertEqual(confirmed['message']['reply_ref'], ref)
+                self.assertIsNotNone(confirmed['message']['read_at'])
+                self.assertTrue(confirmed['message']['needs_reply'])
+                self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
+                self.assertFalse(confirmed['remote_verified'])
+                self.assertIsNone(confirmed['verification_receipt'])
+
+    def test_reply_reference_1025_characters_rejects_mark_and_confirm_without_writing(self):
+        for number, (scheme, character) in enumerate(
+                ((scheme, character) for scheme in ('http', 'https') for character in ('a', 'я')), 20):
+            with self.subTest(scheme=scheme, character=character):
+                target = uid(number)
+                self.store.save('moltbook', uid(2), [mail(number)])
+                self.store.mark('moltbook', target, 'read')
+                self.store.mark('moltbook', target, 'needs_reply')
+                key = self.command('prepare', id=target, body=self.body)[0]['reply']['idempotency_key']
+                self.command('begin', id=target, key=key)
+                prefix = scheme + '://board.example.invalid/reply/'
+                ref = prefix + character * (1025 - len(prefix))
+                self.assertEqual(len(ref), 1025)
+                before = self.path.read_bytes()
+                message_before = self.store.show('moltbook', target)
+                attempt_before = self.command('show', id=target)[0]['reply']
+                self.assertEqual(attempt_before['state'], 'unknown')
+                self.assertEqual(attempt_before['idempotency_key'], key)
+                self.assertEqual(attempt_before['body'], self.body)
+                for action in ('mark', 'confirm'):
+                    with self.subTest(action=action):
+                        if action == 'mark':
+                            result, code = commands.outcome(lambda: commands.execute(
+                                self.store, 'mark', source='moltbook', id=target, action='replied', ref=ref))
+                        else:
+                            result, code = self.command('confirm', id=target, key=key, ref=ref, readback_body=self.body)
+                        self.assertEqual((code, result['error']), (2, 'reply_ref_required'))
+                        self.assertEqual(self.path.read_bytes(), before)
+                        self.assertEqual(self.store.show('moltbook', target), message_before)
+                        self.assertEqual(self.command('show', id=target)[0]['reply'], attempt_before)
+
     def test_valid_reply_marks_and_corrected_mark_allow_confirmation(self):
         self.store.mark('moltbook', uid(10), 'read')
         self.store.mark('moltbook', uid(10), 'needs_reply')

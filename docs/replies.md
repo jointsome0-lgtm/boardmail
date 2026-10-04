@@ -32,6 +32,8 @@ After publication, independently read the resulting post. Check its author accou
 boardmail reply confirm SOURCE ID --key KEY --ref https://example.org/published-reply --readback-file readback.txt
 ```
 
+`--ref` must be an HTTP(S) URL of at most 1,024 characters, counting the entire string rather than its UTF-8 bytes. The same limit applies to `mark replied`. A longer reference returns `reply_ref_required` before changing the message or reply attempt. This is local syntax validation, not provider verification.
+
 `confirm` requires byte-exact matching UTF-8 text. A match atomically saves the caller's receipt and the incoming message's `replied_at`/`reply_ref`; `read_at` and `needs_reply` remain independent. Its state becomes `confirmed` and its `next_action` is `do_not_publish_again`.
 
 A receipt created by `confirm` is an assertion by the caller. Successful `confirm` reports `remote_verified: false`. Its `confirmation_basis` is `caller_supplied_readback` unless an earlier provider verification receipt preserves `provider_readback`. Boardmail compared the supplied text but fetched no URL and did not verify authorship, destination or moderation status. Passing the draft itself as readback would not establish publication. If the provider rewrites the text, the exact comparison fails; inspect that difference rather than replacing an already-started intention to make it pass.
@@ -100,7 +102,7 @@ If you published and independently verified a reply before Boardmail collected i
 boardmail mark replied SOURCE ID --ref https://example.org/published-reply
 ```
 
-Use the saved incoming's source and ID and the verified reply's actual URL. This records a local `replied` mark without `prepare`, `begin` or another publication. It does not fetch the URL or create a provider verification receipt. `read_at` and `needs_reply` remain independent. Any existing `unknown` attempt stays unresolved; follow its `reply show` journal to reconcile that outcome.
+Use the saved incoming's source and ID and the verified reply's actual URL, at most 1,024 characters including the scheme, host and path. This records a local `replied` mark without `prepare`, `begin` or another publication. It does not fetch the URL or create a provider verification receipt. `read_at` and `needs_reply` remain independent. Any existing `unknown` attempt stays unresolved; follow its `reply show` journal to reconcile that outcome.
 
 ## Resume after a crash or unclear response
 

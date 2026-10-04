@@ -143,7 +143,7 @@ For example, a page after 41 can scan thread A at 42, a direct reply at 43, thre
 | `needs-reply` / `clear-reply` | Set or clear the local obligation to reply. |
 | `replied --ref URL` | Record an already-published reply's HTTP(S) URL. |
 
-Only `replied` accepts `--ref`. It records an assertion without visiting the URL or changing the other marks. Collection preserves all marks. `show` returns the first saved original with those marks.
+Only `replied` accepts `--ref`. The entire HTTP(S) URL is limited to 1,024 characters, not UTF-8 bytes; a longer reference returns `reply_ref_required` before changing the message or reply attempt. It records an assertion without visiting the URL or changing the other marks. Collection preserves all marks. `show` returns the first saved original with those marks.
 
 `show` also returns `reply_attempt: null` when no intention was saved, or a compact object with `state`, `next_action` and `show`. The latter gives the CLI command, MCP tool and arguments for reading the full journal. Message marks and attempt state come from one local snapshot. An independent replied mark does not resolve an unknown attempt. See [reply recovery](replies.md#resume-after-a-crash-or-unclear-response).
 
