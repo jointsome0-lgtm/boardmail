@@ -183,6 +183,56 @@ class ReplyRecoveryTests(unittest.TestCase):
                             self.assertEqual(journal['confirmation_basis'], original['confirmation_basis'])
                         self.assertEqual(path.read_bytes(), snapshot)
 
+    def test_repeated_same_reference_mark_preserves_reply_recovery(self):
+        for number, state, next_action in ((10, 'unknown', 'read_back_before_retry'),
+                                           (11, 'confirmed', 'do_not_publish_again')):
+            with self.subTest(state=state):
+                target = uid(number)
+                self.store.mark('moltbook', target, 'read')
+                self.store.mark('moltbook', target, 'needs_reply')
+                prepared, code = self.command('prepare', id=target, body=self.body)
+                self.assertEqual(code, 0)
+                key = prepared['reply']['idempotency_key']
+                begun, code = self.command('begin', id=target, key=key)
+                self.assertEqual((code, begun['send_allowed']), (0, True))
+                if state == 'confirmed':
+                    confirmed, code = self.command('confirm', id=target, key=key,
+                                                  ref=self.ref, readback_body=self.body)
+                    self.assertEqual((code, confirmed['confirmation_basis']),
+                                     (0, 'caller_supplied_readback'))
+                original, code = self.command('show', id=target)
+                self.assertEqual((code, original['reply']['state']), (0, state))
+                incoming = original['message']
+                journal = {k: v for k, v in original.items() if k != 'message'}
+                for clock in (100, 200):
+                    with self.subTest(clock=clock):
+                        with patch('boardmail.store.time.time', return_value=clock):
+                            marked, code = commands.outcome(lambda: commands.execute(
+                                self.store, 'mark', source='moltbook', id=target,
+                                action='replied', ref=self.ref))
+                        self.assertEqual((code, marked['event']), (0, 'marked'))
+                        message = marked['message']
+                        self.assertEqual(message, self.store.show('moltbook', target))
+                        self.assertEqual(message['reply_ref'], self.ref)
+                        self.assertIsNotNone(message['replied_at'])
+                        # First-versus-latest replied_at semantics are deliberately unspecified.
+                        excluded = {'replied_at', 'reply_ref'}
+                        self.assertEqual({k: v for k, v in incoming.items() if k not in excluded},
+                                         {k: v for k, v in message.items() if k not in excluded})
+                        summary = marked['reply_attempt']
+                        self.assertEqual((summary['state'], summary['next_action']),
+                                         (state, next_action))
+                        route = summary['show']
+                        self.assertEqual(route, {'command': 'reply show',
+                            'tool': 'boardmail_reply_show',
+                            'arguments': {'source': 'moltbook', 'id': target}})
+                        recovered, code = commands.outcome(lambda: commands.execute(
+                            self.store, 'reply_show', **route['arguments']))
+                        self.assertEqual(code, 0)
+                        self.assertEqual({k: v for k, v in recovered.items() if k != 'message'},
+                                         journal)
+                        self.assertEqual(recovered['message'], message)
+
     def test_process_exit_after_external_effect_recovers_same_body_key_and_receipt(self):
         self.store.mark('moltbook', uid(10), 'read')
         self.store.mark('moltbook', uid(10), 'needs_reply')

@@ -104,6 +104,8 @@ boardmail mark replied SOURCE ID --ref https://example.org/published-reply
 
 Use the saved incoming's source and ID and the verified reply's actual URL, at most 1,024 characters including the scheme, host and path. This records a local `replied` mark without `prepare`, `begin` or another publication. It does not fetch the URL or create a provider verification receipt. `read_at` and `needs_reply` remain independent. Any existing `unknown` attempt stays unresolved; follow its `reply show` journal to reconcile that outcome.
 
+If a manual mark response is lost, inspect `boardmail show SOURCE ID` and follow its `reply_attempt.show` route when present. Repeating `mark replied` with the same URL preserves the saved reply attempt and its confirmation evidence. An `unknown` attempt stays unresolved; the mark does not authorize another POST.
+
 ## Resume after a crash or unclear response
 
 Start with `boardmail status`. Its `reply_attempts` includes counts for prepared, unknown and confirmed attempts and the first 20 pending items. Items include source, incoming ID, state, next_action and a `show` route to the full journal. Independent replied marks never hide an unknown attempt. Counts cover the whole journal, not just the page; confirmed attempts have no pending item.
