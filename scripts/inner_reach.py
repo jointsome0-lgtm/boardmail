@@ -61,29 +61,33 @@ boardmail.adapters is the one exception: building and filling a Batch is
 adapter interface v1, an allowed seam.
 
 "The code it runs on the test side" is the test method, the fixture methods of
-its class (setUp and its relatives), the decorators and class-level statements
-of its class and of the test-side bases, the module-level statements of its
-file and of the test-side files that file imports, and every function, class
-or constant under tests/ or examples/ that this code refers to by name,
-followed to any depth. self.name and super().name mean what they mean in the
-class that runs the test. A plain name = value statement at module or class
-level counts only for the tests that refer to the name, and the block under
-if __name__ == "__main__" does not count. Python source kept in a string, for
-a child process or an adapter file, counts as code of the place that holds the
-string. A string is taken for source when it mentions the package, parses as
-Python and imports something.
+its class (setUp and its relatives), what its file and the test-side files
+that file imports run when they are imported, and every function, class or
+constant under tests/ or examples/ that this code refers to by name, followed
+to any depth. What a file runs when it is imported is its module-level
+statements and the class-level statements of its classes. A plain
+name = value statement among them counts only for the tests that refer to the
+name, and the block under if __name__ == "__main__" does not count. A class
+decorator counts for the tests its class has, its own and the ones it
+inherits, in every class that runs them; it does not count for a test that a
+class further down adds. self.name and super().name mean what they mean in
+the class that runs the test. Python source kept in a string, for a child
+process or an adapter file, counts as code of the place that holds the string.
+A string is taken for source when it mentions the package, parses as Python
+and imports something.
 
 The count reads names, so it can be wrong in known ways. It counts a helper
 that is referred to but never called. It follows names without regard to
 order, branch or caller, so one name used for two things is taken for both in
-every test that uses it. It misses a package object that reaches test code by
-a route it does not follow: an attribute of some other object, an argument the
-package passes to a test callback, an argument of a helper that is called
-through a variable or on some other object, a name worked out while the test
-runs, a name brought in by a star import, source handed to exec or eval
-without an import of its own, a test-side file that is run or loaded by its
-path. It misses a package container changed in place by a method call or
-through another name, as in providers.HOSTS.update(...) or
+every test that uses it. It counts connect(**options) whatever the options
+hold, unless they are written out in the call. It misses a package object
+that reaches test code by a route it does not follow: an attribute of some
+other object, an argument the package passes to a test callback, an argument
+of a helper that is called through a variable or on some other object, a name
+worked out while the test runs, a name brought in by a star import, source
+handed to exec or eval without an import of its own, a test-side file that is
+run or loaded by its path. It misses a package container changed in place by
+a method call or through another name, as in providers.HOSTS.update(...) or
 hosts = providers.HOSTS; hosts["x"] = y. The files under
 tests/fixtures/inner_reach hold an example for each case of the rule and for
 some of these limits, and tests/test_inner_reach.py checks them.
@@ -166,11 +170,31 @@ def defined(statement):
 
 
 def launch_only(statement):
-    """Whether a statement is the block that runs only when its file is launched as a script."""
-    if not isinstance(statement, ast.If) or not isinstance(statement.test, ast.Compare):
+    """Whether a statement is the if __name__ == "__main__" block, whose body runs only when its file is launched."""
+    test = statement.test if isinstance(statement, ast.If) else None
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1 or not isinstance(test.ops[0], ast.Eq):
         return False
-    sides = [statement.test.left, *statement.test.comparators]
+    sides = [test.left, *test.comparators]
     return '__name__' in map(dotted, sides) and '__main__' in map(text, sides)
+
+
+def imported(body):
+    """The statements of a module or class body that define no name: what importing the file runs there."""
+    for statement in body:
+        if launch_only(statement):
+            yield from imported(statement.orelse)
+        elif not defined(statement) and not isinstance(statement, ast.Pass):
+            yield statement
+
+
+def options(keywords):
+    """(name, value) for the keywords of a call, with ** of a written-out mapping opened. A name that
+    the source does not show is None."""
+    for key in keywords:
+        if key.arg is None and isinstance(key.value, ast.Dict):
+            yield from ((name and text(name), value) for name, value in zip(key.value.keys, key.value.values))
+        else:
+            yield key.arg, key.value
 
 
 def find(chain, name):
@@ -201,7 +225,7 @@ class Source:
         self.imports = {}      # local name -> dotted path it was imported as
         self.loads = {}        # import statement -> dotted paths of the modules it may load
         self.names = {}        # module-level name -> the statement that defines it
-        self.loose = []        # module-level statements that define no name: what importing the module runs
+        self.loose = []        # what importing the module runs: statements at its top and in its classes
         self.place = {}        # node -> (outermost function, innermost class, innermost function) around it
         self.nested = {}       # (outermost function, name) -> function defined inside it
         self.classes = []
@@ -235,8 +259,10 @@ class Source:
         for statement in tree.body:
             for found in defined(statement):
                 self.names[found] = statement
-            if not defined(statement) and not launch_only(statement):
-                self.loose.append(statement)
+        self.loose += imported(tree.body)
+        for statement in tree.body:
+            if isinstance(statement, ast.ClassDef):
+                self.loose += imported(statement.body)
 
     def index(self):
         pending = [(self.tree, None, None, None)]
@@ -547,9 +573,9 @@ class Source:
                 elif isinstance(sub.func, ast.Attribute) and self.rooted(sub.func.value, 'store') and (
                         sub.func.attr == 'settings' and (sub.args or sub.keywords)
                         or sub.func.attr == 'connect' and any(
-                            key.arg in ('write', 'create', None)
-                            and not (isinstance(key.value, ast.Constant) and not key.value.value)
-                            for key in sub.keywords)):
+                            name in ('write', 'create', None)
+                            and not (isinstance(value, ast.Constant) and not value.value)
+                            for name, value in options(sub.keywords))):
                     found.add('store ' + sub.func.attr)
             elif isinstance(sub, ast.Attribute):
                 if not isinstance(sub.ctx, ast.Load):
@@ -646,12 +672,11 @@ def analyse(folders=None, modules=None):
         module += [(source, source.names[fixture]) for fixture in FIXTURES if fixture in source.names]
         for cls in source.tree.body:
             if not isinstance(cls, ast.ClassDef) or not any(
-                    (dotted(base) or '').endswith('TestCase')
-                    for _, node in source.lineage(cls) for base in node.bases):
+                    (owner.origin(base) or dotted(base) or '').endswith('TestCase')
+                    for owner, node in source.lineage(cls) for base in node.bases):
                 continue
             chain = source.lineage(cls)
-            shared = module + [(owner, statement) for owner, node in chain for statement in node.body
-                               if not defined(statement) and not isinstance(statement, ast.Pass)]
+            shared = module + [(owner, statement) for owner, node in chain for statement in imported(node.body)]
             shared += [found for found in (source.member(cls, fixture) for fixture in FIXTURES) if found is not None]
             methods = {}
             for owner, node in chain:

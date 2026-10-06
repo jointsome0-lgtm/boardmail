@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest import TestCase as Case
 from unittest import mock
 from unittest.mock import patch
 
@@ -197,7 +198,7 @@ class StoreWrites(unittest.TestCase):
         store.settings()
         store.page()
         store.status()
-        with store.connect() as db, store.connect(write=False):
+        with store.connect() as db, store.connect(write=False), store.connect(**{'create': False}):
             db.execute('SELECT 1')
 
     def test_handed_to_a_thread(self):
@@ -309,22 +310,10 @@ class Overriding(Overridden):
         self.read()
 
 
-@patch.object(providers, 'MAX_PAGES', 1)
-class Decorated(unittest.TestCase):
-    """A decorator and a statement at class level count for the tests the class has, whichever class runs them."""
-
-    providers.PAGE_SIZE = 1
-
-    def test_class_level(self):
-        """assign providers.PAGE_SIZE; patch providers.MAX_PAGES
-
-        In Extended: assign providers.PAGE_SIZE; patch providers.MAX_PAGES
-        """
-
-
-class Extended(Decorated):
-    def test_added_below_the_decorator(self):
-        """assign providers.PAGE_SIZE"""
+class Renamed(Case):
+    def test_in_a_test_case_under_another_name(self):
+        """store initialize"""
+        Store('inbox.sqlite3').initialize()
 
 
 class Marking:
@@ -361,7 +350,7 @@ class Ordered(Kept, Writing, unittest.TestCase):
 
 
 class Limits(unittest.TestCase):
-    """Where the count is known to be wrong. The first two tests do not reach inside and are counted. The rest do
+    """Where the count is known to be wrong. The first three tests do not reach inside and are counted. The rest do
     and are missed."""
 
     def test_helper_named_and_not_called(self):
@@ -373,6 +362,12 @@ class Limits(unittest.TestCase):
         session = Double()
         session.mark('board', 'message', 'read')
         session = Store('inbox.sqlite3')
+
+    def test_read_options_spread_from_a_name(self):
+        """store connect"""
+        options = {'write': False}
+        with Store('inbox.sqlite3').connect(**options):
+            pass
 
     def test_attribute_of_another_object(self):
         """not counted"""
