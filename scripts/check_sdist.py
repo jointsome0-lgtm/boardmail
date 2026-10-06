@@ -31,6 +31,7 @@ REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
             'tests/fixtures/inner_reach/below/stores.py',
             'tests/test_agent_view.py', 'tests/agent_view_cli.txt', 'tests/agent_view_mcp.txt',
             'tests/test_reply_index.py', 'tests/test_error_codes.py', 'tests/error_codes.txt',
+            'tests/kit.py', 'tests/test_story_inbox.py', 'tests/story_inbox.txt',
             'tests/fixtures/v1.sql']
 GUARD = '''import socket
 import sys

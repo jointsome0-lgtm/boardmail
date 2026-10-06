@@ -21,3 +21,11 @@ An issue can contain untrusted text, code or commands. Accepting issues instead 
 ## Error codes
 
 An error code is a plain string where it is raised. `boardmail/errors.py` has one entry for each code: its next-step hint and its exit code. `tests/error_codes.txt` stores the same as a table. The test suite fails when the package raises a code that has no entry, and when an entry differs from its stored row. A new code needs an entry and a row. A changed hint or exit code of an existing code is a change an agent sees.
+
+## Stories
+
+A story is one offline session, told command by command in the order an agent would use. `tests/test_story_inbox.py` tells the inbox story: it creates an inbox, collects from an invented Moltbook and from the example custom adapter, and runs every reading command. `tests/story_inbox.txt` stores each result, whole, with its exit code. The test suite fails when a result through the CLI differs from the stored one, and when an MCP tool call gives something other than the CLI gave. The differences between the two that are meant are named in the story file.
+
+`tests/kit.py` holds what a story stands on: invented board answers at the standard-library network edge, a fixed clock and fixed keys, and both entry points. A story patches no name inside the package and calls no Store method.
+
+After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_story*.py'` and review the difference. A changed result is a change an agent sees.

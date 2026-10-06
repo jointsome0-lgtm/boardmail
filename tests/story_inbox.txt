@@ -1,0 +1,2942 @@
+== 1. Nothing is there yet
+$ boardmail status
+exit code 5
+{
+  "event": "error",
+  "error": "database_missing",
+  "next_action": "run_init",
+  "history_complete": false
+}
+
+== 2. Create the inbox
+$ boardmail init
+exit code 0
+{
+  "event": "initialized",
+  "counts": {
+    "total": 0,
+    "latest_arrival": 0,
+    "unread": 0,
+    "needs_reply": 0,
+    "replied": 0
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "unknown",
+      "last_checked": null,
+      "last_ok": null,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": null,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "unknown",
+      "last_checked": null,
+      "last_ok": null,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": null,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": false,
+  "history_complete": false
+}
+
+== 3. It cannot be created twice
+$ boardmail init
+exit code 2
+{
+  "event": "error",
+  "error": "database_exists",
+  "next_action": "use_existing_database_do_not_overwrite",
+  "history_complete": false
+}
+
+== 4. The reading preferences of a new inbox
+$ boardmail settings
+exit code 0
+{
+  "event": "settings",
+  "settings": {
+    "scope": "addressed",
+    "context": "brief",
+    "origin": {
+      "scope": "default",
+      "context": "default"
+    }
+  },
+  "applies_to": [
+    "check",
+    "list",
+    "wait"
+  ],
+  "consumer": "one_per_database",
+  "next_action": "check_or_list",
+  "history_complete": false
+}
+
+== 5. No source has been read yet
+$ boardmail status
+exit code 0
+{
+  "event": "status",
+  "counts": {
+    "total": 0,
+    "latest_arrival": 0,
+    "unread": 0,
+    "needs_reply": 0,
+    "replied": 0
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "unknown",
+      "last_checked": null,
+      "last_ok": null,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": null,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "unknown",
+      "last_checked": null,
+      "last_ok": null,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": null,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": false,
+  "freshness_required": false,
+  "history_complete": false
+}
+
+== 6. Collect for the first time
+$ boardmail collect
+exit code 0
+{
+  "event": "collected",
+  "added": 2,
+  "failed": false,
+  "errors": [],
+  "history_complete": false,
+  "counts": {
+    "total": 2,
+    "latest_arrival": 2,
+    "unread": 2,
+    "needs_reply": 0,
+    "replied": 0
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": true
+}
+
+== 7. Read what arrived
+$ boardmail list
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 1,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "reply_to_post",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to the post.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+      "created_at": 1767269100,
+      "arrived_at": 1800000000,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": "direct",
+      "tags": [],
+      "shown_because": "direct_reply_to_your_message",
+      "brief": {
+        "root": {
+          "status": "cached",
+          "fetched_at": 1800000000,
+          "id": "00000000-0000-0000-0000-0000000000c9",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "author": "sample-agent",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+          "title": "Example discussion",
+          "body": "An invented post of ours.",
+          "truncated": false
+        },
+        "parent": {
+          "id": null,
+          "status": "unknown"
+        },
+        "previous_exchange": {
+          "status": "unknown",
+          "messages": []
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-0000000000d3"
+          }
+        }
+      }
+    },
+    {
+      "arrival_seq": 2,
+      "source": "example",
+      "id": "1",
+      "thread_id": "42",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "mention",
+      "author": "example-writer",
+      "title": "Example thread",
+      "body": "A synthetic public mention.",
+      "url": "https://example.invalid/item/1",
+      "created_at": 100,
+      "arrived_at": 1800000000,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": null,
+      "tags": [],
+      "shown_because": "recipient_unconfirmed_shown_by_default",
+      "brief": {
+        "root": {
+          "id": "42",
+          "status": "not_available_locally"
+        },
+        "parent": {
+          "id": null,
+          "status": "unknown"
+        },
+        "previous_exchange": {
+          "status": "unknown",
+          "messages": []
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "example",
+            "id": "1"
+          }
+        }
+      }
+    }
+  ],
+  "next_after": 2,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": true,
+  "thread_activity": [],
+  "reading": {
+    "scope": "addressed",
+    "context": "brief"
+  },
+  "scanned": 2,
+  "next_action": "process_messages_and_thread_activity_then_save_next_after",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 8. One message, whole
+$ boardmail show moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 0
+{
+  "event": "message",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "An invented reply to the post.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767269100,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 9. What it answers, read from the board
+$ boardmail context moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 0
+{
+  "event": "context",
+  "source": "moltbook",
+  "id": "00000000-0000-0000-0000-0000000000d3",
+  "fetched": true,
+  "target": {
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "status": "available",
+    "origin": "local",
+    "error": null,
+    "message": {
+      "arrival_seq": 1,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "reply_to_post",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to the post.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+      "created_at": 1767269100,
+      "arrived_at": 1800000000,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": "direct",
+      "tags": []
+    },
+    "current_message": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to the post.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+      "created_at": 1767269100
+    },
+    "differs_from_saved": false,
+    "remote_status": "available"
+  },
+  "parent": {
+    "id": "00000000-0000-0000-0000-0000000000c9",
+    "status": "available",
+    "origin": "remote",
+    "error": null,
+    "message": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000c9",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "author": "sample-agent",
+      "title": "Example discussion",
+      "body": "An invented post of ours.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+      "created_at": 1767268800
+    },
+    "current_message": null,
+    "differs_from_saved": null,
+    "remote_status": "available"
+  },
+  "root": {
+    "id": "00000000-0000-0000-0000-0000000000c9",
+    "status": "available",
+    "origin": "remote",
+    "error": null,
+    "message": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000c9",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "author": "sample-agent",
+      "title": "Example discussion",
+      "body": "An invented post of ours.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+      "created_at": 1767268800
+    },
+    "current_message": null,
+    "differs_from_saved": null,
+    "remote_status": "available"
+  },
+  "complete": true,
+  "previous_exchange": {
+    "status": "unknown",
+    "reason": "parent_not_recorded_by_board",
+    "reply_ref": null,
+    "messages": []
+  },
+  "history_complete": false
+}
+
+== 10. The same from the inbox alone
+$ boardmail context --local moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 1
+{
+  "event": "context",
+  "source": "moltbook",
+  "id": "00000000-0000-0000-0000-0000000000d3",
+  "fetched": false,
+  "target": {
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "status": "available",
+    "origin": "local",
+    "error": null,
+    "message": {
+      "arrival_seq": 1,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "reply_to_post",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to the post.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+      "created_at": 1767269100,
+      "arrived_at": 1800000000,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": "direct",
+      "tags": []
+    },
+    "current_message": null,
+    "differs_from_saved": null
+  },
+  "parent": {
+    "id": "00000000-0000-0000-0000-0000000000c9",
+    "status": "unknown",
+    "origin": null,
+    "error": null,
+    "message": null,
+    "current_message": null,
+    "differs_from_saved": null
+  },
+  "root": {
+    "id": "00000000-0000-0000-0000-0000000000c9",
+    "status": "unknown",
+    "origin": null,
+    "error": null,
+    "message": null,
+    "current_message": null,
+    "differs_from_saved": null
+  },
+  "complete": false,
+  "previous_exchange": {
+    "status": "unknown",
+    "reason": "no_parent_identity",
+    "reply_ref": null,
+    "messages": []
+  },
+  "history_complete": false
+}
+
+== 11. A message that is not in the inbox
+$ boardmail show example 9
+exit code 2
+{
+  "event": "error",
+  "error": "message_not_found",
+  "next_action": "check_command_help_and_returned_message_ids",
+  "history_complete": false,
+  "identifier_hint": "Use the source and remote message id returned by list. arrival_seq is a local arrival cursor, not a remote message id."
+}
+
+== 12. An id the board cannot have
+$ boardmail context moltbook nine
+exit code 2
+{
+  "event": "error",
+  "error": "invalid_message_id",
+  "next_action": "check_command_help_and_returned_message_ids",
+  "history_complete": false
+}
+
+== 13. Mark it read
+$ boardmail mark read moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "An invented reply to the post.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767269100,
+    "arrived_at": 1800000000,
+    "read_at": 1800000000,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 14. It needs an answer
+$ boardmail mark needs-reply moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "An invented reply to the post.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767269100,
+    "arrived_at": 1800000000,
+    "read_at": 1800000000,
+    "needs_reply": true,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 15. Answered, but where?
+$ boardmail mark replied moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 2
+{
+  "event": "error",
+  "error": "reply_ref_required",
+  "next_action": "check_command_help_and_returned_message_ids",
+  "history_complete": false
+}
+
+== 16. Record the answer
+$ boardmail mark replied --ref https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "An invented reply to the post.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767269100,
+    "arrived_at": 1800000000,
+    "read_at": 1800000000,
+    "needs_reply": true,
+    "replied_at": 1800000000,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 17. It needs no answer any more
+$ boardmail mark clear-reply moltbook 00000000-0000-0000-0000-0000000000d3
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "An invented reply to the post.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767269100,
+    "arrived_at": 1800000000,
+    "read_at": 1800000000,
+    "needs_reply": false,
+    "replied_at": 1800000000,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 18. Read the other message
+$ boardmail mark read example 1
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 2,
+    "source": "example",
+    "id": "1",
+    "thread_id": "42",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "mention",
+    "author": "example-writer",
+    "title": "Example thread",
+    "body": "A synthetic public mention.",
+    "url": "https://example.invalid/item/1",
+    "created_at": 100,
+    "arrived_at": 1800000000,
+    "read_at": 1800000000,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": null,
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 19. Keep it unread after all
+$ boardmail mark unread example 1
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 2,
+    "source": "example",
+    "id": "1",
+    "thread_id": "42",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "mention",
+    "author": "example-writer",
+    "title": "Example thread",
+    "body": "A synthetic public mention.",
+    "url": "https://example.invalid/item/1",
+    "created_at": 100,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": null,
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 20. No tags yet
+$ boardmail tags
+exit code 0
+{
+  "event": "tags",
+  "tags": [],
+  "untagged": {
+    "threads": 2,
+    "messages": 2,
+    "unread": 1,
+    "read": {
+      "command": "list",
+      "tool": "boardmail_list",
+      "arguments": {
+        "after": 0,
+        "unread": true,
+        "scope": "all",
+        "untagged": true
+      }
+    }
+  },
+  "counts": {
+    "unread": 1,
+    "tagged_unread": 0,
+    "untagged_unread": 1
+  },
+  "collection_performed": false,
+  "next_action": "choose_tag_or_untagged",
+  "history_complete": false
+}
+
+== 21. Tag the thread
+$ boardmail tag add follow-up moltbook 00000000-0000-0000-0000-0000000000c9
+exit code 0
+{
+  "event": "thread_tag",
+  "tag": "follow-up",
+  "source": "moltbook",
+  "thread": "00000000-0000-0000-0000-0000000000c9",
+  "tagged": true,
+  "changed": true,
+  "collection_performed": false,
+  "next_action": "show_tag_or_read_saved_mail",
+  "history_complete": false
+}
+
+== 22. Tag one message
+$ boardmail tag add later example --message 1
+exit code 0
+{
+  "event": "thread_tag",
+  "tag": "later",
+  "source": "example",
+  "thread": "42",
+  "tagged": true,
+  "changed": true,
+  "collection_performed": false,
+  "next_action": "show_tag_or_read_saved_mail",
+  "history_complete": false
+}
+
+== 23. A name a tag cannot have
+$ boardmail tag add Follow.Up moltbook 00000000-0000-0000-0000-0000000000c9
+exit code 2
+{
+  "event": "error",
+  "error": "invalid_tag_name",
+  "next_action": "use_1_to_64_lowercase_letters_digits_hyphens_or_underscores_starting_with_a_letter_or_digit",
+  "history_complete": false
+}
+
+== 24. The tags in use
+$ boardmail tags
+exit code 0
+{
+  "event": "tags",
+  "tags": [
+    {
+      "tag": "follow-up",
+      "threads": 1,
+      "messages": 1,
+      "unread": 0,
+      "read": {
+        "command": "list",
+        "tool": "boardmail_list",
+        "arguments": {
+          "after": 0,
+          "unread": true,
+          "scope": "all",
+          "tag": "follow-up"
+        }
+      },
+      "show": {
+        "command": "tag show",
+        "tool": "boardmail_tag_show",
+        "arguments": {
+          "tag": "follow-up"
+        }
+      }
+    },
+    {
+      "tag": "later",
+      "threads": 1,
+      "messages": 1,
+      "unread": 1,
+      "read": {
+        "command": "list",
+        "tool": "boardmail_list",
+        "arguments": {
+          "after": 0,
+          "unread": true,
+          "scope": "all",
+          "tag": "later"
+        }
+      },
+      "show": {
+        "command": "tag show",
+        "tool": "boardmail_tag_show",
+        "arguments": {
+          "tag": "later"
+        }
+      }
+    }
+  ],
+  "untagged": {
+    "threads": 0,
+    "messages": 0,
+    "unread": 0,
+    "read": {
+      "command": "list",
+      "tool": "boardmail_list",
+      "arguments": {
+        "after": 0,
+        "unread": true,
+        "scope": "all",
+        "untagged": true
+      }
+    }
+  },
+  "counts": {
+    "unread": 1,
+    "tagged_unread": 1,
+    "untagged_unread": 0
+  },
+  "collection_performed": false,
+  "next_action": "choose_tag_or_untagged",
+  "history_complete": false
+}
+
+== 25. What one tag holds
+$ boardmail tag show follow-up
+exit code 0
+{
+  "event": "tag",
+  "tag": "follow-up",
+  "exists": true,
+  "threads": [
+    {
+      "source": "moltbook",
+      "thread": "00000000-0000-0000-0000-0000000000c9",
+      "tagged_at": 1800000000,
+      "messages": 1,
+      "unread": 0,
+      "title": "Example discussion",
+      "title_origin": "cached_root",
+      "title_message_id": "00000000-0000-0000-0000-0000000000c9",
+      "title_truncated": false,
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+      "url_origin": "cached_root",
+      "url_message_id": "00000000-0000-0000-0000-0000000000c9",
+      "tags": [
+        "follow-up"
+      ],
+      "subscribed": false,
+      "read": {
+        "command": "list",
+        "tool": "boardmail_list",
+        "arguments": {
+          "after": 0,
+          "unread": false,
+          "scope": "all",
+          "source": "moltbook",
+          "thread": "00000000-0000-0000-0000-0000000000c9"
+        }
+      }
+    }
+  ],
+  "counts": {
+    "threads": 1,
+    "messages": 1,
+    "unread": 0
+  },
+  "read": {
+    "command": "list",
+    "tool": "boardmail_list",
+    "arguments": {
+      "after": 0,
+      "unread": true,
+      "scope": "all",
+      "tag": "follow-up"
+    }
+  },
+  "collection_performed": false,
+  "next_action": "read_selected_thread_or_tag",
+  "history_complete": false
+}
+
+== 26. Read by tag
+$ boardmail list --tag follow-up
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 1,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "reply_to_post",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to the post.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+      "created_at": 1767269100,
+      "arrived_at": 1800000000,
+      "read_at": 1800000000,
+      "needs_reply": false,
+      "replied_at": 1800000000,
+      "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+      "discovery": null,
+      "addressing": "direct",
+      "tags": [
+        "follow-up"
+      ],
+      "shown_because": "direct_reply_to_your_message",
+      "brief": {
+        "root": {
+          "status": "cached",
+          "fetched_at": 1800000000,
+          "id": "00000000-0000-0000-0000-0000000000c9",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "author": "sample-agent",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+          "title": "Example discussion",
+          "body": "An invented post of ours.",
+          "truncated": false
+        },
+        "parent": {
+          "id": null,
+          "status": "unknown"
+        },
+        "previous_exchange": {
+          "status": "unknown",
+          "messages": []
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-0000000000d3"
+          }
+        }
+      }
+    }
+  ],
+  "next_after": 1,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": false,
+  "thread_activity": [],
+  "reading": {
+    "scope": "addressed",
+    "context": "brief"
+  },
+  "scanned": 1,
+  "next_action": "process_filtered_page_keep_delivery_checkpoint",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 27. Take a tag off
+$ boardmail tag remove later example --message 1
+exit code 0
+{
+  "event": "thread_tag",
+  "tag": "later",
+  "source": "example",
+  "thread": "42",
+  "tagged": false,
+  "changed": true,
+  "collection_performed": false,
+  "next_action": "show_tag_or_read_saved_mail",
+  "history_complete": false
+}
+
+== 28. What is unread and has no tag
+$ boardmail list --unread --scope all --untagged
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 2,
+      "source": "example",
+      "id": "1",
+      "thread_id": "42",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "mention",
+      "author": "example-writer",
+      "title": "Example thread",
+      "body": "A synthetic public mention.",
+      "url": "https://example.invalid/item/1",
+      "created_at": 100,
+      "arrived_at": 1800000000,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": null,
+      "tags": [],
+      "shown_because": "recipient_unconfirmed_shown_by_default",
+      "brief": {
+        "root": {
+          "id": "42",
+          "status": "not_available_locally"
+        },
+        "parent": {
+          "id": null,
+          "status": "unknown"
+        },
+        "previous_exchange": {
+          "status": "unknown",
+          "messages": []
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "example",
+            "id": "1"
+          }
+        }
+      }
+    }
+  ],
+  "next_after": 2,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": false,
+  "thread_activity": [],
+  "reading": {
+    "scope": "all",
+    "context": "brief"
+  },
+  "scanned": 1,
+  "next_action": "process_filtered_page_keep_delivery_checkpoint",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 29. Nothing is followed yet
+$ boardmail subscriptions
+exit code 0
+{
+  "event": "subscriptions",
+  "subscriptions": [],
+  "history": "available",
+  "collection_performed": false,
+  "next_action": "subscribe_or_collect",
+  "history_complete": false
+}
+
+== 30. Follow a thread of someone else
+$ boardmail subscribe moltbook 00000000-0000-0000-0000-00000000012d
+exit code 0
+{
+  "event": "subscribed",
+  "source": "moltbook",
+  "thread": "00000000-0000-0000-0000-00000000012d",
+  "subscribed": true,
+  "changed": true,
+  "history": "available",
+  "collection_performed": false,
+  "next_action": "collect_then_read_messages_and_thread_activity",
+  "history_complete": false
+}
+
+== 31. The thread of the other message has no id to follow
+$ boardmail subscribe example 42
+exit code 2
+{
+  "event": "error",
+  "error": "invalid_thread_id",
+  "next_action": "use_a_thread_uuid_from_a_message_or_board",
+  "history_complete": false
+}
+
+== 32. And its board has no subscriptions
+$ boardmail subscribe example 00000000-0000-0000-0000-00000000012d
+exit code 2
+{
+  "event": "error",
+  "error": "subscriptions_unsupported",
+  "next_action": "use_a_source_with_subscription_support",
+  "history_complete": false
+}
+
+== 33. What is followed
+$ boardmail subscriptions
+exit code 0
+{
+  "event": "subscriptions",
+  "subscriptions": [
+    {
+      "source": "moltbook",
+      "thread": "00000000-0000-0000-0000-00000000012d",
+      "subscribed_at": 1800000000
+    }
+  ],
+  "history": "available",
+  "collection_performed": false,
+  "next_action": "subscribe_or_collect",
+  "history_complete": false
+}
+
+== 34. Collect again and read what is new
+$ boardmail check --after 2
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 3,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": "00000000-0000-0000-0000-0000000000dd",
+      "provider_seq": null,
+      "kind": "reply_to_comment",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to our answer.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+      "created_at": 1767270000,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": "direct",
+      "tags": [
+        "follow-up"
+      ],
+      "shown_because": "direct_reply_to_your_message",
+      "brief": {
+        "root": {
+          "status": "cached",
+          "fetched_at": 1800000600,
+          "id": "00000000-0000-0000-0000-0000000000c9",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "author": "sample-agent",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+          "title": "Example discussion",
+          "body": "An invented post of ours.",
+          "truncated": false
+        },
+        "parent": {
+          "status": "cached",
+          "fetched_at": 1800000600,
+          "id": "00000000-0000-0000-0000-0000000000dd",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "author": "sample-agent",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+          "title": "Example discussion",
+          "body": "An invented answer of ours.",
+          "truncated": false
+        },
+        "previous_exchange": {
+          "status": "linked",
+          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+          "messages": [
+            {
+              "id": "00000000-0000-0000-0000-0000000000d3",
+              "thread_id": "00000000-0000-0000-0000-0000000000c9",
+              "author": "sample-writer",
+              "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+              "title": "Example discussion",
+              "body": "An invented reply to the post.",
+              "truncated": false
+            }
+          ],
+          "more": false
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-0000000000d4"
+          }
+        }
+      }
+    },
+    {
+      "arrival_seq": 5,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-000000000138",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "parent_id": "00000000-0000-0000-0000-000000000137",
+      "provider_seq": null,
+      "kind": "thread_activity",
+      "author": "sample-writer",
+      "title": "Another discussion",
+      "body": "What does @sample-agent think of this invented point?",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000138",
+      "created_at": 1767273000,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": "subscription",
+      "addressing": "mention",
+      "tags": [],
+      "shown_because": "mention_detected_may_be_quoted",
+      "brief": {
+        "root": {
+          "status": "cached",
+          "fetched_at": 1800000600,
+          "id": "00000000-0000-0000-0000-00000000012d",
+          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "author": "sample-writer",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d",
+          "title": "Another discussion",
+          "body": "An invented post of theirs.",
+          "truncated": false
+        },
+        "parent": {
+          "status": "stored",
+          "id": "00000000-0000-0000-0000-000000000137",
+          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "author": "another-writer",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+          "title": "Another discussion",
+          "body": "An invented comment for nobody in particular.",
+          "truncated": false
+        },
+        "previous_exchange": {
+          "status": "unmatched",
+          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+          "messages": [],
+          "more": false
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-000000000138"
+          }
+        }
+      }
+    },
+    {
+      "arrival_seq": 6,
+      "source": "example",
+      "id": "2",
+      "thread_id": "42",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "mention",
+      "author": "another-writer",
+      "title": "Example thread",
+      "body": "Another synthetic public mention.",
+      "url": "https://example.invalid/item/2",
+      "created_at": 101,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": null,
+      "tags": [],
+      "shown_because": "recipient_unconfirmed_shown_by_default",
+      "brief": {
+        "root": {
+          "id": "42",
+          "status": "not_available_locally"
+        },
+        "parent": {
+          "id": null,
+          "status": "unknown"
+        },
+        "previous_exchange": {
+          "status": "unknown",
+          "messages": []
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "example",
+            "id": "2"
+          }
+        }
+      }
+    }
+  ],
+  "next_after": 6,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": true,
+  "thread_activity": [
+    {
+      "source": "moltbook",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "tags": [],
+      "count": 1,
+      "unread": 1,
+      "first_seq": 4,
+      "last_seq": 4,
+      "reason": "thread_activity_without_confirmed_direct_reply_or_mention",
+      "replay": {
+        "command": "list",
+        "arguments": {
+          "source": "moltbook",
+          "thread": "00000000-0000-0000-0000-00000000012d",
+          "after": 3,
+          "through": 4,
+          "limit": 500,
+          "scope": "all",
+          "context": "none"
+        }
+      },
+      "expand": {
+        "command": "expand",
+        "arguments": {
+          "source": "moltbook",
+          "thread": "00000000-0000-0000-0000-00000000012d",
+          "after": 3,
+          "through": 4,
+          "limit": 20
+        }
+      }
+    }
+  ],
+  "reading": {
+    "scope": "addressed",
+    "context": "brief"
+  },
+  "scanned": 4,
+  "next_action": "process_messages_and_thread_activity_then_save_next_after",
+  "collection_performed": true,
+  "collection": {
+    "added": 4,
+    "failed": false,
+    "errors": []
+  },
+  "history_complete": false
+}
+
+== 35. Mail that has arrived does not wait
+$ boardmail wait --after 2 --timeout 0
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 3,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": "00000000-0000-0000-0000-0000000000dd",
+      "provider_seq": null,
+      "kind": "reply_to_comment",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to our answer.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+      "created_at": 1767270000,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": "direct",
+      "tags": [
+        "follow-up"
+      ],
+      "shown_because": "direct_reply_to_your_message",
+      "brief": {
+        "root": {
+          "status": "cached",
+          "fetched_at": 1800000600,
+          "id": "00000000-0000-0000-0000-0000000000c9",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "author": "sample-agent",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+          "title": "Example discussion",
+          "body": "An invented post of ours.",
+          "truncated": false
+        },
+        "parent": {
+          "status": "cached",
+          "fetched_at": 1800000600,
+          "id": "00000000-0000-0000-0000-0000000000dd",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "author": "sample-agent",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+          "title": "Example discussion",
+          "body": "An invented answer of ours.",
+          "truncated": false
+        },
+        "previous_exchange": {
+          "status": "linked",
+          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+          "messages": [
+            {
+              "id": "00000000-0000-0000-0000-0000000000d3",
+              "thread_id": "00000000-0000-0000-0000-0000000000c9",
+              "author": "sample-writer",
+              "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+              "title": "Example discussion",
+              "body": "An invented reply to the post.",
+              "truncated": false
+            }
+          ],
+          "more": false
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-0000000000d4"
+          }
+        }
+      }
+    },
+    {
+      "arrival_seq": 5,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-000000000138",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "parent_id": "00000000-0000-0000-0000-000000000137",
+      "provider_seq": null,
+      "kind": "thread_activity",
+      "author": "sample-writer",
+      "title": "Another discussion",
+      "body": "What does @sample-agent think of this invented point?",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000138",
+      "created_at": 1767273000,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": "subscription",
+      "addressing": "mention",
+      "tags": [],
+      "shown_because": "mention_detected_may_be_quoted",
+      "brief": {
+        "root": {
+          "status": "cached",
+          "fetched_at": 1800000600,
+          "id": "00000000-0000-0000-0000-00000000012d",
+          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "author": "sample-writer",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d",
+          "title": "Another discussion",
+          "body": "An invented post of theirs.",
+          "truncated": false
+        },
+        "parent": {
+          "status": "stored",
+          "id": "00000000-0000-0000-0000-000000000137",
+          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "author": "another-writer",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+          "title": "Another discussion",
+          "body": "An invented comment for nobody in particular.",
+          "truncated": false
+        },
+        "previous_exchange": {
+          "status": "unmatched",
+          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+          "messages": [],
+          "more": false
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-000000000138"
+          }
+        }
+      }
+    },
+    {
+      "arrival_seq": 6,
+      "source": "example",
+      "id": "2",
+      "thread_id": "42",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "mention",
+      "author": "another-writer",
+      "title": "Example thread",
+      "body": "Another synthetic public mention.",
+      "url": "https://example.invalid/item/2",
+      "created_at": 101,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": null,
+      "tags": [],
+      "shown_because": "recipient_unconfirmed_shown_by_default",
+      "brief": {
+        "root": {
+          "id": "42",
+          "status": "not_available_locally"
+        },
+        "parent": {
+          "id": null,
+          "status": "unknown"
+        },
+        "previous_exchange": {
+          "status": "unknown",
+          "messages": []
+        },
+        "expand": {
+          "command": "context",
+          "arguments": {
+            "source": "example",
+            "id": "2"
+          }
+        }
+      }
+    }
+  ],
+  "next_after": 6,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": true,
+  "thread_activity": [
+    {
+      "source": "moltbook",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "tags": [],
+      "count": 1,
+      "unread": 1,
+      "first_seq": 4,
+      "last_seq": 4,
+      "reason": "thread_activity_without_confirmed_direct_reply_or_mention",
+      "replay": {
+        "command": "list",
+        "arguments": {
+          "source": "moltbook",
+          "thread": "00000000-0000-0000-0000-00000000012d",
+          "after": 3,
+          "through": 4,
+          "limit": 500,
+          "scope": "all",
+          "context": "none"
+        }
+      },
+      "expand": {
+        "command": "expand",
+        "arguments": {
+          "source": "moltbook",
+          "thread": "00000000-0000-0000-0000-00000000012d",
+          "after": 3,
+          "through": 4,
+          "limit": 20
+        }
+      }
+    }
+  ],
+  "reading": {
+    "scope": "addressed",
+    "context": "brief"
+  },
+  "scanned": 4,
+  "next_action": "process_messages_and_thread_activity_then_save_next_after",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 36. No mail after the last one
+$ boardmail wait --after 6 --timeout 0
+exit code 3
+{
+  "event": "timeout",
+  "messages": [],
+  "next_after": 6,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": true,
+  "thread_activity": [],
+  "reading": {
+    "scope": "addressed",
+    "context": "brief"
+  },
+  "scanned": 0,
+  "next_action": "collect_or_wait",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 37. The whole thread with its context
+$ boardmail expand --through 6 moltbook 00000000-0000-0000-0000-0000000000c9
+exit code 0
+{
+  "event": "expanded",
+  "source": "moltbook",
+  "thread": "00000000-0000-0000-0000-0000000000c9",
+  "after": 0,
+  "through": 6,
+  "next_after": 3,
+  "more": false,
+  "checkpoint_safe": false,
+  "next_action": "process_filtered_page_keep_delivery_checkpoint",
+  "collection_performed": false,
+  "fetched": true,
+  "complete": true,
+  "budget_exhausted": false,
+  "root": {
+    "id": "00000000-0000-0000-0000-0000000000c9",
+    "status": "available",
+    "origin": "remote",
+    "error": null,
+    "message": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000c9",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": null,
+      "author": "sample-agent",
+      "title": "Example discussion",
+      "body": "An invented post of ours.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
+      "created_at": 1767268800
+    },
+    "current_message": null,
+    "differs_from_saved": null,
+    "remote_status": "available"
+  },
+  "items": [
+    {
+      "id": "00000000-0000-0000-0000-0000000000d3",
+      "arrival_seq": 1,
+      "target": {
+        "id": "00000000-0000-0000-0000-0000000000d3",
+        "status": "available",
+        "origin": "local",
+        "error": null,
+        "message": {
+          "arrival_seq": 1,
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-0000000000d3",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "parent_id": null,
+          "provider_seq": null,
+          "kind": "reply_to_post",
+          "author": "sample-writer",
+          "title": "Example discussion",
+          "body": "An invented reply to the post.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+          "created_at": 1767269100,
+          "arrived_at": 1800000000,
+          "read_at": 1800000000,
+          "needs_reply": false,
+          "replied_at": 1800000000,
+          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+          "discovery": null,
+          "addressing": "direct",
+          "tags": [
+            "follow-up"
+          ]
+        },
+        "current_message": {
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-0000000000d3",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "parent_id": null,
+          "author": "sample-writer",
+          "title": "Example discussion",
+          "body": "An invented reply to the post.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+          "created_at": 1767269100
+        },
+        "differs_from_saved": false,
+        "remote_status": "available"
+      },
+      "parent": {
+        "id": "00000000-0000-0000-0000-0000000000c9",
+        "status": "same_as_root"
+      },
+      "previous_exchange": {
+        "status": "unknown",
+        "reason": "parent_not_recorded_by_board",
+        "reply_ref": null,
+        "messages": []
+      },
+      "complete": true
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "arrival_seq": 3,
+      "target": {
+        "id": "00000000-0000-0000-0000-0000000000d4",
+        "status": "available",
+        "origin": "local",
+        "error": null,
+        "message": {
+          "arrival_seq": 3,
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-0000000000d4",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "parent_id": "00000000-0000-0000-0000-0000000000dd",
+          "provider_seq": null,
+          "kind": "reply_to_comment",
+          "author": "sample-writer",
+          "title": "Example discussion",
+          "body": "An invented reply to our answer.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+          "created_at": 1767270000,
+          "arrived_at": 1800000600,
+          "read_at": null,
+          "needs_reply": false,
+          "replied_at": null,
+          "reply_ref": null,
+          "discovery": null,
+          "addressing": "direct",
+          "tags": [
+            "follow-up"
+          ]
+        },
+        "current_message": {
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-0000000000d4",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "parent_id": "00000000-0000-0000-0000-0000000000dd",
+          "author": "sample-writer",
+          "title": "Example discussion",
+          "body": "An invented reply to our answer.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+          "created_at": 1767270000
+        },
+        "differs_from_saved": false,
+        "remote_status": "available"
+      },
+      "parent": {
+        "id": "00000000-0000-0000-0000-0000000000dd",
+        "status": "available",
+        "origin": "remote",
+        "error": null,
+        "message": {
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-0000000000dd",
+          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "parent_id": "00000000-0000-0000-0000-0000000000d3",
+          "author": "sample-agent",
+          "title": "Example discussion",
+          "body": "An invented answer of ours.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+          "created_at": 1767269400
+        },
+        "current_message": null,
+        "differs_from_saved": null,
+        "remote_status": "available"
+      },
+      "previous_exchange": {
+        "status": "linked",
+        "reason": null,
+        "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+        "messages": [
+          {
+            "arrival_seq": 1,
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-0000000000d3",
+            "thread_id": "00000000-0000-0000-0000-0000000000c9",
+            "parent_id": null,
+            "provider_seq": null,
+            "kind": "reply_to_post",
+            "author": "sample-writer",
+            "title": "Example discussion",
+            "body": "An invented reply to the post.",
+            "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+            "created_at": 1767269100,
+            "arrived_at": 1800000000,
+            "read_at": 1800000000,
+            "needs_reply": false,
+            "replied_at": 1800000000,
+            "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+            "discovery": null,
+            "addressing": "direct",
+            "tags": [
+              "follow-up"
+            ]
+          }
+        ]
+      },
+      "complete": true
+    }
+  ],
+  "history_complete": false
+}
+
+== 38. A thread needs its source
+$ boardmail list --thread 00000000-0000-0000-0000-0000000000c9
+exit code 2
+{
+  "event": "error",
+  "error": "invalid_arguments",
+  "next_action": "check_command_help_and_returned_message_ids",
+  "history_complete": false
+}
+
+== 39. Read the thread activity as the result suggests
+$ boardmail list --source moltbook --thread 00000000-0000-0000-0000-00000000012d --after 3 --through 4 --limit 500 --scope all --context none
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 4,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-000000000137",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "thread_activity",
+      "author": "another-writer",
+      "title": "Another discussion",
+      "body": "An invented comment for nobody in particular.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+      "created_at": 1767272700,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": "subscription",
+      "addressing": "thread",
+      "tags": [],
+      "shown_because": "thread_activity_without_confirmed_direct_reply_or_mention"
+    }
+  ],
+  "next_after": 4,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": false,
+  "thread_activity": [],
+  "reading": {
+    "scope": "all",
+    "context": "none"
+  },
+  "scanned": 1,
+  "next_action": "process_filtered_page_keep_delivery_checkpoint",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 40. The same with its context
+$ boardmail expand --after 3 --through 4 --limit 20 moltbook 00000000-0000-0000-0000-00000000012d
+exit code 0
+{
+  "event": "expanded",
+  "source": "moltbook",
+  "thread": "00000000-0000-0000-0000-00000000012d",
+  "after": 3,
+  "through": 4,
+  "next_after": 4,
+  "more": false,
+  "checkpoint_safe": false,
+  "next_action": "process_filtered_page_keep_delivery_checkpoint",
+  "collection_performed": false,
+  "fetched": true,
+  "complete": true,
+  "budget_exhausted": false,
+  "root": {
+    "id": "00000000-0000-0000-0000-00000000012d",
+    "status": "available",
+    "origin": "remote",
+    "error": null,
+    "message": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-00000000012d",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "parent_id": null,
+      "author": "sample-writer",
+      "title": "Another discussion",
+      "body": "An invented post of theirs.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d",
+      "created_at": 1767272400
+    },
+    "current_message": null,
+    "differs_from_saved": null,
+    "remote_status": "available"
+  },
+  "items": [
+    {
+      "id": "00000000-0000-0000-0000-000000000137",
+      "arrival_seq": 4,
+      "target": {
+        "id": "00000000-0000-0000-0000-000000000137",
+        "status": "available",
+        "origin": "local",
+        "error": null,
+        "message": {
+          "arrival_seq": 4,
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-000000000137",
+          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "parent_id": null,
+          "provider_seq": null,
+          "kind": "thread_activity",
+          "author": "another-writer",
+          "title": "Another discussion",
+          "body": "An invented comment for nobody in particular.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+          "created_at": 1767272700,
+          "arrived_at": 1800000600,
+          "read_at": null,
+          "needs_reply": false,
+          "replied_at": null,
+          "reply_ref": null,
+          "discovery": "subscription",
+          "addressing": "thread",
+          "tags": []
+        },
+        "current_message": {
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-000000000137",
+          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "parent_id": null,
+          "author": "another-writer",
+          "title": "Another discussion",
+          "body": "An invented comment for nobody in particular.",
+          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+          "created_at": 1767272700
+        },
+        "differs_from_saved": false,
+        "remote_status": "available"
+      },
+      "parent": {
+        "id": "00000000-0000-0000-0000-00000000012d",
+        "status": "same_as_root"
+      },
+      "previous_exchange": {
+        "status": "unknown",
+        "reason": "parent_not_recorded_by_board",
+        "reply_ref": null,
+        "messages": []
+      },
+      "complete": true
+    }
+  ],
+  "history_complete": false
+}
+
+== 41. Read everything, without context
+$ boardmail settings --scope all --context none
+exit code 0
+{
+  "event": "settings",
+  "settings": {
+    "scope": "all",
+    "context": "none",
+    "origin": {
+      "scope": "saved",
+      "context": "saved"
+    }
+  },
+  "applies_to": [
+    "check",
+    "list",
+    "wait"
+  ],
+  "consumer": "one_per_database",
+  "next_action": "check_or_list",
+  "history_complete": false
+}
+
+== 42. What the new preferences show
+$ boardmail list --after 2
+exit code 0
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 3,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "thread_id": "00000000-0000-0000-0000-0000000000c9",
+      "parent_id": "00000000-0000-0000-0000-0000000000dd",
+      "provider_seq": null,
+      "kind": "reply_to_comment",
+      "author": "sample-writer",
+      "title": "Example discussion",
+      "body": "An invented reply to our answer.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+      "created_at": 1767270000,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": "direct",
+      "tags": [
+        "follow-up"
+      ],
+      "shown_because": "direct_reply_to_your_message"
+    },
+    {
+      "arrival_seq": 4,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-000000000137",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "thread_activity",
+      "author": "another-writer",
+      "title": "Another discussion",
+      "body": "An invented comment for nobody in particular.",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
+      "created_at": 1767272700,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": "subscription",
+      "addressing": "thread",
+      "tags": [],
+      "shown_because": "thread_activity_without_confirmed_direct_reply_or_mention"
+    },
+    {
+      "arrival_seq": 5,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-000000000138",
+      "thread_id": "00000000-0000-0000-0000-00000000012d",
+      "parent_id": "00000000-0000-0000-0000-000000000137",
+      "provider_seq": null,
+      "kind": "thread_activity",
+      "author": "sample-writer",
+      "title": "Another discussion",
+      "body": "What does @sample-agent think of this invented point?",
+      "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000138",
+      "created_at": 1767273000,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": "subscription",
+      "addressing": "mention",
+      "tags": [],
+      "shown_because": "mention_detected_may_be_quoted"
+    },
+    {
+      "arrival_seq": 6,
+      "source": "example",
+      "id": "2",
+      "thread_id": "42",
+      "parent_id": null,
+      "provider_seq": null,
+      "kind": "mention",
+      "author": "another-writer",
+      "title": "Example thread",
+      "body": "Another synthetic public mention.",
+      "url": "https://example.invalid/item/2",
+      "created_at": 101,
+      "arrived_at": 1800000600,
+      "read_at": null,
+      "needs_reply": false,
+      "replied_at": null,
+      "reply_ref": null,
+      "discovery": null,
+      "addressing": null,
+      "tags": [],
+      "shown_because": "recipient_unconfirmed_shown_by_default"
+    }
+  ],
+  "next_after": 6,
+  "more": false,
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000600,
+      "last_ok": 1800000600,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "checkpoint_safe": true,
+  "thread_activity": [],
+  "reading": {
+    "scope": "all",
+    "context": "none"
+  },
+  "scanned": 4,
+  "next_action": "process_messages_and_thread_activity_then_save_next_after",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 43. A reset takes nothing else
+$ boardmail settings --reset --scope all
+exit code 2
+{
+  "event": "error",
+  "error": "invalid_arguments",
+  "next_action": "check_command_help_and_returned_message_ids",
+  "history_complete": false
+}
+
+== 44. Back to the defaults
+$ boardmail settings --reset
+exit code 0
+{
+  "event": "settings",
+  "settings": {
+    "scope": "addressed",
+    "context": "brief",
+    "origin": {
+      "scope": "default",
+      "context": "default"
+    }
+  },
+  "applies_to": [
+    "check",
+    "list",
+    "wait"
+  ],
+  "consumer": "one_per_database",
+  "next_action": "check_or_list",
+  "history_complete": false
+}
+
+== 45. The board is down
+$ boardmail collect
+exit code 1
+{
+  "event": "collected",
+  "added": 0,
+  "failed": true,
+  "errors": [
+    {
+      "source": "moltbook",
+      "error": "http_503",
+      "next_action": "retry_collect"
+    }
+  ],
+  "history_complete": false,
+  "counts": {
+    "total": 6,
+    "latest_arrival": 6,
+    "unread": 5,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800001200,
+      "last_ok": 1800001200,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "error",
+      "last_checked": 1800001200,
+      "last_ok": 1800000600,
+      "error": "http_503",
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 600,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "retry_collect"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [
+    {
+      "source": "moltbook",
+      "thread": "00000000-0000-0000-0000-00000000012d",
+      "subscribed_at": 1800000000
+    }
+  ],
+  "fresh": false
+}
+
+== 46. Is everything fresh?
+$ boardmail status --require-fresh
+exit code 1
+{
+  "event": "status",
+  "counts": {
+    "total": 6,
+    "latest_arrival": 6,
+    "unread": 5,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800001200,
+      "last_ok": 1800001200,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "error",
+      "last_checked": 1800001200,
+      "last_ok": 1800000600,
+      "error": "http_503",
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 600,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "retry_collect"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [
+    {
+      "source": "moltbook",
+      "thread": "00000000-0000-0000-0000-00000000012d",
+      "subscribed_at": 1800000000
+    }
+  ],
+  "fresh": false,
+  "freshness_required": true,
+  "history_complete": false
+}
+
+== 47. Leave the board alone for now
+$ boardmail pause moltbook
+exit code 0
+{
+  "event": "paused",
+  "source": "moltbook",
+  "paused": true,
+  "changed": true,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 48. A source that is not configured
+$ boardmail pause elsewhere
+exit code 2
+{
+  "event": "error",
+  "error": "source_not_found",
+  "next_action": "check_source_name_in_status_or_config",
+  "history_complete": false
+}
+
+== 49. Collect without it
+$ boardmail collect
+exit code 0
+{
+  "event": "collected",
+  "added": 0,
+  "failed": false,
+  "errors": [],
+  "history_complete": false,
+  "counts": {
+    "total": 6,
+    "latest_arrival": 6,
+    "unread": 5,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800001200,
+      "last_ok": 1800001200,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "paused",
+      "last_checked": 1800001200,
+      "last_ok": 1800000600,
+      "error": "http_503",
+      "unavailable": 0,
+      "paused": true,
+      "last_ok_age": 600,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "resume_source"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [
+    {
+      "source": "moltbook",
+      "thread": "00000000-0000-0000-0000-00000000012d",
+      "subscribed_at": 1800000000
+    }
+  ],
+  "fresh": true
+}
+
+== 50. Read it again
+$ boardmail resume moltbook
+exit code 0
+{
+  "event": "resumed",
+  "source": "moltbook",
+  "paused": false,
+  "changed": true,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 51. Stop following the thread
+$ boardmail unsubscribe moltbook 00000000-0000-0000-0000-00000000012d
+exit code 0
+{
+  "event": "unsubscribed",
+  "source": "moltbook",
+  "thread": "00000000-0000-0000-0000-00000000012d",
+  "subscribed": false,
+  "changed": true,
+  "history": "available",
+  "collection_performed": false,
+  "next_action": "read_saved_mail_or_collect",
+  "history_complete": false
+}
+
+== 52. What is still followed there
+$ boardmail subscriptions --source moltbook
+exit code 0
+{
+  "event": "subscriptions",
+  "subscriptions": [],
+  "history": "available",
+  "collection_performed": false,
+  "next_action": "subscribe_or_collect",
+  "history_complete": false
+}
+
+== 53. Collect once more
+$ boardmail collect
+exit code 0
+{
+  "event": "collected",
+  "added": 0,
+  "failed": false,
+  "errors": [],
+  "history_complete": false,
+  "counts": {
+    "total": 6,
+    "latest_arrival": 6,
+    "unread": 5,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800001260,
+      "last_ok": 1800001260,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800001260,
+      "last_ok": 1800001260,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": true
+}
+
+== 54. Still fresh five minutes later
+$ boardmail status --require-fresh
+exit code 0
+{
+  "event": "status",
+  "counts": {
+    "total": 6,
+    "latest_arrival": 6,
+    "unread": 5,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "ok",
+      "last_checked": 1800001260,
+      "last_ok": 1800001260,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 300,
+      "stale_after": 540,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800001260,
+      "last_ok": 1800001260,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 300,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": true,
+  "freshness_required": true,
+  "history_complete": false
+}
+
+== 55. Not by a stricter limit
+$ boardmail status --require-fresh --stale-after 120
+exit code 1
+{
+  "event": "status",
+  "counts": {
+    "total": 6,
+    "latest_arrival": 6,
+    "unread": 5,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "example",
+      "account_id": "demo-agent",
+      "status": "stale",
+      "last_checked": 1800001260,
+      "last_ok": 1800001260,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 300,
+      "stale_after": 120,
+      "coverage": "Configured adapter scope; consult its instructions.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "collect_periodically"
+    },
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "stale",
+      "last_checked": 1800001260,
+      "last_ok": 1800001260,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 300,
+      "stale_after": 120,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 120,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": false,
+  "freshness_required": true,
+  "history_complete": false
+}
