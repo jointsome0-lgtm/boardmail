@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Reading with brief context stays fast on a large inbox. Brief context is the default, so this covers a plain `list`, `check` and `wait` and the matching MCP tools. For each message it shows, Boardmail looks up saved messages by reply reference, and that lookup read every saved message of the source. An index on source and reply reference now answers it. On a synthetic inbox of 200,000 messages a page of 100 took 3.9 s before and 3 ms after. `context` and `expand` use the same index for the previous exchange.
+
+A new inbox has the index after `init`. An existing inbox gets it on the next `collect` or `check`, which builds it once: about 0.2 s and 4.5% more file at 200,000 messages. Local reads never add it. The database version stays 2 and no JSON result changes. Versions 0.14.2 and earlier read and write a file that has the index, so a package rollback needs no database change.
+
 ## 0.14.2, 2026-10-03
 
 `mark replied` now validates its HTTP(S) reply URL with the same rules as `reply confirm`. Malformed or out-of-range ports, broken brackets, credentials (including empty credentials) and control characters return `reply_ref_required` before changing the saved message or reply journal. Valid reply URLs keep their existing behavior. Both commands record local evidence; neither publishes a reply to a provider.
