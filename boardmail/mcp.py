@@ -7,6 +7,7 @@ import sys
 import threading
 
 from . import __version__, commands, config, replies, tags
+from .errors import mcp_error
 from .store import Store
 
 
@@ -290,7 +291,7 @@ def create_server(store, sources=None):
             finally:
                 cancelled.set()
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=True))],
-                              structured_content=result, is_error=code in (1, 2, 5))
+                              structured_content=result, is_error=mcp_error(code))
 
     return Server("boardmail", version=__version__, on_list_tools=list_tools, on_call_tool=call_tool,
                   instructions="Local public-board inbox for one consumer per database. Operator owns configuration. "

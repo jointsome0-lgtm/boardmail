@@ -5,8 +5,8 @@ import math
 import sqlite3
 
 from . import config, providers, reader, replies, tags, verification
-from .adapters import next_action
 from .config import MailError
+from .errors import exit_code, next_action
 
 LOOKUP_ADAPTERS = ("postingboard", "the-colony", "moltbook", "clawdchat", "botnet")
 EXPAND_LIMIT = 20
@@ -19,7 +19,7 @@ def error_result(error):
     if error == "message_not_found":
         result["identifier_hint"] = ("Use the source and remote message id returned by list. "
                                      "arrival_seq is a local arrival cursor, not a remote message id.")
-    return result, 5 if error in ("database_missing", "config_missing") else 2
+    return result, exit_code(error)
 
 
 def local_state_result(exc, source=None, message_id=None):

@@ -9,6 +9,7 @@ import runpy
 from urllib.parse import urlsplit
 
 from .config import LEGACY_ADAPTERS, PACKAGED_ADAPTERS, MailError, identifier
+from .errors import next_action
 
 
 @dataclass
@@ -24,41 +25,6 @@ class Batch:
     error: str | None = None
     unavailable: int = 0
     originals: list = field(default_factory=list)
-
-
-def next_action(error):
-    if error == "database_missing": return "run_init"
-    if error in ("config_missing", "invalid_config", "credentials_unavailable"): return "check_config_and_credentials"
-    if error == "auth_2fa_required": return "configure_colony_totp_secret_file"
-    if error in ("auth_2fa_invalid", "invalid_totp_secret"): return "check_totp_secret_and_system_clock"
-    if error in ("auth_invalid_token", "auth_token_revoked", "auth_pending_activation", "auth_ip_denied", "auth_agent_only", "http_401", "http_403"):
-        return "check_config_and_credentials"
-    if error in ("account_mismatch", "adapter_mismatch"): return "restore_source_identity_or_use_a_new_source"
-    if error == "database_exists": return "use_existing_database_do_not_overwrite"
-    if error == "source_not_found": return "check_source_name_in_status_or_config"
-    if error == "subscriptions_unsupported": return "use_a_source_with_subscription_support"
-    if error == "subscription_config_required": return "rerun_with_config_to_identify_source_adapter"
-    if error == "invalid_thread_id": return "use_a_thread_uuid_from_a_message_or_board"
-    if error == "invalid_settings": return "run_settings_reset"
-    if error == "invalid_tag_name": return "use_1_to_64_lowercase_letters_digits_hyphens_or_underscores_starting_with_a_letter_or_digit"
-    if error == "invalid_reply_body": return "use_nonempty_utf8_text_up_to_65536_bytes"
-    if error == "reply_not_prepared": return "prepare_reply_before_publishing"
-    if error == "reply_not_started": return "begin_before_publishing"
-    if error == "source_paused": return "inspect_source_pause_before_remote_verification"
-    if error == "reply_reference_unsupported": return "supply_exact_reply_url_on_the_configured_board"
-    if error == "reply_verification_unsupported": return "use_independent_readback_and_reply_confirm"
-    if error == "reply_candidate_limit": return "inspect_saved_candidates_or_use_independent_readback_and_reply_confirm"
-    if error == "reply_adapter_identity_unknown": return "restore_source_identity_before_verifying"
-    if error in ("reply_key_mismatch", "reply_body_conflict"): return "show_saved_reply_before_changing_a_draft"
-    if error in ("reply_already_recorded", "reply_already_started"): return "inspect_saved_reply_do_not_publish_again"
-    if error in ("reply_readback_mismatch", "reply_reference_conflict"): return "reconcile_publication_before_confirming"
-    if error in ("unsupported_database", "local_state_error"): return "inspect_database_do_not_delete"
-    if error in ("adapter_load_failed", "adapter_version_unsupported", "invalid_adapter_result", "adapter_failed"):
-        return "check_trusted_adapter_code"
-    if error == "http_429": return "wait_before_collecting_again"
-    if error in ("invalid_arguments", "invalid_message_id", "invalid_mark", "reply_ref_required", "message_not_found"):
-        return "check_command_help_and_returned_message_ids"
-    return "retry_collect"
 
 
 def validate(batch):
