@@ -1,5 +1,6 @@
 include AGENT_GUIDE.md
 include scripts/check_sdist.py
+include scripts/inner_reach.py
 recursive-include docs *.md
 recursive-include examples *.py *.json
-recursive-include tests *.py *.sql
+recursive-include tests *.py *.sql *.txt
