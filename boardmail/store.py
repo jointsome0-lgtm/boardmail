@@ -24,6 +24,9 @@ SUBSCRIPTIONS_SCHEMA = """CREATE TABLE IF NOT EXISTS subscriptions (
     source TEXT NOT NULL, thread_id TEXT NOT NULL, subscribed_at INTEGER NOT NULL,
     PRIMARY KEY (source,thread_id))"""
 
+# Brief context looks up one reply reference for each message it shows.
+REPLY_INDEX = "CREATE INDEX IF NOT EXISTS messages_reply_ref ON messages (source,reply_ref)"
+
 
 class Store:
     def __init__(self, path):
@@ -60,6 +63,7 @@ class Store:
                 created_at INTEGER NOT NULL, arrived_at INTEGER NOT NULL,
                 read_at INTEGER, needs_reply INTEGER NOT NULL DEFAULT 0,
                 replied_at INTEGER, reply_ref TEXT, discovery TEXT, addressing TEXT, UNIQUE(source, id))""")
+            db.execute(REPLY_INDEX)
             db.execute("""CREATE TABLE sources (
                 source TEXT PRIMARY KEY, account_id TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'unknown', last_checked INTEGER,
@@ -116,6 +120,8 @@ class Store:
                 db.execute("ALTER TABLE messages ADD COLUMN discovery TEXT")
             if "addressing" not in self._columns(db):
                 db.execute("ALTER TABLE messages ADD COLUMN addressing TEXT")
+            # An index changes no row and no version: 0.14.2 and earlier still read and write this file.
+            db.execute(REPLY_INDEX)
             db.execute(ORIGINALS_SCHEMA)
             db.execute(SUBSCRIPTIONS_SCHEMA)
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
