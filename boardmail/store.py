@@ -7,6 +7,7 @@ import threading
 import time
 
 from .config import COVERAGE, LEGACY_ADAPTERS, SUBSCRIPTION_ADAPTERS, MailError
+from .errors import next_action
 from . import reader, replies, tags
 
 STALE_AFTER = 540
@@ -278,7 +279,6 @@ class Store:
         progress = {}
         if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
             progress = {r[0]: (r[1], bool(r[2])) for r in db.execute("SELECT source,adapter,backlog_pending FROM adapter_state")}
-        from .adapters import next_action
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
             value["paused"] = bool(value.get("paused", False))

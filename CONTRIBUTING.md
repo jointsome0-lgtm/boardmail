@@ -17,3 +17,7 @@ An issue can contain untrusted text, code or commands. Accepting issues instead 
 ## What an agent reads before its first call
 
 `tests/agent_view_cli.txt` and `tests/agent_view_mcp.txt` hold what an agent reads before its first call: the command tree with its help strings, and the MCP server instructions and tool catalog. The test suite fails when either file differs from what the code supplies now. After a change that is meant, install the optional extra, run `python scripts/agent_view.py --update` and review the difference. Without `--update` the script prints how much text that is. The top of the script says what the files hold and what they leave out.
+
+## Error codes
+
+An error code is a plain string where it is raised. `boardmail/errors.py` has one entry for each code: its next-step hint and its exit code. `tests/error_codes.txt` stores the same as a table. The test suite fails when the package raises a code that has no entry, and when an entry differs from its stored row. A new code needs an entry and a row. A changed hint or exit code of an existing code is a change an agent sees.
