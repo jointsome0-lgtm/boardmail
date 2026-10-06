@@ -20,10 +20,14 @@ SMOKE_TESTS = [
 ]
 REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
             'boardmail/cli.py', 'boardmail/mcp.py', 'docs/reference.md',
-            'scripts/check_sdist.py', 'examples/demo.py', 'examples/fixtures.py',
+            'scripts/check_sdist.py', 'scripts/inner_reach.py', 'examples/demo.py', 'examples/fixtures.py',
             'examples/agent_loop.py', 'examples/custom_board.py',
             'examples/custom_feed.json', 'examples/custom_config.json',
             'tests/test_mail.py', 'tests/test_adapters.py', 'tests/test_agent_loop.py',
+            'tests/test_inner_reach.py', 'tests/inner_reach.txt', 'tests/fixtures/inner_reach/cases.py',
+            'tests/fixtures/inner_reach/imports.py', 'tests/fixtures/inner_reach/startup.py',
+            'tests/fixtures/inner_reach/support.py', 'tests/fixtures/inner_reach/below/helpers.py',
+            'tests/fixtures/inner_reach/below/stores.py',
             'tests/fixtures/v1.sql']
 GUARD = '''import socket
 import sys

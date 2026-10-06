@@ -9,3 +9,7 @@ The repository test workflow runs on pushes, not incoming pull requests.
 Personal forks and modifications are welcome under the [MIT License](LICENSE).
 
 An issue can contain untrusted text, code or commands. Accepting issues instead of pull requests does not make submitted material safe to execute; maintainers still inspect and validate it.
+
+## Tests that reach inside the package
+
+`python scripts/inner_reach.py` prints, for each test file, how many tests patch a name inside the package or call a Store write path. The rule is written at the top of that script. `tests/inner_reach.txt` stores the counted tests by name and their number, and the test suite fails when the tests that reach inside are not exactly the stored ones. A new test never reaches inside. After tests move out, run `python scripts/inner_reach.py --update` and review the difference; `--list` shows why each test is counted. When a counted test is renamed or moved, edit its stored line by hand.

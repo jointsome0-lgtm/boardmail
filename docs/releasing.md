@@ -61,8 +61,9 @@ failure before retrying rather than treating duplicate files as success.
 ## Check standalone artifacts
 
 The source distribution includes the source examples, tests, SQL migration fixture,
-guides and this artifact checker. The wheel installs the `boardmail` package and
-its console entry points; it does not install those ancillary files.
+guides, this artifact checker and the counter of tests that reach inside the package.
+The wheel installs the `boardmail` package and its console entry points; it does not
+install those ancillary files.
 
 With the declared `setuptools>=77` backend already available, run:
 
