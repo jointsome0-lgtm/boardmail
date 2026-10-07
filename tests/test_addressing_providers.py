@@ -19,7 +19,8 @@ from boardmail import adapter_fruitflies as fruit
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, settings, uid
+from examples.fixtures import FixtureBoard, named, original, settings, uid
+from kit import Clock, fixed
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, threads as claw_threads
 from test_fruitflies import feed as fly_feed, post as fly_post
@@ -27,15 +28,15 @@ from test_fruitflies import feed as fly_feed, post as fly_post
 PREVIEW = "PRIVATE NOTIFICATION PREVIEW"
 
 
-def with_profile(client, **fields):
+def with_profile(board, **fields):
     """Add board-verified profile names to the identity response already fetched."""
-    get = client.get
+    get = board.get
     def wrapped(path, params=None, **kw):
         result = get(path, params, **kw)
         if path in ("/agents/me", "/v1/me"):
             (result["agent"] if "agent" in result else result).update(fields)
         return result
-    client.get = wrapped
+    board.get = wrapped
 
 
 def by_id(batch):
@@ -59,36 +60,38 @@ def assert_clean(test, batch):
 
 class NotificationBoardTests(unittest.TestCase):
     """The Colony and Moltbook: native types plus the public original's parent."""
+    def setUp(self):
+        self.folder = self.enterContext(tempfile.TemporaryDirectory())
 
-    def event(self, client, n, kind, *, comment=True, post=None):
-        colony = client.source == "the-colony"
+    def event(self, board, n, kind, *, comment=True, post=None):
+        colony = board.source == "the-colony"
         root = post or (101 if colony else 201)
         item = {"id": uid(n + 1000), "notification_type" if colony else "type": kind,
                 "post_id" if colony else "relatedPostId": uid(root), "content": PREVIEW}
         if comment: item["comment_id" if colony else "relatedCommentId"] = uid(n)
-        client.events.append(item)
+        board.events.append(item)
 
-    def collect(self, client, state=None, known=None):
-        cfg = client.settings
-        batch = providers.collect(client.source, cfg, deepcopy(state or {}), set(known or ()), client_factory=lambda *_: client)
+    def collect(self, board, state=None, known=None):
+        cfg = board.settings
+        batch = providers.collect(board.source, cfg, deepcopy(state or {}), set(known or ()), fetch=board)
         assert_clean(self, batch)
         return batch
 
     def test_colony_native_types_parents_and_overlaps(self):
-        client = FixtureClient("the-colony", {**settings()["the-colony"], "mention_aliases": ["@Sample"]})
-        with_profile(client, username="colony-name")
-        client.events.clear()
+        board = FixtureBoard("the-colony", {**settings(self.folder)["the-colony"], "mention_aliases": ["@Sample"]})
+        with_profile(board, username="colony-name")
+        board.events.clear()
         comments = {111: dict(), 113: dict(parent_id=uid(111)), 114: dict(parent_id=uid(110)),
                     115: dict(), 116: dict(parent_id=uid(111), body="@colony-name please look"),
                     117: dict(parent_id=uid(111)), 118: dict(parent_id=uid(111), body="cc @sample and @Sample-two"),
                     112: dict()}
-        client.comments = [{**original(n, 101, colony=True), **changes} for n, changes in comments.items()]
+        board.comments = [{**original(n, 101, colony=True), **changes} for n, changes in comments.items()]
         for n, kinds in ((111, ["comment_on_post"]), (112, ["mention"]), (113, ["comment_on_post"]),
                          (114, ["reply_to_comment"]), (115, ["comment_on_post", "mention"]),
                          (116, ["comment_on_post"]), (117, ["comment_on_post", "reply_to_comment"]),
                          (118, ["comment_on_post"])):
-            for kind in kinds: self.event(client, n, kind)
-        batch = self.collect(client)
+            for kind in kinds: self.event(board, n, kind)
+        batch = self.collect(board)
         self.assertFalse(batch.error)
         got = by_id(batch)
         self.assertEqual({n: got[uid(n)]["addressing"] for n in comments}, {
@@ -100,41 +103,41 @@ class NotificationBoardTests(unittest.TestCase):
         self.assertEqual(got[uid(118)]["body"], "cc @sample and @Sample-two")
 
     def test_colony_overlap_across_collections_and_legacy_pending_state(self):
-        client = FixtureClient("the-colony", settings()["the-colony"])
-        client.events.clear(); client.comments.clear()
-        self.event(client, 121, "comment_on_post")
-        first = self.collect(client)
+        board = FixtureBoard("the-colony", settings(self.folder)["the-colony"])
+        board.events.clear(); board.comments.clear()
+        self.event(board, 121, "comment_on_post")
+        first = self.collect(board)
         self.assertEqual(first.messages, [])
         self.assertEqual(first.state["pending"][uid(121)]["types"], {uid(121): ["comment_on_post"]})
         # The original appears together with a second, retained notification.
-        client.comments.append({**original(121, 101, colony=True), "parent_id": uid(110)})
-        self.event(client, 121, "reply_to_comment")
-        second = self.collect(client, first.state)
+        board.comments.append({**original(121, 101, colony=True), "parent_id": uid(110)})
+        self.event(board, 121, "reply_to_comment")
+        second = self.collect(board, first.state)
         self.assertEqual(by_id(second)[uid(121)]["addressing"], "direct")
         self.assertNotIn(uid(121), second.state["pending"])
         # A reference persisted before types were recorded still resolves from its one native type.
-        client.comments.append({**original(122, 101, colony=True), "parent_id": uid(110)})
+        board.comments.append({**original(122, 101, colony=True), "parent_id": uid(110)})
         legacy = {"pending": {uid(122): {"post": uid(101), "ids": {uid(122): "reply_to_comment"}, "cursor": None}}}
-        third = self.collect(client, legacy)
+        third = self.collect(board, legacy)
         self.assertEqual(by_id(third)[uid(122)]["addressing"], "direct")
         legacy = {"pending": {uid(122): {"post": uid(101), "ids": {uid(122): "reply_to_post"}, "cursor": None}}}
-        self.assertIsNone(by_id(self.collect(client, legacy))[uid(122)]["addressing"])
+        self.assertIsNone(by_id(self.collect(board, legacy))[uid(122)]["addressing"])
 
     def test_moltbook_tree_shows_own_parent_and_caches_already_fetched_context(self):
-        client = FixtureClient("moltbook", settings()["moltbook"])
-        client.events.clear()
+        board = FixtureBoard("moltbook", settings(self.folder)["moltbook"])
+        board.events.clear()
         own_comment = original(250, 201, 2)
         own_comment["replies"] = [{**original(213, 201), "parent_id": uid(250)}]
         top = original(211, 201)
         top["replies"] = [{**original(212, 201), "parent_id": uid(211)},
                           {**original(214, 201), "parent_id": uid(211), "content": "@Sample-Writer-Two reads this"}]
-        client.comments = [top, own_comment]
-        with_profile(client, name="sample-writer-two")
+        board.comments = [top, own_comment]
+        with_profile(board, name="sample-writer-two")
         for n, kinds in ((211, ["post_comment"]), (212, ["post_comment"]), (213, ["post_comment"]),
                          (214, ["post_comment"]), (250, ["post_comment"])):
-            for kind in kinds: self.event(client, n, kind)
-        client.events.append({"id": uid(1999), "type": "mention", "relatedPostId": uid(201), "content": PREVIEW})
-        batch = self.collect(client)
+            for kind in kinds: self.event(board, n, kind)
+        board.events.append({"id": uid(1999), "type": "mention", "relatedPostId": uid(201), "content": PREVIEW})
+        batch = self.collect(board)
         self.assertFalse(batch.error)
         got = by_id(batch)
         self.assertEqual({n: got[uid(n)]["addressing"] for n in (211, 212, 213, 214)},
@@ -147,59 +150,64 @@ class NotificationBoardTests(unittest.TestCase):
         self.assertEqual(cached[uid(201)]["title"], "Example discussion")
         self.assertEqual(cached[uid(211)]["body"], "A synthetic public reply.")
         self.assertEqual(cached[uid(250)]["parent_id"], None)
-        self.assertEqual(cached[uid(250)]["url"], client.host + "/post/" + uid(201) + "#comment-" + uid(250))
-        self.assertLessEqual(len(client.calls), 5, "No extra requests were spent on the cache")
+        self.assertEqual(cached[uid(250)]["url"], board.host + "/post/" + uid(201) + "#comment-" + uid(250))
+        self.assertLessEqual(len(board.calls), 5, "No extra requests were spent on the cache")
 
     def test_moltbook_foreign_mention_caches_public_root_but_omits_deleted_root(self):
-        client = FixtureClient("moltbook", settings()["moltbook"])
-        client.events.clear()
-        client.root = {**original(301, 301), "title": "Their thread"}
-        client.comments = []
-        client.events.append({"id": uid(1901), "type": "mention", "relatedPostId": uid(301), "content": PREVIEW})
-        batch = self.collect(client)
+        board = FixtureBoard("moltbook", settings(self.folder)["moltbook"])
+        board.events.clear()
+        board.root = {**original(301, 301), "title": "Their thread"}
+        board.comments = []
+        board.events.append({"id": uid(1901), "type": "mention", "relatedPostId": uid(301), "content": PREVIEW})
+        batch = self.collect(board)
         self.assertEqual(by_id(batch)[uid(301)]["addressing"], "mention")
         self.assertEqual(set(originals(batch)), {uid(301)}, "A fetched public root is kept once")
-        client.root["is_deleted"] = True
-        batch = self.collect(client)
+        board.root["is_deleted"] = True
+        batch = self.collect(board)
         self.assertEqual(batch.messages, [])
         self.assertEqual(originals(batch), {})
 
 
 class PostingboardTests(unittest.TestCase):
-    def collect(self, client, state=None, known=None):
-        batch = providers.collect("postingboard", client.settings, deepcopy(state or {}), set(known or ()), client_factory=lambda *_: client)
+    def setUp(self):
+        self.folder = self.enterContext(tempfile.TemporaryDirectory())
+        self.clock = Clock(1_000_000)  # The client waits between two requests. Here the wait only moves the clock.
+        self.enterContext(fixed(self.clock))
+
+    def collect(self, board, state=None, known=None):
+        batch = providers.collect("postingboard", board.settings, deepcopy(state or {}), set(known or ()), fetch=board)
         assert_clean(self, batch)
         return batch
 
-    def incomplete_parent_client(self, *, parent_first=False, null_author=False):
-        cfg = {**settings()["postingboard"], "threads": [], "subscriptions": [uid(302)],
+    def incomplete_parent_board(self, *, parent_first=False, null_author=False):
+        cfg = {**settings(self.folder)["postingboard"], "threads": [], "subscriptions": [uid(302)],
                "inbox": False, "mention_aliases": []}
-        client = FixtureClient("postingboard", cfg)
+        board = FixtureBoard("postingboard", cfg)
         unknown = named(316, 302)
         del unknown["agent_id"]
-        client.comments[uid(302)] = [named(313, 302, 3), named(315, 302), unknown,
+        board.comments[uid(302)] = [named(313, 302, 3), named(315, 302), unknown,
             named(323, 302, reply_to=313), named(324, 302, reply_to=315),
             named(325, 302, reply_to=316), named(326, 302, reply_to=999), named(327, 302)]
-        client.summaries = {uid(313), uid(315), uid(316)}
+        board.summaries = {uid(313), uid(315), uid(316)}
         if parent_first:
-            for post in client.comments[uid(302)][:3]: post["seq"] += 100
-        get = client.get
+            for post in board.comments[uid(302)][:3]: post["seq"] += 100
+        get = board.get
         def incomplete_page(path, params=None, **kw):
             raw = get(path, params, **kw)
             for item in raw.get("replies", {}).get("items", []):
-                if item["id"] in client.summaries:
+                if item["id"] in board.summaries:
                     if null_author: item["agent_id"] = None
                     else: item.pop("agent_id", None)
             return raw
-        client.get = incomplete_page
-        return client
+        board.get = incomplete_page
+        return board
 
     def test_missing_page_authors_use_hydrated_targets_in_either_order(self):
         for parent_first in (False, True):
             for null_author in (False, True):
                 with self.subTest(parent_first=parent_first, null_author=null_author):
-                    client = self.incomplete_parent_client(parent_first=parent_first, null_author=null_author)
-                    batch = self.collect(client)
+                    board = self.incomplete_parent_board(parent_first=parent_first, null_author=null_author)
+                    batch = self.collect(board)
                     self.assertIsNone(batch.error)
                     got = by_id(batch)
                     self.assertEqual({n: got[uid(n)]["addressing"] for n in (323, 324, 325, 326, 327)},
@@ -209,50 +217,50 @@ class PostingboardTests(unittest.TestCase):
                     self.assertNotIn(uid(313), got)
                     self.assertIn(uid(313), originals(batch))
                     # Omitting page IDs does not add ownership-discovery requests.
-                    self.assertEqual([path for path, _, _ in client.calls],
+                    self.assertEqual([path for path, _, _ in board.calls],
                         ["/v1/me", "/v1/posts/"+uid(302), *["/v1/posts/"+uid(n)
                          for n in (316, 315, 313)],
                          "/v1/posts/"+uid(313)])
 
     def test_unknown_complete_parent_does_not_supply_foreign_ownership(self):
-        client = self.incomplete_parent_client()
-        client.summaries.clear()  # Complete bodies need no singular request.
-        batch = self.collect(client)
+        board = self.incomplete_parent_board()
+        board.summaries.clear()  # Complete bodies need no singular request.
+        batch = self.collect(board)
         self.assertIsNone(by_id(batch)[uid(325)]["addressing"])
         self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
         self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
-        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(board.calls), 2)
 
     def test_later_backfill_original_corrects_same_pass_reply(self):
-        client = self.incomplete_parent_client()
+        board = self.incomplete_parent_board()
         parent = named(313, 302, 3)
         parent["seq"] = 1
-        client.comments[uid(302)] = [parent, named(500, 302, reply_to=313),
+        board.comments[uid(302)] = [parent, named(500, 302, reply_to=313),
                                     *[named(n, 302) for n in range(401, 430)]]
-        client.summaries = {uid(313)}
-        batch = self.collect(client)
+        board.summaries = {uid(313)}
+        batch = self.collect(board)
         self.assertEqual(by_id(batch)[uid(500)]["addressing"], "direct")
         self.assertEqual(len(batch.messages), 30)
         self.assertIsNone(batch.error)
-        self.assertEqual([call[1].get("before") for call in client.calls if call[0].endswith(uid(302))],
+        self.assertEqual([call[1].get("before") for call in board.calls if call[0].endswith(uid(302))],
                          [None, 401])
 
     def test_pending_own_original_supplies_ownership_without_page_identity(self):
-        client = self.incomplete_parent_client()
-        client.settings["inbox"] = True
-        parent = client.comments[uid(302)][0]
-        client.inbox = [(8001, parent, ["mention"])]
+        board = self.incomplete_parent_board()
+        board.settings["inbox"] = True
+        parent = board.comments[uid(302)][0]
+        board.inbox = [(8001, parent, ["mention"])]
         # The watched page later omits the ID and supplies only a summary.
-        batch = self.collect(client)
+        batch = self.collect(board)
         self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
         self.assertNotIn(uid(313), by_id(batch))
         self.assertEqual(batch.state["pending"], {})
 
     def test_pending_own_original_is_not_mail_when_later_full_body_omits_author(self):
-        client = self.incomplete_parent_client()
-        client.settings["inbox"] = True
-        client.inbox = [(8001, client.comments[uid(302)][0], ["mention"])]
-        get, fetched = client.get, False
+        board = self.incomplete_parent_board()
+        board.settings["inbox"] = True
+        board.inbox = [(8001, board.comments[uid(302)][0], ["mention"])]
+        get, fetched = board.get, False
         def later_incomplete_original(path, params=None, **kw):
             nonlocal fetched
             raw = get(path, params, **kw)
@@ -260,48 +268,68 @@ class PostingboardTests(unittest.TestCase):
                 if fetched: raw["post"].pop("agent_id")
                 fetched = True
             return raw
-        client.get = later_incomplete_original
-        batch = self.collect(client)
+        board.get = later_incomplete_original
+        batch = self.collect(board)
         self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
         self.assertNotIn(uid(313), by_id(batch))
         self.assertEqual(batch.state["pending"], {})
 
     def test_invalid_hydrated_parent_cannot_establish_ownership(self):
-        client = self.incomplete_parent_client()
-        client.comments[uid(302)][0]["created_at"] = "invalid timestamp"
-        batch = self.collect(client)
+        board = self.incomplete_parent_board()
+        board.comments[uid(302)][0]["created_at"] = "invalid timestamp"
+        batch = self.collect(board)
         self.assertEqual(batch.error, "invalid_response")
         self.assertIsNone(by_id(batch)[uid(323)]["addressing"])
         self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
         self.assertNotIn(uid(313), originals(batch))
 
     def test_budget_failure_finalizes_prefix_without_inventing_target_ownership(self):
-        client = self.incomplete_parent_client()
-        get = client.get
-        def exhausted_parent(path, params=None, **kw):
-            if path == "/v1/posts/"+uid(313): raise MailError("budget_exhausted")
+        board = self.incomplete_parent_board()
+        board.comments[uid(302)] += [named(n, 302) for n in range(400, 430)]  # A first page of later replies.
+        get = board.get
+        def slow_page(path, params=None, **kw):
+            # The second page comes when the time of the thread is nearly over. Two more requests fit into it:
+            # the client asks for two of the three parents, and for our own one the time is over.
+            if "before" in (params or {}): self.clock.advance(40.7)
             return get(path, params, **kw)
-        client.get = exhausted_parent
-        batch = self.collect(client)
+        board.get = slow_page
+        batch = self.collect(board)
         self.assertFalse(batch.complete)
         self.assertIsNone(batch.error)
+        self.assertEqual([path for path, _, _ in board.calls][3:], ["/v1/posts/"+uid(316), "/v1/posts/"+uid(315)])
         self.assertIsNone(by_id(batch)[uid(323)]["addressing"])
+        self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
+
+    def test_first_page_cut_by_its_time_is_finished_in_the_time_of_the_thread(self):
+        board = self.incomplete_parent_board()
+        get = board.get
+        def slow_page(path, params=None, **kw):
+            # The page comes when the time of a first page is nearly over. One more request fits into it. For the
+            # second parent that time is over, and the client goes on with the same page in the time of the thread.
+            if params: self.clock.advance(13)
+            return get(path, params, **kw)
+        board.get = slow_page
+        batch = self.collect(board)
+        self.assertFalse(batch.complete)
+        self.assertIsNone(batch.error)
+        self.assertEqual([path for path, _, _ in board.calls][2:], ["/v1/posts/"+uid(n) for n in (316, 315, 313)])
+        self.assertEqual(by_id(batch)[uid(323)]["addressing"], "direct")
         self.assertEqual(by_id(batch)[uid(324)]["addressing"], "thread")
 
     def test_native_direct_reply_survives_unknown_target_and_failed_lookup(self):
         for reasons, expected in ((["direct_reply"], "direct"),
                                   (["direct_reply", "mention"], "direct+mention")):
             with self.subTest(reasons=reasons):
-                client = self.incomplete_parent_client()
-                client.settings["inbox"] = True
-                child = next(p for p in client.comments[uid(302)] if p["id"] == uid(325))
-                client.inbox = [(8002, child, reasons)]
-                get = client.get
+                board = self.incomplete_parent_board()
+                board.settings["inbox"] = True
+                child = next(p for p in board.comments[uid(302)] if p["id"] == uid(325))
+                board.inbox = [(8002, child, reasons)]
+                get = board.get
                 def fail_singular(path, params=None, **kw):
                     if path == "/v1/posts/"+uid(325): raise MailError("source_timeout")
                     return get(path, params, **kw)
-                client.get = fail_singular
-                batch = self.collect(client)
+                board.get = fail_singular
+                batch = self.collect(board)
                 got = by_id(batch)[uid(325)]
                 self.assertEqual(got["addressing"], expected)
                 self.assertEqual(got["discovery"], "inbox:"+"+".join(sorted(reasons)))
@@ -309,15 +337,14 @@ class PostingboardTests(unittest.TestCase):
                 self.assertEqual(batch.state["pending"], {})
 
     def test_hydrated_ownership_snapshot_and_marks_survive_reopen(self):
-        client = self.incomplete_parent_client()
+        board = self.incomplete_parent_board()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"inbox.sqlite3"
             store = Store(path)
             store.initialize()
-            store.set_subscription("postingboard", uid(302), True, client.settings)
+            store.set_subscription("postingboard", uid(302), True, board.settings)
             def collect():
-                return providers.collect_all(Store(path), {"postingboard": client.settings},
-                                             client_factory=lambda *_: client)
+                return providers.collect_all(Store(path), {"postingboard": board.settings}, fetch=board)
             self.assertEqual(collect()["added"], 7)
             self.assertEqual(Store(path).show("postingboard", uid(323))["addressing"], "direct")
             for action in ("read", "needs_reply", "replied"):
@@ -325,18 +352,18 @@ class PostingboardTests(unittest.TestCase):
                     **({"ref": "https://postingboard.example.invalid/v1/posts/"+uid(999)} if action == "replied" else {}))
             saved = Store(path).show("postingboard", uid(323))
             # A weaker repeat response cannot rewrite an accepted snapshot or marks.
-            client.comments[uid(302)] = client.comments[uid(302)][1:]
+            board.comments[uid(302)] = board.comments[uid(302)][1:]
             self.assertEqual(collect()["added"], 0)
             self.assertEqual(Store(path).show("postingboard", uid(323)), saved)
 
     def test_watched_thread_targets_and_flat_replies(self):
-        cfg = {**settings()["postingboard"], "threads": [uid(301)]}
-        client = FixtureClient("postingboard", cfg)
-        with_profile(client, handle="sample")
-        client.comments[uid(301)] += [named(316, 301, reply_to=301), named(318, 301, 3), named(317, 301, reply_to=318),
+        cfg = {**settings(self.folder)["postingboard"], "threads": [uid(301)]}
+        board = FixtureBoard("postingboard", cfg)
+        with_profile(board, handle="sample")
+        board.comments[uid(301)] += [named(316, 301, reply_to=301), named(318, 301, 3), named(317, 301, reply_to=318),
                                       named(319, 301, reply_to=311), named(320, 301, reply_to=999),
                                       named(321, 301, body="@sample-agent check this"), named(322, 301, body="@sample here")]
-        batch = self.collect(client)
+        batch = self.collect(board)
         self.assertFalse(batch.error)
         got = by_id(batch)
         self.assertEqual({n: got[uid(n)]["addressing"] for n in (311, 312, 316, 317, 319, 320, 321, 322)}, {
@@ -349,10 +376,10 @@ class PostingboardTests(unittest.TestCase):
         self.assertEqual(originals(batch)[uid(301)]["body"], "A synthetic named-board reply.")
 
     def test_foreign_thread_mentions_summaries_and_own_posts(self):
-        cfg = {**settings()["postingboard"], "threads": [uid(302)]}
-        client = FixtureClient("postingboard", cfg)
-        client.summaries = {uid(313)}
-        batch = self.collect(client)
+        cfg = {**settings(self.folder)["postingboard"], "threads": [uid(302)]}
+        board = FixtureBoard("postingboard", cfg)
+        board.summaries = {uid(313)}
+        batch = self.collect(board)
         got = by_id(batch)
         self.assertEqual(set(got), {uid(314)})
         self.assertEqual((got[uid(314)]["addressing"], got[uid(314)]["kind"]), ("mention", "mention"))
@@ -361,8 +388,8 @@ class PostingboardTests(unittest.TestCase):
         self.assertEqual(originals(batch)[uid(313)]["body"], "A synthetic named-board reply.")
 
     def test_inbox_reasons_search_hits_and_explicit_text(self):
-        cfg = {**settings()["postingboard"], "threads": [], "inbox": True, "alias_search": ["meliora"]}
-        client = FixtureClient("postingboard", cfg)
+        cfg = {**settings(self.folder)["postingboard"], "threads": [], "inbox": True, "alias_search": ["meliora"]}
+        board = FixtureBoard("postingboard", cfg)
         posts = {uid(500): named(500, 500), uid(501): named(501, 500, body="@sample-agent please confirm."),
                  uid(502): named(502, 500, reply_to=501, body="A direct reply to your comment."),
                  uid(503): named(503, 500, reply_to=501, body="@sample-agent, and a direct reply."),
@@ -371,12 +398,12 @@ class PostingboardTests(unittest.TestCase):
                  uid(601): named(601, 600, body="Thanks Meliora, the summary helped."),
                  uid(602): named(602, 600, body="Thanks @meliora, the summary helped."),
                  uid(603): named(603, 600, 3, body="Own post mentioning meliora.")}
-        client.others = posts
-        client.inbox = [(1, posts[uid(501)], ["mention"]), (2, posts[uid(502)], ["direct_reply"]),
+        board.others = posts
+        board.inbox = [(1, posts[uid(501)], ["mention"]), (2, posts[uid(502)], ["direct_reply"]),
                         (3, posts[uid(503)], ["direct_reply", "mention"]), (4, posts[uid(504)], ["reply_to_your_thread"]),
                         (5, posts[uid(505)], ["reply_to_your_thread"])]
-        client.search["meliora"] = [posts[uid(601)], posts[uid(602)], posts[uid(603)]]
-        batch = self.collect(client)
+        board.search["meliora"] = [posts[uid(601)], posts[uid(602)], posts[uid(603)]]
+        batch = self.collect(board)
         self.assertFalse(batch.error)
         got = by_id(batch)
         self.assertEqual({n: got[uid(n)]["addressing"] for n in (501, 502, 503, 504, 505, 601, 602)}, {

@@ -4,7 +4,6 @@ from contextlib import redirect_stdout
 from copy import deepcopy
 from http.client import IncompleteRead
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 import io
 import json
@@ -21,7 +20,8 @@ from unittest.mock import patch
 from boardmail import cli, providers, table
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, settings, uid
+from examples.fixtures import FixtureBoard, named, original, settings, together, uid
+from kit import Clock, fixed
 
 
 def mail(n, *, created=100):
@@ -37,6 +37,13 @@ class MailTests(unittest.TestCase):
         self.path = Path(self.temp.name)/'inbox.sqlite3'
         self.store = Store(self.path)
         self.store.initialize()
+
+    def boards(self):
+        """The three invented boards and one fetch for them. The client of Postingboard waits between two
+        requests, so the clock is fixed: its wait only moves the clock."""
+        self.enterContext(fixed(Clock(1_000_000)))
+        boards = {s:FixtureBoard(s,cfg) for s,cfg in settings(self.temp.name).items()}
+        return boards, together(boards)
 
     def save(self,*numbers):
         return self.store.save('moltbook',uid(2),[mail(n) for n in numbers])
@@ -84,79 +91,84 @@ class MailTests(unittest.TestCase):
         self.save(10);self.assertEqual(self.store.page()['next_after'],1)
 
     def test_public_shapes_pages_nested_replies_and_source_isolation(self):
-        clients = {s:FixtureClient(s,cfg) for s,cfg in settings().items()}
-        c = clients['moltbook']
+        boards, fetch = self.boards()
+        c = boards['moltbook']
         child = original(212,201);child['parent_id']=uid(211)
         c.comments[0]['replies']=[child]
         c.events += [deepcopy(c.events[0])]
-        with patch.object(providers,'PAGE_SIZE',1):
-            added = 0
-            for _ in range(3):
-                result = providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
-                added += result['added']
-                self.assertFalse(result['failed'])
+        for board in boards.values():
+            board.per_page = 1  # A page holds one notification or comment, however many the client asks for.
+        added = 0
+        for _ in range(3):
+            result = providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
+            added += result['added']
+            self.assertFalse(result['failed'])
+        for board in boards.values():
+            board.per_page = None
         self.assertEqual(added,7)
         self.assertEqual(self.store.show('moltbook',uid(212))['parent_id'],uid(211))
         self.assertEqual(self.store.show('moltbook',uid(211))['body'],'A synthetic public reply.')
         self.assertEqual(self.store.show('the-colony',uid(111))['url'],
-                         'https://the-colony.example.invalid/posts/'+uid(101)+'#comment-'+uid(111))
+                         'https://thecolony.ai/posts/'+uid(101)+'#comment-'+uid(111))
         self.assertEqual(self.store.show('postingboard',uid(312))['provider_seq'],312)
         self.assertEqual(self.store.show('postingboard',uid(314))['kind'],'mention')
         self.assertNotIn(uid(315),self.store.known('postingboard',uid(3)))
         before = next(s['last_ok'] for s in result['sources'] if s['source']=='the-colony')
-        clients['the-colony'].fail=True
+        boards['the-colony'].fail=True
         c.comments.append(original(213,201))
         extra=deepcopy(c.events[0]);extra.update(id=uid(999),relatedCommentId=uid(213));c.events.append(extra)
-        result=providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
+        result=providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
         self.assertEqual(result['added'],1)
         health=next(s for s in result['sources'] if s['source']=='the-colony')
         self.assertEqual(health['last_ok'],before);self.assertEqual(health['error'],'http_503')
         self.assertNotIn('secret-token',json.dumps(result));self.assertNotIn('provider prose',json.dumps(result))
 
     def test_partial_notification_page_and_late_public_body(self):
-        c=FixtureClient('moltbook',settings()['moltbook']);get=c.get
+        sources={'moltbook':settings(self.temp.name)['moltbook']}
+        c=FixtureBoard('moltbook',sources['moltbook']);get=c.get
         def fail_later(path,params=None,**kw):
             if path=='/notifications' and params.get('cursor'):raise OSError('sensitive path or token')
             return get(path,params,**kw)
         c.get=fail_later
-        with patch.object(providers,'PAGE_SIZE',1):
-            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-            self.assertEqual(result['added'],1)
-            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
+        c.per_page=1  # A page holds one notification, however many the client asks for.
+        result=providers.collect_all(self.store,sources,fetch=c)
+        self.assertEqual(result['added'],1)
+        result=providers.collect_all(self.store,sources,fetch=c)
+        c.per_page=None
         self.assertTrue(result['failed']);self.assertEqual(len(self.store.page()['messages']),1)
         c.get=get
-        result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
+        result=providers.collect_all(self.store,sources,fetch=c)
         self.assertEqual(result['added'],0)
         after=self.store.page()['next_after'];self.assertEqual(result['sources'][0]['unavailable'],1)
         c.comments.append(original(212,201,body='Late public confirmation.'))
         c.comments[-1]['created_at']='2020-01-01T00:00:00Z'
-        result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
+        result=providers.collect_all(self.store,sources,fetch=c)
         self.assertEqual(result['added'],1)
         self.assertEqual(self.store.wait(after,0)['messages'][0]['body'],'Late public confirmation.')
 
     def test_confirmed_prefix_survives_a_repeated_small_provider_budget(self):
-        cfg = settings()['moltbook']
+        cfg = settings(self.temp.name)['moltbook']
         events = [{'id':uid(n+1000),'type':'post_comment','relatedPostId':uid(n),
                    'relatedCommentId':uid(n+10)} for n in (501,502,503)]
-        def factory(*_):
-            client = FixtureClient('moltbook',cfg)
-            base_get = client.get
-            used = 0
-            def get(path,params=None,**kw):
-                nonlocal used
-                if path == '/agents/me': return base_get(path, params, **kw)
-                if path=='/notifications':return {'notifications':events,'has_more':False}
-                root = int(UUID(path.split('/')[2]))
-                if path.endswith('/comments'):
-                    return {'comments':[original(root+10,root)],'has_more':False}
-                used += 1
-                if used>1:
-                    raise HTTPError('https://example.invalid',429,'quota',{},io.BytesIO())
-                return {'post':{**original(root,root,2),'title':'Example'}}
-            client.get = get
-            return client
+        board = FixtureBoard('moltbook',cfg)
+        base_get = board.get
+        used = 0
+        def get(path,params=None,**kw):
+            nonlocal used
+            if path == '/agents/me':
+                used = 0  # A pass begins with the profile. The board gives one post in each pass.
+                return base_get(path, params, **kw)
+            if path=='/notifications':return {'notifications':events,'has_more':False}
+            root = int(UUID(path.split('/')[2]))
+            if path.endswith('/comments'):
+                return {'comments':[original(root+10,root)],'has_more':False}
+            used += 1
+            if used>1:
+                raise HTTPError('https://example.invalid',429,'quota',{},io.BytesIO())
+            return {'post':{**original(root,root,2),'title':'Example'}}
+        board.get = get
         for expected in (1,2,3):
-            result = providers.collect_all(self.store,{'moltbook':cfg},client_factory=factory)
+            result = providers.collect_all(self.store,{'moltbook':cfg},fetch=board)
             self.assertEqual(result['added'],1)
             self.assertEqual(self.store.status()['counts']['total'],expected)
             if expected<3:
@@ -166,17 +178,17 @@ class MailTests(unittest.TestCase):
         self.assertFalse(result['failed']);self.assertIsNotNone(result['sources'][0]['last_ok'])
 
     def test_non_post_mentions_unknown_authors_and_http_stream_errors(self):
-        clients = {s:FixtureClient(s,cfg) for s,cfg in settings().items()}
-        c = clients['moltbook']
+        boards, fetch = self.boards()
+        c = boards['moltbook']
         c.events.insert(0,{'id':uid(900),'type':'mention','relatedPostId':None})
         c.events.insert(0,{'id':uid(901),'type':'comment_reply','relatedPostId':None})
         c.comments[0]['author'] = None
-        result = providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
+        result = providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
         self.assertFalse(result['failed'])
         self.assertIsNone(self.store.show('moltbook',uid(211))['author'])
         def broken(*_,**__):raise IncompleteRead(b'sensitive partial payload')
-        clients['the-colony'].get = broken
-        result = providers.collect_all(self.store,settings(),client_factory=lambda s,_:clients[s])
+        boards['the-colony'].get = broken
+        result = providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
         self.assertTrue(result['failed'])
         self.assertEqual(next(s['status'] for s in result['sources'] if s['source']=='moltbook'),'ok')
         self.assertNotIn('sensitive',json.dumps(result))
@@ -184,73 +196,68 @@ class MailTests(unittest.TestCase):
     def test_second_page_failure_keeps_confirmed_messages_from_one_thread(self):
         for source in ('moltbook','postingboard'):
             with self.subTest(source=source):
-                cfg = deepcopy(settings()[source])
+                cfg = deepcopy(settings(self.temp.name)[source])
                 cfg['threads'] = [uid(301)]
-                client = FixtureClient(source,cfg)
+                board = FixtureBoard(source,cfg)
                 if source == 'moltbook':
-                    client.comments.append(original(212,201))
+                    board.comments.append(original(212,201))
                     first_count, total = 1,2
                 else:
-                    client.comments[uid(301)] = [named(n,301) for n in range(400,431)]
+                    board.comments[uid(301)] = [named(n,301) for n in range(400,431)]
                     first_count, total = 30,31
                 self.store.save(source,cfg['account_id'],[],now=123)
-                get = client.get
+                get = board.get
                 def broken(path,params=None,**kw):
                     if source=='moltbook' and path=='/notifications':
-                        return {'notifications':client.events,'has_more':False}
+                        return {'notifications':board.events,'has_more':False}
                     if params and (('cursor' in params and path.endswith('/comments')) or 'before' in params):
                         raise HTTPError('https://example.invalid',429,'quota',{},io.BytesIO())
                     return get(path,params,**kw)
-                client.get = broken
-                with patch.object(providers,'PAGE_SIZE',1):
+                board.get = broken
+                board.per_page = 1  # A page of Moltbook holds one comment, however many the client asks for.
+                # The client of Postingboard waits between two requests. Here its wait only moves the clock.
+                with fixed(Clock(1_000_000)):
                     for expected_added in (first_count,0):
-                        result = providers.collect_all(self.store,{source:cfg},client_factory=lambda *_:client)
+                        result = providers.collect_all(self.store,{source:cfg},fetch=board)
                         self.assertEqual(result['added'],expected_added)
                         health = next(s for s in result['sources'] if s['source']==source)
                         if expected_added==0:
                             self.assertEqual(health['status'],'error');self.assertEqual(health['last_ok'],last_ok)
                         last_ok=health['last_ok']
                         self.assertEqual(len(self.store.known(source,cfg['account_id'])),first_count)
-                    client.get = get
-                    result = providers.collect_all(self.store,{source:cfg},client_factory=lambda *_:client)
+                    board.get = get
+                    result = providers.collect_all(self.store,{source:cfg},fetch=board)
                 self.assertFalse(result['failed']);self.assertEqual(result['added'],total-first_count)
                 self.assertEqual(len(self.store.known(source,cfg['account_id'])),total)
 
     def test_postingboard_all_selected_pages_and_summary_hydration(self):
-        c=FixtureClient('postingboard',settings()['postingboard'])
+        c=self.boards()[0]['postingboard']
         c.comments[uid(301)]=[named(n,301) for n in [311,312,*range(400,433)]]
-        result=providers.collect_all(self.store,{'postingboard':settings()['postingboard']},client_factory=lambda *_:c)
+        result=providers.collect_all(self.store,{'postingboard':c.settings},fetch=c)
         self.assertEqual(result['added'],36)
         self.assertEqual(self.store.show('postingboard',uid(312))['body'],'A synthetic named-board reply.')
         self.assertTrue(any('before' in p for _,p,_ in c.calls))
 
     def test_postingboard_slow_or_broken_root_does_not_starve_later_roots(self):
-        cfg = settings()['postingboard']
-        key = Path(self.temp.name)/'example.key';key.write_text('synthetic-key')
-        cfg['api_key_file'] = key
-        fixture = FixtureClient('postingboard',cfg)
-        fixture.comments[uid(301)] = [named(n,301) for n in range(400,1700)]
+        cfg = settings(self.temp.name)['postingboard']
+        board = FixtureBoard('postingboard',cfg)
+        board.comments[uid(301)] = [named(n,301) for n in range(400,1700)]
+        get = board.get
         for failure in ('source_timeout','http_503'):
             with self.subTest(failure=failure):
                 store = Store(Path(self.temp.name)/(failure+'.sqlite3'));store.initialize()
                 store.save('postingboard',cfg['account_id'],[],now=123)
-                clock, calls = [0.0], []
-                def sleep(seconds):clock[0] += seconds
-                def respond(request,timeout):
-                    url = urlsplit(request.full_url)
-                    calls.append((url.path,clock[0]))
-                    if failure=='http_503' and url.path.endswith(uid(301)):
-                        raise HTTPError(request.full_url,503,'private provider prose',{},io.BytesIO())
-                    params = {k:int(v[0]) for k,v in parse_qs(url.query).items()}
-                    return io.BytesIO(json.dumps(fixture.get(url.path,params,authenticated=True)).encode())
-                def factory(*args):
-                    client = providers.Client(*args)
-                    client.opener.open = respond
-                    return client
-                with patch.object(providers.time,'monotonic',side_effect=lambda:clock[0]), \
-                     patch.object(providers.time,'sleep',side_effect=sleep):
+                clock, calls = Clock(1_000_000), []
+                def respond(path,params=None,**kw):
+                    calls.append((path,clock.now))
+                    if failure=='http_503' and path.endswith(uid(301)):
+                        raise HTTPError('https://example.invalid',503,'private provider prose',{},io.BytesIO())
+                    return get(path,params,**kw)
+                board.get = respond
+                # The wait of the client between two requests moves the clock, and the time of a root ends by it.
+                with fixed(clock):
                     for attempt in range(2):
-                        result = providers.collect_all(store,{'postingboard':cfg},client_factory=factory)
+                        result = providers.collect_all(store,{'postingboard':cfg},fetch=board)
                         self.assertEqual(store.show('postingboard',uid(314))['kind'],'mention')
                         count = store.status()['counts']['total']
                         if failure=='source_timeout':
@@ -272,23 +279,24 @@ class MailTests(unittest.TestCase):
                         self.assertGreaterEqual(current[1]-previous[1],1.1-1e-8)
 
     def test_discovery_progress_and_repeated_cursor_recovery(self):
-        c=FixtureClient('moltbook',settings()['moltbook'])
-        with patch.object(providers,'PAGE_SIZE',1):
-            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-            self.assertFalse(result['failed']);self.assertTrue(result['sources'][0]['backlog_pending'])
-            self.assertEqual(result['added'],1)
-            get=c.get
-            def repeat(path,params=None,**kw):
-                result=get(path,{**(params or {}),'cursor':'0'},**kw)
-                if path=='/notifications':result.update(has_more=True,next_cursor='same')
-                return result
-            c.get=repeat
-            for _ in range(2):
-                result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-            self.assertEqual(result['sources'][0]['error'],'pagination_no_progress')
-            c.get=get
-            result=providers.collect_all(self.store,{'moltbook':settings()['moltbook']},client_factory=lambda *_:c)
-            self.assertFalse(result['failed']);self.assertEqual(self.store.status()['counts']['total'],1)
+        sources={'moltbook':settings(self.temp.name)['moltbook']}
+        c=FixtureBoard('moltbook',sources['moltbook'])
+        c.per_page=1  # A page holds one notification or comment, however many the client asks for.
+        result=providers.collect_all(self.store,sources,fetch=c)
+        self.assertFalse(result['failed']);self.assertTrue(result['sources'][0]['backlog_pending'])
+        self.assertEqual(result['added'],1)
+        get=c.get
+        def repeat(path,params=None,**kw):
+            result=get(path,{**(params or {}),'cursor':'0'},**kw)
+            if path=='/notifications':result.update(has_more=True,next_cursor='same')
+            return result
+        c.get=repeat
+        for _ in range(2):
+            result=providers.collect_all(self.store,sources,fetch=c)
+        self.assertEqual(result['sources'][0]['error'],'pagination_no_progress')
+        c.get=get
+        result=providers.collect_all(self.store,sources,fetch=c)
+        self.assertFalse(result['failed']);self.assertEqual(self.store.status()['counts']['total'],1)
 
     def test_wait_timeout_cancellation_and_outage_never_write(self):
         self.save(10);self.store.failure('moltbook',uid(2),'http_503')
@@ -299,17 +307,20 @@ class MailTests(unittest.TestCase):
         self.assertEqual(result['messages'],[]);self.assertEqual(self.path.read_bytes(),before)
 
     def test_auth_hosts_public_confirmation_and_redirect_refusal(self):
-        for source,cfg in settings().items():
-            key=Path(self.temp.name)/(source+'.key');key.write_text('synthetic-key')
-            client=providers.Client(source,{**cfg,'api_key_file':key});calls=[]
-            def respond(request,timeout):
-                calls.append(request)
-                return io.BytesIO(b'{"access_token":"synthetic-token"}' if request.data else b'{}')
-            with patch.object(client.opener,'open',side_effect=respond),patch.object(providers.time,'sleep'):
-                client.get('/notifications',authenticated=True);client.get('/posts/'+uid(100))
-            self.assertTrue(all(r.full_url.startswith(providers.HOSTS[source]+'/') for r in calls))
-            self.assertTrue(all(r.data is None or r.full_url.endswith('/auth/token') for r in calls))
-            self.assertIsNone(calls[-1].get_header('Authorization'))
+        boards, fetch = self.boards()
+        self.assertFalse(providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)['failed'])
+        # What each board was asked, and with which sign that the request is the one of the account. Colony signs
+        # the account in for a token. A public original is asked without any sign, on every board that has one.
+        asked = {s:[(a.url.partition('?')[0],a.headers.get('Authorization')) for a in board.asked] for s,board in boards.items()}
+        colony, molt = 'https://thecolony.ai/api/v1', 'https://www.moltbook.com/api/v1'
+        self.assertEqual(asked['the-colony'], [(colony+'/auth/token',None),(colony+'/agents/me','Bearer invented-token'),
+            (colony+'/notifications','Bearer invented-token'),(colony+'/comments/'+uid(111),None),(colony+'/comments/'+uid(112),None)])
+        self.assertEqual(boards['the-colony'].asked[0].body, {'api_key':'invented-key'})
+        self.assertTrue(all(a.body is None for board in boards.values() for a in board.asked[board.source=='the-colony':]))
+        self.assertEqual(asked['moltbook'], [(molt+'/agents/me','Bearer invented-key'),(molt+'/notifications','Bearer invented-key'),
+            (molt+'/posts/'+uid(201),None),(molt+'/posts/'+uid(201)+'/comments',None)])
+        self.assertEqual(set(asked['postingboard']), {('https://getpostingboard.dev/v1/'+path,'Bearer invented-key')
+            for path in ('me','posts/'+uid(301),'posts/'+uid(302),'posts/'+uid(312))})
         with self.assertRaises(MailError):providers.NoRedirect().redirect_request(None,None,307,'',{},'https://other.example.invalid')
 
 
