@@ -1,9 +1,11 @@
 """Package modules import each other one way: at the top of the file, with no cycle, and no private name of another."""
 import ast
+import inspect
 from pathlib import Path
 import unittest
 
 import boardmail
+from boardmail.boards import BOARDS
 
 PACKAGE = Path(boardmail.__file__).resolve().parent
 # What reads a command from outside. No module of the package imports one of these, but the one that starts the CLI.
@@ -76,6 +78,14 @@ class ImportGraphTests(unittest.TestCase):
         self.assertEqual(self.graph['errors'], set())
         importers = {name: sorted(module for module, top in self.graph.items() if name in top) for name in ENTRIES}
         self.assertEqual(importers, {'cli': ['__main__'], 'mcp': [], '__main__': []})
+
+    def test_only_the_list_of_boards_imports_the_module_of_a_board(self):
+        # The module of a board is where its collector is. One board is removed by removing its module and its
+        # line in the list, so nothing else may lean on it: no core module and no other board.
+        boards = {Path(inspect.getfile(getattr(about.collect, 'func', about.collect))).stem for about in BOARDS.values()}
+        self.assertEqual(len(boards), len(BOARDS))
+        self.assertEqual({name: sorted(top & boards) for name, top in self.graph.items() if top & boards},
+                         {'boards': sorted(boards)})
 
     def test_the_guard_sees_each_of_the_three(self):
         modules = {'one', 'two', 'three'}

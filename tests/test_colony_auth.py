@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from boardmail import config, providers
+from boardmail import adapter_colony, config
 from boardmail.boards import BOARDS, collect_all
 from boardmail.errors import next_action
 from examples.fixtures import FakeBoard, FixtureBoard, settings, together, uid
@@ -105,7 +105,7 @@ class ColonyAuthTests(unittest.TestCase):
         with patch.object(body, 'read', wraps=body.read) as read:
             batch = self.collect(FakeBoard([HTTPError('https://thecolony.ai/api/v1/auth/token', 401, '', {}, body)]))
             self.assertEqual(batch.error, 'http_401')
-            read.assert_called_once_with(providers.MAX_AUTH_ERROR_BYTES + 1)
+            read.assert_called_once_with(adapter_colony.MAX_AUTH_ERROR_BYTES + 1)
         # What Colony says of a sign-in names no failure of another board, of a request that is not the one of
         # the account, or of a status that is no refusal.
         moltbook = settings(self.root)['moltbook']
