@@ -1,4 +1,4 @@
-"""Colony auth through the normal client and collector, without network access."""
+"""Colony sign-in through the collector, at the transport seam. The board is invented."""
 import io
 import json
 from pathlib import Path
@@ -10,7 +10,12 @@ from urllib.error import HTTPError
 from boardmail import config, providers
 from boardmail.adapters import collect_all, next_action
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, settings, uid
+from examples.fixtures import FakeBoard, FixtureBoard, settings, together, uid
+from kit import Clock, fixed
+
+
+def refused(status, raw=b'{"detail":{"code":"AUTH_2FA_REQUIRED"}}'):
+    return HTTPError('https://thecolony.ai/api/v1/auth/token', status, 'SYNTHETIC-SECRET', {}, io.BytesIO(raw))
 
 
 class ColonyAuthTests(unittest.TestCase):
@@ -24,59 +29,49 @@ class ColonyAuthTests(unittest.TestCase):
         self.secret.write_text('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\n')
         self.settings = {**settings()['the-colony'], 'api_key_file': self.key}
 
-    def client(self, *, totp=False):
-        cfg = {**self.settings}
-        if totp:
-            cfg['totp_secret_file'] = self.secret
-        return providers.Client('the-colony', cfg)
+    def collect(self, board, *, totp=False):
+        """One pass over Colony, which is the board that is handed in."""
+        cfg = {**self.settings, **({'totp_secret_file': self.secret} if totp else {})}
+        return providers.collect('the-colony', cfg, {}, set(), fetch=board)
 
     def test_auth_body_uses_rfc_vectors_and_reuses_only_the_jwt_in_memory(self):
         # RFC 6238 Appendix B SHA-1 results, truncated to six digits.
         for stamp, code in ((59, '287082'), (1111111109, '081804'), (20000000000, '353130'), (59, None)):
             with self.subTest(stamp=stamp, code=code):
-                client, calls = self.client(totp=code is not None), []
-                def respond(request, timeout):
-                    calls.append(request)
-                    return io.BytesIO(b'{"access_token":"synthetic-jwt"}' if request.data else b'{}')
-                with patch.object(client.opener, 'open', side_effect=respond), patch.object(providers.time, 'time', return_value=stamp):
-                    client.get('/notifications', authenticated=True)
-                    client.get('/notifications', {'offset': 100}, authenticated=True)
-                    client.get('/posts/' + uid(101))
+                board = FixtureBoard('the-colony', self.settings)
+                board.key, board.totp = 'synthetic-api-key', code
+                with fixed(Clock(stamp)):
+                    batch = self.collect(board, totp=code is not None)
+                self.assertEqual((batch.error, len(batch.messages)), (None, 2))
                 expected = {'api_key': 'synthetic-api-key'}
                 if code is not None:
                     expected['totp_code'] = code
-                self.assertEqual([json.loads(r.data) for r in calls if r.data], [expected])
-                self.assertTrue(calls[0].full_url.endswith('/api/v1/auth/token'))
-                self.assertEqual([r.get_header('Authorization') for r in calls],
-                                 [None, 'Bearer synthetic-jwt', 'Bearer synthetic-jwt', None])
+                self.assertEqual([asked.body for asked in board.asked if asked.body], [expected])
+                # The pass signs in once, asks twice as the account, and reads the two public originals as anyone.
+                self.assertEqual([(asked.url.removeprefix('https://thecolony.ai/api/v1'), asked.headers.get('Authorization'))
+                                  for asked in board.asked],
+                                 [('/auth/token', None), ('/agents/me', 'Bearer invented-token'),
+                                  ('/notifications?limit=100', 'Bearer invented-token'),
+                                  ('/comments/' + uid(111), None), ('/comments/' + uid(112), None)])
                 self.assertEqual(sorted(p.name for p in self.root.iterdir()), ['api.key', 'totp.key'])
 
     def test_required_factor_preserves_health_and_other_sources_continue(self):
         for status in (400, 401, 403):
             with self.subTest(status=status):
                 store = Store(self.root / f'health-{status}.sqlite3')
-                sources = {'the-colony': self.settings, 'moltbook': settings()['moltbook']}
+                sources = {'the-colony': self.settings, 'moltbook': settings(self.root)['moltbook']}
                 store.initialize(sources)
                 store.save('the-colony', uid(1), [], now=123)
-                requests = []
-                def factory(source, cfg):
-                    if source != 'the-colony':
-                        return FixtureClient(source, cfg)
-                    client = providers.Client(source, cfg)
-                    def reject(request, timeout):
-                        requests.append(request)
-                        raise HTTPError(request.full_url, status, 'SYNTHETIC-SECRET', {}, io.BytesIO(
-                            b'{"detail":{"code":"AUTH_2FA_REQUIRED","message":"SYNTHETIC-SECRET"}}'))
-                    client.opener.open = reject
-                    return client
-                result = collect_all(store, sources, client_factory=factory)
+                colony = FakeBoard(lambda asked: refused(
+                    status, b'{"detail":{"code":"AUTH_2FA_REQUIRED","message":"SYNTHETIC-SECRET"}}'))
+                boards = {'the-colony': colony, 'moltbook': FixtureBoard('moltbook', sources['moltbook'])}
+                result = collect_all(store, sources, fetch=together(boards))
                 self.assertEqual(result['errors'], [{'source': 'the-colony', 'error': 'auth_2fa_required',
                                                     'next_action': 'configure_colony_totp_secret_file'}])
-                colony = next(s for s in result['sources'] if s['source'] == 'the-colony')
-                self.assertEqual(colony['last_ok'], 123)
+                health = next(s for s in result['sources'] if s['source'] == 'the-colony')
+                self.assertEqual(health['last_ok'], 123)
                 self.assertGreater(result['added'], 0)
-                self.assertEqual(len(requests), 1)
-                self.assertTrue(requests[0].full_url.endswith('/auth/token'))
+                self.assertEqual([asked.url for asked in colony.asked], ['https://thecolony.ai/api/v1/auth/token'])
                 self.assertNotIn('SYNTHETIC-SECRET', json.dumps(result))
                 self.assertNotIn(b'SYNTHETIC-SECRET', store.path.read_bytes())
 
@@ -94,47 +89,35 @@ class ColonyAuthTests(unittest.TestCase):
         ]
         for data, expected in cases:
             with self.subTest(expected=expected, data=data):
-                client = self.client(totp=True)
-                raw = data if isinstance(data, bytes) else json.dumps(data).encode()
-                body = io.BytesIO(raw)
-                exc = HTTPError('https://thecolony.ai/api/v1/auth/token', 401, 'SYNTHETIC-SECRET', {}, body)
-                with patch.object(client.opener, 'open', side_effect=exc) as request:
-                    try:
-                        client.get('/notifications', authenticated=True)
-                    except Exception as error:
-                        code = providers.error_code(error)
-                    else:
-                        self.fail('Failed authentication was accepted')
-                self.assertEqual(code, expected)
-                self.assertEqual(request.call_count, 1)
-                self.assertTrue(body.closed)
-                self.assertNotIn('SYNTHETIC-SECRET', code)
+                exc = refused(401, data if isinstance(data, bytes) else json.dumps(data).encode())
+                board = FakeBoard([exc])  # The board has one answer. A second request would fail the test.
+                batch = self.collect(board, totp=True)
+                self.assertEqual((batch.error, batch.messages, batch.complete), (expected, [], False))
+                self.assertEqual(len(board.asked), 1)
+                self.assertTrue(exc.fp.closed)
         self.assertEqual(next_action('auth_2fa_invalid'), 'check_totp_secret_and_system_clock')
         self.assertEqual(next_action('auth_token_revoked'), 'check_config_and_credentials')
 
     def test_error_read_is_bounded_and_applies_only_to_colony_auth(self):
-        raw = json.dumps({'detail': {'code': 'AUTH_2FA_REQUIRED', 'message': 'x' * 10000}}).encode()
-        body = io.BytesIO(raw)
-        client = self.client()
-        with patch.object(body, 'read', wraps=body.read) as read, patch.object(client.opener, 'open', side_effect=
-                HTTPError('https://thecolony.ai/api/v1/auth/token', 401, '', {}, body)):
-            with self.assertRaises(HTTPError) as raised:
-                client.get('/notifications', authenticated=True)
-            self.assertEqual(providers.error_code(raised.exception), 'http_401')
+        body = io.BytesIO(json.dumps({'detail': {'code': 'AUTH_2FA_REQUIRED', 'message': 'x' * 10000}}).encode())
+        with patch.object(body, 'read', wraps=body.read) as read:
+            batch = self.collect(FakeBoard([HTTPError('https://thecolony.ai/api/v1/auth/token', 401, '', {}, body)]))
+            self.assertEqual(batch.error, 'http_401')
             read.assert_called_once_with(providers.MAX_AUTH_ERROR_BYTES + 1)
-        raw = b'{"detail":{"code":"AUTH_2FA_REQUIRED"}}'
-        for source, authenticated, status in (('moltbook', True, 401), ('the-colony', False, 401), ('the-colony', True, 429)):
-            with self.subTest(source=source, authenticated=authenticated, status=status):
-                client = providers.Client(source, self.settings)
-                with patch.object(client.opener, 'open', side_effect=HTTPError('https://example.invalid', status, '', {}, io.BytesIO(raw))):
-                    with self.assertRaises(HTTPError) as raised:
-                        client.get('/posts/' + uid(101), authenticated=authenticated)
-                    self.assertEqual(providers.error_code(raised.exception), 'http_' + str(status))
-        client = self.client()
-        client.token = 'synthetic-jwt'
-        with patch.object(client.opener, 'open', side_effect=HTTPError('https://thecolony.ai', 403, '', {}, io.BytesIO(raw))):
-            with self.assertRaisesRegex(config.MailError, '^auth_2fa_required$'):
-                client.get('/notifications', authenticated=True)
+        # What Colony says of a sign-in names no failure of another board, of a request that is not the one of
+        # the account, or of a status that is no refusal.
+        moltbook = settings(self.root)['moltbook']
+        self.assertEqual(providers.collect('moltbook', moltbook, {}, set(), fetch=FakeBoard([refused(401)])).error, 'http_401')
+        board = FixtureBoard('the-colony', self.settings)
+        board.key, get = 'synthetic-api-key', board.get
+        def public(path, params=None, **asks):
+            if path.startswith('/comments/'): raise refused(401)
+            return get(path, params, **asks)
+        board.get = public
+        self.assertEqual(self.collect(board).error, 'http_401')
+        self.assertEqual(self.collect(FakeBoard([{'access_token': 'synthetic-jwt'}, refused(429)])).error, 'http_429')
+        # A request with the token of the account is refused as the sign-in is.
+        self.assertEqual(self.collect(FakeBoard([{'access_token': 'synthetic-jwt'}, refused(403)])).error, 'auth_2fa_required')
 
     def test_unavailable_and_malformed_secrets_fail_before_network(self):
         for raw, expected in ((None, 'credentials_unavailable'), (b'\n', 'credentials_unavailable'),
@@ -144,11 +127,9 @@ class ColonyAuthTests(unittest.TestCase):
                 self.secret.unlink(missing_ok=True)
                 if raw is not None:
                     self.secret.write_bytes(raw)
-                client = self.client(totp=True)
-                with patch.object(client.opener, 'open') as network:
-                    with self.assertRaisesRegex(config.MailError, '^' + expected + '$'):
-                        client.get('/notifications', authenticated=True)
-                    network.assert_not_called()
+                board = FakeBoard([])
+                self.assertEqual(self.collect(board, totp=True).error, expected)
+                self.assertEqual(board.asked, [])
 
     def test_configuration_resolves_secret_for_renamed_colony_source(self):
         path = self.root / 'config.json'

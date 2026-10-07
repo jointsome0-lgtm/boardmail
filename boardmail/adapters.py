@@ -70,9 +70,9 @@ def validate(batch):
 def collect_all(store, sources, *, client_factory=None, fetch=transport.fetch):
     """One pass over every source that is not paused.
 
-    fetch asks a board: the transport, or an invented board in its place. The modules of ClawdChat, Botnet,
-    Fruitflies and 4claw are handed it. Postingboard, Colony and Moltbook still take their client from
-    client_factory, and an adapter file of an operator gets the three arguments of the interface."""
+    fetch asks a board: the transport, or an invented board in its place. Every module of the package is handed
+    it. client_factory gives Postingboard, Colony and Moltbook a client that is asked instead of the board, and
+    an adapter file of an operator gets the three arguments of the interface."""
     # This is the only automatic migration point. Local readers never migrate.
     store.prepare_collection()
     added, errors = 0, []
@@ -88,7 +88,7 @@ def collect_all(store, sources, *, client_factory=None, fetch=transport.fetch):
                 settings = {**settings, "subscriptions": [item["thread"] for item in store.subscriptions(source)]}
             if adapter in LEGACY_ADAPTERS:
                 from . import providers
-                batch = providers.collect(adapter, settings, state, known, client_factory=client_factory)
+                batch = providers.collect(adapter, settings, state, known, client_factory=client_factory, fetch=fetch)
             else:
                 # Shipped modules and trusted configured files load only during collect.
                 with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):

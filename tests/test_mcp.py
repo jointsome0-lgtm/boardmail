@@ -14,7 +14,7 @@ from unittest.mock import patch
 from boardmail import providers
 from boardmail.mcp import create_server
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, settings, uid
+from examples.fixtures import FixtureBoard, FixtureClient, named, settings, together, uid
 import kit
 from test_mail import mail
 
@@ -361,13 +361,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.store.settings()['context'], 'brief')
 
     async def test_cli_and_live_mcp_share_subscriptions_without_restart(self):
-        cfg = {'postingboard': {**settings()['postingboard'], 'threads': []}}
+        cfg = {'postingboard': {**settings(self.temp.name)['postingboard'], 'threads': []}}
         self.store.initialize(cfg)
-        snapshots = []
-
-        def client(adapter, runtime):
-            snapshots.append(list(runtime['subscriptions']))
-            return FixtureClient(adapter, runtime)
+        board = FixtureBoard('postingboard', cfg['postingboard'])
 
         def cli(command):
             result = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
@@ -375,8 +371,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return json.loads(result.stdout)
 
-        with patch.object(providers, 'Client', side_effect=client):
-            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+        # The client of Postingboard waits between two requests. Here its wait only moves the clock.
+        with kit.fixed(kit.Clock(1_000_000)):
+            async with Client(create_server(self.store, cfg, fetch=board), mode='2026-07-28', raise_exceptions=True) as c:
                 self.assertEqual((await self.call(c, 'subscriptions'))['subscriptions'], [])
                 self.assertTrue((await asyncio.to_thread(cli, 'subscribe'))['changed'])
                 selected = await self.call(c, 'subscriptions', {'source': 'postingboard'})
@@ -389,20 +386,17 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.store.subscriptions(), [])
                 self.assertEqual((await self.call(c, 'collect'))['added'], 0)
                 self.assertEqual([m['id'] for m in (await self.call(c, 'list', {'scope': 'all'}))['messages']], [uid(314), uid(315)])
-        self.assertEqual(snapshots, [[uid(302)], []])
+        # The pass of check read the root that was subscribed. The pass after unsubscribe asked for no root.
+        self.assertEqual([path for path, _, _ in board.calls], ['/v1/me', '/v1/posts/' + uid(302), '/v1/me'])
 
     async def test_collection_partial_success_replay_and_account_isolation(self):
-        cfg = settings()
+        cfg = settings(self.temp.name)
         self.store.initialize(cfg)
-        actual = providers.collect_all
-        def factory(name, config):
-            client = FixtureClient(name, config)
-            client.fail = name == 'moltbook'
-            return client
-        def collect(store, sources, **asks):
-            return actual(store, sources, client_factory=factory)
-        with patch.object(providers, 'collect_all', collect):
-            async with Client(create_server(self.store,cfg), mode='2026-07-28', raise_exceptions=True) as c:
+        boards = {name: FixtureBoard(name, config) for name, config in cfg.items()}
+        boards['moltbook'].fail = True
+        # The client of Postingboard waits between two requests. Here its wait only moves the clock.
+        with kit.fixed(kit.Clock(1_000_000)):
+            async with Client(create_server(self.store, cfg, fetch=together(boards)), mode='2026-07-28', raise_exceptions=True) as c:
                 result = await self.call(c, 'check', {'after':0,'limit':1}, error=True)
                 self.assertGreater(result['collection']['added'], 0)
                 self.assertTrue(result['collection']['failed'])
@@ -462,34 +456,32 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
     async def test_pause_is_shared_with_cli_without_restarting_server(self):
-        cfg = {'moltbook': settings()['moltbook']}
+        cfg = {'moltbook': settings(self.temp.name)['moltbook']}
         self.store.initialize(cfg)
-        actual = providers.collect_all
-        with patch('boardmail.providers.Client', side_effect=AssertionError('unexpected network client')):
-            with patch.object(providers, 'collect_all', side_effect=lambda store, sources, **asks:
-                              actual(store, sources, client_factory=FixtureClient)):
-                async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
-                    process = await asyncio.create_subprocess_exec(
-                        sys.executable, '-m', 'boardmail', '--db', str(self.path), 'pause', 'moltbook',
-                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                    stdout, stderr = await process.communicate()
-                    self.assertEqual(process.returncode, 0, stderr)
-                    self.assertTrue(json.loads(stdout)['paused'])
-                    result = await self.call(c, 'check')
-                    self.assertEqual((result['collection']['added'], result['sources'][0]['status']), (0, 'paused'))
-                    await self.call(c, 'status', {'require_fresh': True})
-                    self.assertEqual((await self.call(c, 'pause', {'source': 'typo'}, error=True))['error'], 'source_not_found')
-                    for changed in (True, False):
-                        result = await self.call(c, 'resume', {'source': 'moltbook'})
-                        self.assertEqual((result['changed'], result['paused'], result['collection_performed']),
-                                         (changed, False, False))
-                    self.assertGreater((await self.call(c, 'collect'))['added'], 0)
-                    result = await self.call(c, 'pause', {'source': 'moltbook'})
-                    self.assertEqual(result['event'], 'paused')
-                    self.assertTrue(Store(self.path).is_paused('moltbook'))
-                    tool = next(t for t in (await c.list_tools()).tools if t.name == 'boardmail_pause')
-                    self.assertTrue(tool.annotations.idempotent_hint)
-                    self.assertFalse(tool.annotations.read_only_hint or tool.annotations.open_world_hint)
+        board = FixtureBoard('moltbook', cfg['moltbook'])
+        async with Client(create_server(self.store, cfg, fetch=board), mode='2026-07-28', raise_exceptions=True) as c:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, '-m', 'boardmail', '--db', str(self.path), 'pause', 'moltbook',
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await process.communicate()
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertTrue(json.loads(stdout)['paused'])
+            result = await self.call(c, 'check')
+            self.assertEqual((result['collection']['added'], result['sources'][0]['status']), (0, 'paused'))
+            await self.call(c, 'status', {'require_fresh': True})
+            self.assertEqual((await self.call(c, 'pause', {'source': 'typo'}, error=True))['error'], 'source_not_found')
+            for changed in (True, False):
+                result = await self.call(c, 'resume', {'source': 'moltbook'})
+                self.assertEqual((result['changed'], result['paused'], result['collection_performed']),
+                                 (changed, False, False))
+            self.assertEqual(board.asked, [])  # A source that is paused is not asked, and a resume asks nothing.
+            self.assertGreater((await self.call(c, 'collect'))['added'], 0)
+            result = await self.call(c, 'pause', {'source': 'moltbook'})
+            self.assertEqual(result['event'], 'paused')
+            self.assertTrue(Store(self.path).is_paused('moltbook'))
+            tool = next(t for t in (await c.list_tools()).tools if t.name == 'boardmail_pause')
+            self.assertTrue(tool.annotations.idempotent_hint)
+            self.assertFalse(tool.annotations.read_only_hint or tool.annotations.open_world_hint)
 
     async def test_explicit_init_config_matches_cli_with_database_override(self):
         config = self.path.with_name('config.json')

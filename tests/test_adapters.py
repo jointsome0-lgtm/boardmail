@@ -12,11 +12,12 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import cli, providers
+from boardmail import cli
 from boardmail.adapters import Batch, collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, settings, uid
+from examples.fixtures import FixtureBoard, named, original, settings, uid
+from kit import Clock, fixed
 from test_mail import mail
 
 
@@ -79,12 +80,13 @@ class AdapterTests(unittest.TestCase):
         before = store.show('moltbook', uid(10)); raw = legacy.read_bytes()
         self.assertEqual(store.wait(1, 0)['messages'][0]['arrival_seq'], 2)
         self.assertEqual(legacy.read_bytes(), raw)
-        cfg = settings()['moltbook']
-        result = collect_all(store, {'moltbook': cfg}, client_factory=FixtureClient)
+        cfg = settings(self.root)['moltbook']
+        board = FixtureBoard('moltbook', cfg)
+        result = collect_all(store, {'moltbook': cfg}, fetch=board)
         self.assertFalse(result['failed']); self.assertEqual(result['added'], 1)
         self.assertEqual(store.show('moltbook', uid(10)), before)
         self.assertEqual(store.wait(2, 0)['messages'][0]['arrival_seq'], 3)
-        collect_all(Store(legacy), {'moltbook': cfg}, client_factory=FixtureClient)
+        collect_all(Store(legacy), {'moltbook': cfg}, fetch=board)
         self.assertEqual(Store(legacy).show('moltbook', uid(10)), before)
         with closing(sqlite3.connect(legacy)) as db:
             self.assertEqual(db.execute('SELECT seq FROM sqlite_sequence WHERE name="messages"').fetchone()[0], 3)
@@ -108,103 +110,106 @@ class AdapterTests(unittest.TestCase):
     def test_failing_original_cannot_starve_later_or_late_public_originals(self):
         for source in ('the-colony', 'moltbook'):
             with self.subTest(source=source):
-                cfg = settings()[source]
+                cfg = settings(self.root)[source]
                 store = Store(self.root/(source+'.sqlite3')); store.initialize()
                 colony = source == 'the-colony'
                 events = [{'id': uid(n+1000), 'notification_type' if colony else 'type': 'comment_on_post' if colony else 'post_comment',
                            'post_id' if colony else 'relatedPostId': uid(n),
                            'comment_id' if colony else 'relatedCommentId': uid(n+10)} for n in range(601,605)]
-                clock, late, retained = [0.0], [False], [True]
-                def factory(*args):
-                    client = FixtureClient(*args)
-                    base_get = client.get
-                    client.deadline = clock[0] + 6
-                    def get(path, params=None, **kw):
-                        if path == '/agents/me': return base_get(path, params, **kw)
-                        if clock[0]+1 > client.deadline: raise MailError('source_timeout')
-                        clock[0] += 1
-                        if path == '/notifications':
-                            rows = events if retained[0] else []
-                            if colony: return rows[(params or {}).get('offset',0):]
-                            return {'notifications': rows, 'has_more': False}
-                        number = int(path.split('/')[2].replace('-',''),16)
-                        root = number-10 if path.startswith('/comments/') else number
-                        if root == 601: raise HTTPError('https://example.invalid',503,'private body',{},io.BytesIO())
-                        if root == 604 and not late[0]: raise HTTPError('https://example.invalid',404,'missing',{},io.BytesIO())
-                        if colony: return original(root+10,root,colony=True)
-                        if path.endswith('/comments'):
-                            return {'comments':[original(root+10,root)], 'has_more':False}
-                        return {'post':{**original(root,root), 'title':'Example'}}
-                    client.get = get
-                    return client
-                with patch.object(providers,'SOURCE_SECONDS',6), patch.object(providers.time,'monotonic',side_effect=lambda:clock[0]):
-                    for _ in range(6): collect_all(store,{source:cfg},client_factory=factory)
+                clock, late, retained = Clock(1_000_000), [False], [True]
+                board = FixtureBoard(source, cfg)
+                base_get = board.get
+                def get(path, params=None, **kw):
+                    if path == '/agents/me': return base_get(path, params, **kw)
+                    # An answer takes a sixth of the time that a pass has for a source. One that the client has
+                    # no time left for is late, as the transport says it.
+                    left = board.asked[-1].left
+                    clock.advance(min(left, 7.5))
+                    if left < 7.5: raise MailError('source_timeout')
+                    if path == '/notifications':
+                        rows = events if retained[0] else []
+                        if colony: return rows[(params or {}).get('offset',0):]
+                        return {'notifications': rows, 'has_more': False}
+                    number = int(path.split('/')[2].replace('-',''),16)
+                    root = number-10 if path.startswith('/comments/') else number
+                    if root == 601: raise HTTPError('https://example.invalid',503,'private body',{},io.BytesIO())
+                    if root == 604 and not late[0]: raise HTTPError('https://example.invalid',404,'missing',{},io.BytesIO())
+                    if colony: return original(root+10,root,colony=True)
+                    if path.endswith('/comments'):
+                        return {'comments':[original(root+10,root)], 'has_more':False}
+                    return {'post':{**original(root,root), 'title':'Example'}}
+                board.get = get
+                with fixed(clock):
+                    for _ in range(6): collect_all(store,{source:cfg},fetch=board)
                     self.assertTrue({uid(612),uid(613)} <= store.known(source,cfg['account_id']))
                     self.assertNotIn(uid(614), store.known(source,cfg['account_id']))
                     retained[0] = False; late[0] = True
-                    for _ in range(6): collect_all(Store(store.path),{source:cfg},client_factory=factory)
+                    for _ in range(6): collect_all(Store(store.path),{source:cfg},fetch=board)
                     self.assertIn(uid(614),store.known(source,cfg['account_id']))
                     self.assertNotIn(uid(611),store.known(source,cfg['account_id']))
 
     def test_large_known_root_finds_new_head_while_backfill_resumes(self):
-        cfg = settings()['postingboard']; cfg['threads'] = [uid(301)]
-        client = FixtureClient('postingboard',cfg)
-        client.comments[uid(301)] = [named(n,301) for n in range(400,10400)]
+        cfg = settings(self.root)['postingboard']; cfg['threads'] = [uid(301)]
+        board = FixtureBoard('postingboard',cfg)
+        board.comments[uid(301)] = [named(n,301) for n in range(400,10400)]
         # Seed a deep unfinished sweep and previously delivered mail.
         self.store.save_collection('postingboard',cfg['account_id'],'postingboard',0,
                                    Batch(state={'threads':{uid(301):5000}}))
-        for item in client.comments[uid(301)]:
+        for item in board.comments[uid(301)]:
             item.update(thread_id=uid(301),kind='reply_to_post',url='https://example.invalid/'+item['id'])
-        self.store.save('postingboard',cfg['account_id'],client.comments[uid(301)])
-        client.comments[uid(301)].append(named(10401,301))
-        with patch.object(providers,'MAX_PAGES',1):
-            result=collect_all(self.store,{'postingboard':cfg},client_factory=lambda *_:client)
+        self.store.save('postingboard',cfg['account_id'],board.comments[uid(301)])
+        board.comments[uid(301)].append(named(10401,301))
+        # The client waits 1.1 seconds between two requests, and a root has 45 seconds. Here a wait moves the clock.
+        self.enterContext(fixed(Clock(1_000_000)))
+        result=collect_all(self.store,{'postingboard':cfg},fetch=board)
         self.assertEqual(result['added'],1)
         self.assertEqual(self.store.show('postingboard',uid(10401))['body'],'A synthetic named-board reply.')
-        self.assertEqual(client.calls[0],('/v1/me', {}, True))
-        self.assertEqual(client.calls[1][1],{'limit':30})
-        self.assertEqual(client.calls[2][1],{'limit':30,'before':5000})
-        self.assertEqual(len(client.calls),3)
+        self.assertEqual(board.calls[0],('/v1/me', {}, True))
+        self.assertEqual(board.calls[1][1],{'limit':30})
+        # The sweep goes on where it was, a page of 30 after the other, until the time of the root is over.
+        self.assertEqual([call[1] for call in board.calls[2:]],[{'limit':30,'before':before} for before in range(5000,3830,-30)])
+        self.assertEqual(self.store.collection_state('postingboard',cfg['account_id'],'postingboard')[1]['threads'],{uid(301):3830})
         self.assertTrue(result['sources'][0]['backlog_pending'])
 
     def test_moltbook_comment_cursor_progress_and_expired_cursor_recovery(self):
-        cfg=settings()['moltbook']; client=FixtureClient('moltbook',cfg)
-        client.events=[{'id':uid(999), 'type':'mention', 'relatedPostId':uid(201), 'relatedCommentId':uid(229)}]
-        client.comments=[original(n,201) for n in range(220,230)]
-        with patch.object(providers,'PAGE_SIZE',1):
-            for _ in range(3): collect_all(self.store,{'moltbook':cfg},client_factory=lambda *_:client)
-            get=client.get
-            def expired(path,params=None,**kw):
-                if path.endswith('/comments') and (params or {}).get('cursor'):
-                    raise HTTPError('https://example.invalid',400,'expired',{},io.BytesIO())
-                return get(path,params,**kw)
-            client.get=expired
-            self.assertTrue(collect_all(self.store,{'moltbook':cfg},client_factory=lambda *_:client)['failed'])
-            client.get=get
-            for _ in range(10): collect_all(Store(self.db),{'moltbook':cfg},client_factory=lambda *_:client)
+        cfg=settings(self.root)['moltbook']; board=FixtureBoard('moltbook',cfg)
+        board.events=[{'id':uid(999), 'type':'mention', 'relatedPostId':uid(201), 'relatedCommentId':uid(229)}]
+        board.comments=[original(n,201) for n in range(220,230)]
+        board.per_page=1  # A page holds one comment, however many the client asks for.
+        for _ in range(3): collect_all(self.store,{'moltbook':cfg},fetch=board)
+        get=board.get
+        def expired(path,params=None,**kw):
+            if path.endswith('/comments') and (params or {}).get('cursor'):
+                raise HTTPError('https://example.invalid',400,'expired',{},io.BytesIO())
+            return get(path,params,**kw)
+        board.get=expired
+        self.assertTrue(collect_all(self.store,{'moltbook':cfg},fetch=board)['failed'])
+        board.get=get
+        for _ in range(10): collect_all(Store(self.db),{'moltbook':cfg},fetch=board)
         self.assertEqual(self.store.show('moltbook',uid(229))['body'],'A synthetic public reply.')
         self.assertEqual(self.store.status()['counts']['total'],1)
 
     def test_rate_limited_hydration_keeps_its_backfill_position(self):
-        cfg=settings()['postingboard']; cfg['threads']=[uid(301)]
-        client=FixtureClient('postingboard',cfg)
-        client.comments[uid(301)]=[named(n,301) for n in range(400,460)]
-        client.summaries={uid(405)}
+        cfg=settings(self.root)['postingboard']; cfg['threads']=[uid(301)]
+        board=FixtureBoard('postingboard',cfg)
+        board.comments[uid(301)]=[named(n,301) for n in range(400,460)]
+        board.summaries={uid(405)}
         self.store.save_collection('postingboard',cfg['account_id'],'postingboard',0,
                                    Batch(state={'threads':{uid(301):406}}))
-        get=client.get
+        get=board.get
         def limited(path,params=None,**kw):
             if path.endswith(uid(405)):
                 raise HTTPError('https://example.invalid',429,'quota',{},io.BytesIO())
             return get(path,params,**kw)
-        client.get=limited
+        board.get=limited
+        self.enterContext(fixed(Clock(1_000_000)))  # The wait of the client between two requests moves the clock.
         for _ in range(2):
-            result=collect_all(self.store,{'postingboard':cfg},client_factory=lambda *_:client)
+            result=collect_all(self.store,{'postingboard':cfg},fetch=board)
             self.assertEqual(result['sources'][0]['error'],'http_429')
             self.assertTrue(result['sources'][0]['backlog_pending'])
             self.assertEqual(self.store.collection_state('postingboard',cfg['account_id'],'postingboard')[1]['threads'][uid(301)],406)
-        client.get=get
-        collect_all(self.store,{'postingboard':cfg},client_factory=lambda *_:client)
+        board.get=get
+        collect_all(self.store,{'postingboard':cfg},fetch=board)
         self.assertIn(uid(405),self.store.known('postingboard',cfg['account_id']))
 
     def test_invalid_extension_batch_is_rejected_without_state_or_mail(self):
@@ -340,28 +345,29 @@ class AdapterTests(unittest.TestCase):
             self.assertIsNotNone(db.execute('SELECT 1 FROM originals WHERE source=? AND id=?', ('custom', uid(21))).fetchone())
 
     def test_bad_original_does_not_block_a_sibling_and_remains_retryable(self):
+        self.enterContext(fixed(Clock(1_000_000)))  # The wait of the client of Postingboard moves the clock.
         for source, good, bad in (('postingboard',311,312),('moltbook',211,212)):
             with self.subTest(source=source):
-                cfg=settings()[source]; client=FixtureClient(source,cfg)
-                get=client.get
+                cfg=settings(self.root)[source]; board=FixtureBoard(source,cfg)
+                get=board.get
                 if source=='postingboard':
                     def fail(path,params=None,**kw):
                         if path.endswith(uid(312)):
                             raise HTTPError('https://example.invalid',503,'failed hydration',{},io.BytesIO())
                         return get(path,params,**kw)
-                    client.get=fail
+                    board.get=fail
                 else:
-                    client.comments.append({**original(212,201),'created_at':None})
+                    board.comments.append({**original(212,201),'created_at':None})
                 for _ in range(3):
-                    result=collect_all(self.store,{source:cfg},client_factory=lambda *_:client)
+                    result=collect_all(self.store,{source:cfg},fetch=board)
                     self.assertTrue(result['failed'])
                 self.assertIn(uid(good),self.store.known(source,cfg['account_id']))
                 self.assertNotIn(uid(bad),self.store.known(source,cfg['account_id']))
-                client.get=get
+                board.get=get
                 if source=='moltbook':
-                    client.comments[-1]=original(212,201)
-                    client.events=[]  # The retained reference still gets another chance.
-                collect_all(Store(self.db),{source:cfg},client_factory=lambda *_:client)
+                    board.comments[-1]=original(212,201)
+                    board.events=[]  # The retained reference still gets another chance.
+                collect_all(Store(self.db),{source:cfg},fetch=board)
                 self.assertIn(uid(bad),self.store.known(source,cfg['account_id']))
 
     def test_source_coverage_uses_adapter_identity(self):

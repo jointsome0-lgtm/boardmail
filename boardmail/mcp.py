@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import threading
 
-from . import __version__, commands, config, table
+from . import __version__, commands, config, table, transport
 from .errors import mcp_error
 from .store import Store
 
@@ -45,7 +45,9 @@ def passed(command, arguments):
     return {**own, **arguments}
 
 
-def create_server(store, sources=None):
+def create_server(store, sources=None, *, fetch=transport.fetch):
+    """The server of one inbox. fetch asks a board for a tool that can ask one: the transport, or an invented
+    board in its place."""
     import anyio
     from jsonschema import Draft202012Validator
     from mcp.server.lowlevel import Server
@@ -71,8 +73,8 @@ def create_server(store, sources=None):
         else:
             command = table.COMMANDS[params.name.removeprefix("boardmail_")]
             cancelled = threading.Event()
-            invoke = partial(commands.outcome, partial(commands.execute, store, command.name,
-                             sources=sources, cancelled=cancelled, **passed(command, arguments)))
+            invoke = partial(commands.outcome, partial(commands.execute, store, command.name, sources=sources,
+                             cancelled=cancelled, fetch=fetch, **passed(command, arguments)))
             def operation():
                 if command.collects:
                     # Hold this in the worker even if the caller disconnects.

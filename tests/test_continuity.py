@@ -14,7 +14,8 @@ import unittest
 from boardmail import cli, commands, config, providers
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, settings, uid
+from examples.fixtures import FixtureBoard, FixtureClient, named, settings, uid
+from kit import Clock, fixed
 from test_mail import mail
 
 
@@ -27,8 +28,11 @@ class DiscoveryTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'inbox.sqlite3'
         self.store = Store(self.path); self.store.initialize()
-        self.cfg = {**settings()['postingboard'], 'inbox': True, 'alias_search': []}
-        self.fixture = FixtureClient('postingboard', self.cfg)
+        self.cfg = {**settings(self.temp.name)['postingboard'], 'inbox': True, 'alias_search': []}
+        self.fixture = FixtureBoard('postingboard', self.cfg)
+        # The client waits between two requests, and a pass has its time. Here a wait only moves the clock.
+        self.clock = Clock(1_000_000)
+        self.enterContext(fixed(self.clock))
         # M and N sit in unwatched thread T2; only the Inbox addresses them.
         self.fixture.others = {uid(500): named(500, 500), uid(501): named(501, 500, body='@sample-agent please confirm.'),
                                uid(502): named(502, 500, reply_to=501, body='A direct reply to your comment.')}
@@ -38,7 +42,7 @@ class DiscoveryTests(unittest.TestCase):
     def collect(self, cfg=None):
         # Each call is a fresh process from the store's view: state comes only from SQLite.
         self.fixture.settings = cfg = cfg or self.cfg
-        return providers.collect_all(Store(self.path), {'postingboard': cfg}, client_factory=lambda *_: self.fixture)
+        return providers.collect_all(Store(self.path), {'postingboard': cfg}, fetch=self.fixture)
 
     def state(self):
         _, state, _ = Store(self.path).collection_state('postingboard', self.cfg['account_id'], 'postingboard')
@@ -52,12 +56,14 @@ class DiscoveryTests(unittest.TestCase):
                 afters.append(params['after'])
                 if params['after'] in (0, 750):
                     following = 750 if params['after'] == 0 else 751
+                    # The board is slow with the first page. The second still fits into the time that a pass
+                    # has for discovery, and a third does not.
+                    if params['after'] == 0: self.clock.advance(13)
                     return {'items': [], 'resume_after': 754, 'next_after': following,
                             'skipped_deleted_items': 1}
             return get(path, params, **kw)
         self.fixture.get = deleted_pages
-        with patch.object(providers, 'MAX_PAGES', 2):
-            result = self.collect(cfg)
+        result = self.collect(cfg)
         self.assertEqual(afters, [0, 750])
         self.assertEqual(result['added'], 0)
         self.assertIsNone(result['sources'][0]['error'])
@@ -101,7 +107,7 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_unfinished_nonempty_inbox_page_resumes_from_its_continuation(self):
         cfg = {**self.cfg, 'threads': []}
-        get, afters = self.fixture.get, []
+        get, afters, started = self.fixture.get, [], self.clock.now
         def split_page(path, params=None, **kw):
             raw = get(path, params, **kw)
             if path == '/v1/inbox':
@@ -109,10 +115,12 @@ class DiscoveryTests(unittest.TestCase):
                 if params['after'] == 0:
                     raw['items'] = [item for item in raw['items'] if item['id'] == uid(501)]
                     raw['resume_after'], raw['next_after'] = 754, 753
+                    # The page comes at the very end of the time that a pass has for discovery: it is in time,
+                    # and no time is left for the page after it.
+                    self.clock.now = started + 15
             return raw
         self.fixture.get = split_page
-        with patch.object(providers, 'MAX_PAGES', 1):
-            result = self.collect(cfg)
+        result = self.collect(cfg)
         self.assertEqual((result['added'], result['failed'], self.state()['inbox_after']),
                          (1, False, 753))
         self.assertTrue(result['sources'][0]['backlog_pending'])

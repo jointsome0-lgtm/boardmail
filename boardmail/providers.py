@@ -80,7 +80,9 @@ def colony_totp(secret_file):
 
 
 class Client:
-    def __init__(self, source, settings):
+    """The client of Postingboard, Colony or Moltbook. fetch asks the board: the transport, or an invented board
+    in its place."""
+    def __init__(self, source, settings, *, fetch=transport.fetch):
         self.source, self.settings = source, settings
         self.owner = settings["account_id"]
         self.host = HOSTS[source]
@@ -88,6 +90,7 @@ class Client:
         self.deadline = time.monotonic()+SOURCE_SECONDS
         self.next_request = 0
         self.opener = transport.opener(source)
+        self.fetch = fetch
 
     def _request(self, path, *, token=None, body=None):
         if self.source == "postingboard":
@@ -98,8 +101,8 @@ class Client:
             raise MailError("budget_exhausted")
         prefix = "" if self.source == "postingboard" else "/api/v1"
         try:
-            return transport.fetch(self.source, self.host+prefix+path, through=self.opener, left=remaining,
-                                   headers={"Authorization": "Bearer " + token} if token else None, body=body)
+            return self.fetch(self.source, self.host+prefix+path, through=self.opener, left=remaining,
+                              headers={"Authorization": "Bearer " + token} if token else None, body=body)
         except HTTPError as exc:
             if self.source == "the-colony" and (token or path == "/auth/token") and exc.code in (400, 401, 403):
                 code = colony_auth_error(exc)
@@ -978,11 +981,13 @@ def moltbook_lookup(client, mid, root=None, *, originals=None):
         return "unavailable", error_code(exc), None
 
 
-def collect(source, settings, state, known, *, client_factory=None):
+def collect(source, settings, state, known, *, client_factory=None, fetch=transport.fetch):
+    """One pass over Postingboard, Colony or Moltbook. fetch asks the board: the transport, or an invented board
+    in its place. A client from client_factory is asked instead of the board, and is not handed fetch."""
     from .adapters import Batch
     batch = Batch(state=state)
     try:
-        client = (client_factory or Client)(source, settings)
+        client = client_factory(source, settings) if client_factory else Client(source, settings, fetch=fetch)
         profile = client.get("/v1/me" if source == "postingboard" else "/agents/me", authenticated=True)
         if profile.get("success") is False: raise ValueError("Invalid profile")
         account = profile["agent"] if source == "moltbook" else profile

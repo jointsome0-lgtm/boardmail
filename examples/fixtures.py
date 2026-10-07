@@ -61,8 +61,22 @@ class FakeBoard:
         return deepcopy(answer)
 
 
-def settings():
-    return {source:{"account_id":uid(n),"api_key_file":Path("unused-example.key"),
+# The key of every invented account, and what the invented Colony gives for it at sign-in.
+KEY, TOKEN = "invented-key", "invented-token"
+# Where the client asks each of the three boards. A message of a board is read at the host of this address.
+ASKED_AT = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai/api/v1",
+            "moltbook":"https://www.moltbook.com/api/v1"}
+
+
+def settings(folder=None):
+    """The three invented accounts. With a folder, each account has its key in a file there, as the client
+    reads it before it asks a FixtureBoard. Without one the key file is not there, so a client that is handed no
+    invented board stops before it asks a real one."""
+    file = Path("unused-example.key")
+    if folder is not None:
+        file = Path(folder)/"example.key"
+        file.write_text(KEY+"\n")
+    return {source:{"account_id":uid(n),"api_key_file":file,
                     **({"threads":[uid(301),uid(302)],"mention_aliases":["@sample-agent"]}
                        if source=="postingboard" else {})}
             for n,source in enumerate(("the-colony","moltbook","postingboard"),1)}
@@ -94,6 +108,7 @@ class FixtureClient:
         self.host = "https://"+source+".example.invalid"
         self.calls = []
         self.fail = False
+        self.per_page = None  # The most that a page of notifications or comments holds. None: as many as asked.
         if source == "postingboard":
             self.roots = {uid(301):named(301,301,3),uid(302):named(302,302)}
             self.comments = {uid(301):[named(311,301),named(312,301)],uid(302):[
@@ -118,11 +133,17 @@ class FixtureClient:
                 self.comments.append(original(root+11,root,colony=True))
             # Moltbook's second event intentionally has no public original yet.
 
+    def failure(self):
+        return HTTPError("https://untrusted.invalid/secret-token",503,"private provider prose",{},io.BytesIO())
+
+    def limit(self, params):
+        return params["limit"] if self.per_page is None else min(params["limit"], self.per_page)
+
     def get(self, path, params=None, *, authenticated=False):
         params = dict(params or {})
         self.calls.append((path,params,authenticated))
         if self.fail:
-            raise HTTPError("https://untrusted.invalid/secret-token",503,"private provider prose",{},io.BytesIO())
+            raise self.failure()
         if path == ("/v1/me" if self.source == "postingboard" else "/agents/me"):
             assert authenticated
             profile = {"id": self.owner}
@@ -158,7 +179,7 @@ class FixtureClient:
         if path=="/notifications":
             assert authenticated
             start = params.get("offset",0) if colony else int(params.get("cursor","0"))
-            end = start+params['limit']
+            end = start+self.limit(params)
             selected = deepcopy(self.events[start:end])
             return selected if colony else {"notifications":selected,"has_more":end<len(self.events),"next_cursor":str(end)}
         assert not authenticated, "External public originals must be anonymous"
@@ -169,7 +190,40 @@ class FixtureClient:
             return deepcopy(comment)
         if path.endswith("/comments"):
             start = params.get("offset",0) if colony else int(params.get("cursor","0"))
-            end = start+params['limit']
+            end = start+self.limit(params)
             return {"items" if colony else "comments":deepcopy(self.comments[start:end]),
                     "has_more":end<len(self.comments),"next_cursor":str(end)}
         return deepcopy(self.root) if colony else {"success":True,"post":deepcopy(self.root)}
+
+
+class FixtureBoard(FixtureClient, FakeBoard):
+    """The invented Postingboard, Colony or Moltbook at the transport seam: what FixtureClient answers, asked as
+    the client of the board asks it. A collector takes it where it would take boardmail.transport.fetch.
+
+    It answers where the board is asked and nowhere else, signs the account in to Colony, and takes the key or
+    the token of the account as the sign that a request is authenticated. calls has what get() was asked, as
+    with FixtureClient, and asked has every request with what it carried."""
+    def __init__(self, source, config):
+        FixtureClient.__init__(self, source, config)
+        FakeBoard.__init__(self, self.answer)
+        self.host = ASKED_AT[source].removesuffix("/api/v1")
+        self.key = KEY    # The key of the account.
+        self.totp = None  # The code that the account must send besides its key when it signs in to Colony.
+
+    def answer(self, asked):
+        assert asked.board == self.source and asked.url.startswith(ASKED_AT[self.source]+"/"), asked
+        path, sent = urlsplit(asked.url).path[len(urlsplit(ASKED_AT[self.source]).path):], asked.headers.get("Authorization")
+        if self.source == "the-colony" and path == "/auth/token":
+            assert asked.body == {"api_key":self.key, **({"totp_code":self.totp} if self.totp else {})} and sent is None, asked
+            if self.fail:
+                raise self.failure()
+            return {"access_token":TOKEN}
+        assert asked.body is None and sent in (None, "Bearer "+(TOKEN if self.source == "the-colony" else self.key)), asked
+        params = {name:value if name in ("cursor","q") or not value.isdigit() else int(value)
+                  for name,value in asked.params.items()}
+        return self.get(path, params, authenticated=sent is not None)
+
+
+def together(boards):
+    """One fetch for several invented boards, each under the name that its client asks it by."""
+    return lambda name, url, **asks: boards[name](name, url, **asks)

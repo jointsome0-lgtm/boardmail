@@ -3,13 +3,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 from boardmail import config, providers
 from boardmail.adapters import Batch
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, settings, uid
+from examples.fixtures import FakeBoard, FixtureBoard, settings, uid
+from kit import Clock, fixed
 
 
 class IdentityTests(unittest.TestCase):
@@ -23,26 +23,28 @@ class IdentityTests(unittest.TestCase):
             store = Store(root / 'mail.sqlite3'); store.initialize({'account-a': cfg})
             calls = []
 
-            def request(client, path, *, token=None, body=None):
-                path, params = urlsplit(path).path, parse_qs(urlsplit(path).query)
+            def answer(asked):
+                """A board that knows two accounts, each by its key."""
+                path = urlsplit(asked.url).path
                 calls.append(path)
-                account, seq = (uid(1), 10) if token == 'synthetic-A' else (uid(2), 20)
+                account, seq = (uid(1), 10) if asked.headers == {'Authorization': 'Bearer synthetic-A'} else (uid(2), 20)
                 if path == '/v1/me': return {'id': account}
                 if path == '/v1/inbox':
-                    after = int(params['after'][0])
+                    after = int(asked.params['after'])
                     return {'items': [] if after >= seq else [
                         {'id': uid(seq), 'root_id': uid(100), 'seq': seq, 'reasons': ['mention']}],
                         'resume_after': max(after, seq), 'next_after': None}
                 return {'post': {'id': uid(seq), 'root_id': uid(100), 'seq': seq,
                         'agent_id': uid(3), 'body': 'A public reply.', 'created_at': 1}}
 
-            with patch.object(providers.Client, '_request', request):
-                self.assertEqual(providers.collect_all(store, {'account-a': cfg})['added'], 1)
+            board = FakeBoard(answer)
+            with fixed(Clock(1_000_000)):  # The wait of the client between two requests only moves the clock.
+                self.assertEqual(providers.collect_all(store, {'account-a': cfg}, fetch=board)['added'], 1)
                 store.mark('account-a', uid(10), 'needs_reply')
                 row = store.show('account-a', uid(10))
                 before = store.collection_state('account-a', uid(1), 'postingboard')
                 key.write_text('synthetic-B'); calls.clear()
-                result = providers.collect_all(store, {'account-a': cfg})
+                result = providers.collect_all(store, {'account-a': cfg}, fetch=board)
                 self.assertEqual((result['added'], result['errors'][0]['error']), (0, 'account_mismatch'))
                 self.assertEqual(calls, ['/v1/me'])
                 self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard'), before)
@@ -52,32 +54,39 @@ class IdentityTests(unittest.TestCase):
                     Batch(state={**before[1], 'inbox_after': 15})), (0, False))
                 self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard')[1]['inbox_after'], 15)
                 key.write_text('synthetic-A')
-                self.assertFalse(providers.collect_all(store, {'account-a': cfg})['failed'])
+                self.assertFalse(providers.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
 
     def test_every_authenticated_legacy_adapter_fails_closed_and_other_sources_continue(self):
         for source, cfg in settings().items():
             for profile, error in (({'id': uid(99)}, 'account_mismatch'), ({}, 'invalid_response')):
                 with self.subTest(source=source, profile=profile), tempfile.TemporaryDirectory() as folder:
                     cfg = {**cfg, 'adapter': source, 'api_key_file': Path(folder) / 'alias.key'}
+                    cfg['api_key_file'].write_text('the-key-of-the-alias')
                     store = Store(Path(folder) / 'mail.sqlite3'); store.initialize({'alias': cfg})
                     state = {'threads': {uid(301): 20}, 'discovery': {'offset': 100}, 'pending': {}}
                     store.prepare_collection()
                     store.save_collection('alias', cfg['account_id'], source, 0, Batch(state=state))
                     last_ok = store.status()['sources'][0]['last_ok']
-                    client = FixtureClient(source, cfg)
+                    board = FixtureBoard(source, cfg)
+                    board.key = 'the-key-of-the-alias'
                     endpoint = '/v1/me' if source == 'postingboard' else '/agents/me'
                     def get(path, params=None, *, authenticated=False):
-                        client.calls.append((path, params, authenticated))
+                        board.calls.append((path, params, authenticated))
                         self.assertEqual((path, authenticated), (endpoint, True))
                         return {'agent': profile} if source == 'moltbook' else profile
-                    client.get = get
-                    good = settings()['postingboard']
-                    result = providers.collect_all(store, {'alias': cfg, 'good': {**good, 'adapter': 'postingboard'}},
-                        client_factory=lambda adapter, conf: client if conf['api_key_file'] == cfg['api_key_file'] else FixtureClient(adapter, conf))
+                    board.get = get
+                    good = settings(folder)['postingboard']
+                    other = FixtureBoard('postingboard', good)
+                    def fetch(name, url, *, headers=None, **asks):
+                        # Two accounts can be on one board. It tells them apart by the key.
+                        ours = name == source and (name != 'postingboard' or headers == {'Authorization': 'Bearer the-key-of-the-alias'})
+                        return (board if ours else other)(name, url, headers=headers, **asks)
+                    with fixed(Clock(1_000_000)):  # The wait of the client of Postingboard only moves the clock.
+                        result = providers.collect_all(store, {'alias': cfg, 'good': {**good, 'adapter': 'postingboard'}}, fetch=fetch)
                     self.assertEqual(result['errors'], [{'source': 'alias', 'error': error,
                         'next_action': 'restore_source_identity_or_use_a_new_source' if error == 'account_mismatch' else 'retry_collect'}])
                     self.assertGreater(result['added'], 0)
-                    self.assertEqual(len(client.calls), 1)
+                    self.assertEqual(len(board.calls), 1)
                     self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[1], state)
                     self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[2], 1)
                     self.assertEqual(next(s for s in store.status()['sources'] if s['source'] == 'alias')['last_ok'], last_ok)
