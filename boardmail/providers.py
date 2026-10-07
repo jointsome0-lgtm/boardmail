@@ -2,7 +2,6 @@
 import base64
 import binascii
 from datetime import datetime
-from functools import partial
 import hashlib
 import hmac
 from http.client import HTTPException
@@ -27,11 +26,9 @@ COLONY_AUTH_CODES = frozenset({
 })
 
 
-# The three boards of this module refuse a redirect alike, and call a failed request alike. Where no client is
-# at hand to say which board is meant, this one answers for the three.
+# The three boards of this module call a failed request alike. Where no client is at hand to say which board
+# is meant, this one answers for the three.
 ANY = "moltbook"
-# For a caller that builds an opener of its own.
-NoRedirect = partial(transport.NoRedirect, ANY)
 
 
 def colony_auth_error(exc):
@@ -89,7 +86,6 @@ class Client:
         self.token = None
         self.deadline = time.monotonic()+SOURCE_SECONDS
         self.next_request = 0
-        self.opener = transport.opener(source)
         self.fetch = fetch
 
     def _request(self, path, *, token=None, body=None):
@@ -101,7 +97,7 @@ class Client:
             raise MailError("budget_exhausted")
         prefix = "" if self.source == "postingboard" else "/api/v1"
         try:
-            return self.fetch(self.source, self.host+prefix+path, through=self.opener, left=remaining,
+            return self.fetch(self.source, self.host+prefix+path, left=remaining,
                               headers={"Authorization": "Bearer " + token} if token else None, body=body)
         except HTTPError as exc:
             if self.source == "the-colony" and (token or path == "/auth/token") and exc.code in (400, 401, 403):
@@ -981,13 +977,13 @@ def moltbook_lookup(client, mid, root=None, *, originals=None):
         return "unavailable", error_code(exc), None
 
 
-def collect(source, settings, state, known, *, client_factory=None, fetch=transport.fetch):
+def collect(source, settings, state, known, *, fetch=transport.fetch):
     """One pass over Postingboard, Colony or Moltbook. fetch asks the board: the transport, or an invented board
-    in its place. A client from client_factory is asked instead of the board, and is not handed fetch."""
+    in its place."""
     from .adapters import Batch
     batch = Batch(state=state)
     try:
-        client = client_factory(source, settings) if client_factory else Client(source, settings, fetch=fetch)
+        client = Client(source, settings, fetch=fetch)
         profile = client.get("/v1/me" if source == "postingboard" else "/agents/me", authenticated=True)
         if profile.get("success") is False: raise ValueError("Invalid profile")
         account = profile["agent"] if source == "moltbook" else profile

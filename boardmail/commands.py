@@ -334,20 +334,20 @@ class Lookup:
     """Original lookups for one command through a single client and budget.
 
     fetch asks the board: the transport, or an invented board in its place. The client of the board is handed
-    it. A client from client_factory is asked instead of the board, and is not handed fetch."""
+    it."""
 
-    def __init__(self, adapter, settings, client_factory=None, fetch=transport.fetch):
+    def __init__(self, adapter, settings, fetch=transport.fetch):
         self.adapter = adapter
         if adapter == "clawdchat":
             from . import adapter_clawdchat
-            client = client_factory(adapter, settings) if client_factory else adapter_clawdchat.Client(settings, fetch=fetch)
+            client = adapter_clawdchat.Client(settings, fetch=fetch)
             self.lookup = adapter_clawdchat.lookup
         elif adapter == "botnet":
             from . import adapter_botnet
-            client = client_factory(adapter, settings) if client_factory else adapter_botnet.Client(settings, fetch=fetch)
+            client = adapter_botnet.Client(settings, fetch=fetch)
             self.lookup = adapter_botnet.lookup
         else:
-            client = client_factory(adapter, settings) if client_factory else providers.Client(adapter, settings, fetch=fetch)
+            client = providers.Client(adapter, settings, fetch=fetch)
             self.lookup = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
                            "moltbook": providers.moltbook_lookup}[adapter]
         self.client = CachedClient(client)
@@ -420,7 +420,7 @@ def parent_of(resolver, adapter, relations, root, authoritative):
     return parent
 
 
-def context(store, source, message_id, settings, *, client_factory=None, fetch=transport.fetch):
+def context(store, source, message_id, settings, *, fetch=transport.fetch):
     """Thread root, immediate parent and target. Reads local rows first, then
     supported originals when configured. Nothing is marked, locally or remotely."""
     lookup = None
@@ -430,7 +430,7 @@ def context(store, source, message_id, settings, *, client_factory=None, fetch=t
         if adapter == "botnet":
             from .adapter_botnet import message_id as kind
         config.converted(kind, message_id, error="invalid_message_id")
-        lookup = Lookup(adapter, settings, client_factory, fetch)
+        lookup = Lookup(adapter, settings, fetch)
     resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
     target, relations, authoritative = resolver(message_id)
     if relations is None:
@@ -451,7 +451,7 @@ def current(item):
     return item["status"] == "available" and item.get("remote_status", "available") == "available"
 
 
-def expand(store, source, thread, after, through, limit, settings, *, client_factory=None, fetch=transport.fetch):
+def expand(store, source, thread, after, through, limit, settings, *, fetch=transport.fetch):
     """Every saved message of one thread within (after, through], each with the
     context a singular lookup would give, through one client and one budget.
 
@@ -463,7 +463,7 @@ def expand(store, source, thread, after, through, limit, settings, *, client_fac
         config.converted(config.uuid, thread, error="invalid_arguments")
     page = store.page(after, limit, through=through, source=source, thread=thread, scope="all", context="none")
     rows = page["messages"]
-    lookup = Lookup(adapter, settings, client_factory, fetch) if settings is not None and rows else None
+    lookup = Lookup(adapter, settings, fetch) if settings is not None and rows else None
     resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
     root = resolver(thread, thread) if rows else (element("unknown", id=thread), None, True)
     items, complete, exhausted = [], current(root[0]) if rows else True, False

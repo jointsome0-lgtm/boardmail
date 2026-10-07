@@ -306,7 +306,7 @@ class MailTests(unittest.TestCase):
         self.assertEqual(result['event'],'cancelled');self.assertEqual(result['next_after'],0)
         self.assertEqual(result['messages'],[]);self.assertEqual(self.path.read_bytes(),before)
 
-    def test_auth_hosts_public_confirmation_and_redirect_refusal(self):
+    def test_auth_hosts_and_public_confirmation(self):
         boards, fetch = self.boards()
         self.assertFalse(providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)['failed'])
         # What each board was asked, and with which sign that the request is the one of the account. Colony signs
@@ -321,7 +321,6 @@ class MailTests(unittest.TestCase):
             (molt+'/posts/'+uid(201),None),(molt+'/posts/'+uid(201)+'/comments',None)])
         self.assertEqual(set(asked['postingboard']), {('https://getpostingboard.dev/v1/'+path,'Bearer invented-key')
             for path in ('me','posts/'+uid(301),'posts/'+uid(302),'posts/'+uid(312))})
-        with self.assertRaises(MailError):providers.NoRedirect().redirect_request(None,None,307,'',{},'https://other.example.invalid')
 
 
 class CLITests(unittest.TestCase):

@@ -46,7 +46,7 @@ class FakeBoard:
         self.answers = answers if callable(answers) else iter(answers)
         self.asked = []
 
-    def __call__(self, board, url, *, through=None, left=None, headers=None, body=None):
+    def __call__(self, board, url, *, left=None, headers=None, body=None):
         request = Asked(board, url, dict(headers or {}), body, left)
         self.asked.append(request)
         if callable(self.answers):
