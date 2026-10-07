@@ -1,6 +1,6 @@
 """Interrupted publishers and local recovery; every message and external effect is invented."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
@@ -664,30 +664,6 @@ os._exit(79)
         shown = self.command('show')[0]
         self.assertEqual(shown['reply']['state'], 'unknown')
         self.assertIsNone(shown['message']['replied_at'])
-
-    def test_older_databases_read_without_migration_and_prepare_preserves_schema_and_marks(self):
-        for version in (1, 2):
-            with self.subTest(version=version):
-                path = self.root / f'old-{version}.sqlite3'
-                with closing(sqlite3.connect(path)) as db:
-                    db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
-                store = Store(path)
-                if version == 2:
-                    store.prepare_collection()
-                messages = store.page()['messages']
-                target = messages[0]
-                before = path.read_bytes()
-                shown, _ = commands.execute(store, 'reply_show', source=target['source'], id=target['id'])
-                self.assertIsNone(shown['reply'])
-                message, _ = commands.execute(store, 'show', source=target['source'], id=target['id'])
-                self.assertIsNone(message['reply_attempt'])
-                self.assertEqual(message['message'], shown['message'])
-                self.assertEqual(path.read_bytes(), before)
-                # Choose an incoming without an earlier replied mark in the legacy fixture.
-                target = next(m for m in messages if m['reply_ref'] is None)
-                result, _ = commands.execute(store, 'reply_prepare', source=target['source'], id=target['id'], body=self.body)
-                self.assertEqual(result['reply']['state'], 'prepared')
-                self.assertEqual(store.page()['messages'], messages)
 
     def test_every_source_uses_the_same_local_protocol_even_when_paused(self):
         from boardmail.config import COVERAGE

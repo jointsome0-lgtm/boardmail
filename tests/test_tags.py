@@ -1,9 +1,7 @@
 """Topic reading preserves the inbox; all threads and messages are invented."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 import json
 from pathlib import Path
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -162,25 +160,6 @@ class TagTests(unittest.TestCase):
             self.assertEqual(self.rows(), before)
         self.assertEqual(self.command('tags')['tags'], [])
         self.assertEqual(self.command('tags')['untagged']['unread'], 1)
-
-    def test_old_databases_read_without_migration_and_tag_write_preserves_old_state(self):
-        for version in (1, 2):
-            path = Path(self.temp.name) / f'v{version}.sqlite3'
-            with closing(sqlite3.connect(path)) as db:
-                db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
-            self.store = Store(path)
-            if version == 2:
-                self.store.prepare_collection()
-            before = path.read_bytes()
-            saved = self.rows()
-            self.assertEqual(self.command('tags')['tags'], [])
-            self.assertFalse(self.command('tag_show', tag='none')['exists'])
-            self.assertEqual(self.command('list', tag='none')['messages'], [])
-            self.assertEqual(self.command('list', untagged=True)['scanned'], self.store.status()['counts']['total'])
-            self.assertFalse(self.command('tag_remove', tag='none', source='moltbook', thread=uid(100))['changed'])
-            self.assertEqual(path.read_bytes(), before)
-            self.tag('new', source='moltbook')
-            self.assertEqual(self.rows(), saved)
 
     def test_invalid_selections_and_filters_fail_without_writes_or_collection(self):
         before = self.path.read_bytes()

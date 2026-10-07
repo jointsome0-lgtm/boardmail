@@ -1,7 +1,6 @@
 """Bounded local reading views. Only proven thread activity loses its body."""
 import json
 
-from . import schema
 from .config import MailError
 
 DEFAULTS = {"scope": "addressed", "context": "brief"}
@@ -29,11 +28,8 @@ def excerpt(item, budget=600):
 
 def brief(db, item):
     source, root_id, parent_id = item["source"], item["thread_id"], item["parent_id"]
-    adapter = source
-    if schema.version(db) >= 2:
-        row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
-        if row is not None:
-            adapter = row[0]
+    row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
+    adapter = source if row is None else row[0]
     if adapter == "fourclaw":
         # Its legacy parent_id is synthesized thread membership, not a reply target.
         parent_id = None
@@ -44,13 +40,12 @@ def brief(db, item):
             if row["thread_id"] != root_id:
                 return {"id": mid, "status": "unavailable", "reason": "thread_mismatch"}
             return {"status": "stored", **excerpt(dict(row))}
-        if schema.has(db, "originals"):
-            row = db.execute("SELECT value,fetched_at FROM originals WHERE source=? AND id=?", (source, mid)).fetchone()
-            if row is not None:
-                cached = json.loads(row["value"])
-                if cached["thread_id"] == root_id:
-                    return {"status": "cached", "fetched_at": row["fetched_at"], **excerpt(cached)}
-                return {"id": mid, "status": "unavailable", "reason": "thread_mismatch"}
+        row = db.execute("SELECT value,fetched_at FROM originals WHERE source=? AND id=?", (source, mid)).fetchone()
+        if row is not None:
+            cached = json.loads(row["value"])
+            if cached["thread_id"] == root_id:
+                return {"status": "cached", "fetched_at": row["fetched_at"], **excerpt(cached)}
+            return {"id": mid, "status": "unavailable", "reason": "thread_mismatch"}
         return {"id": mid, "status": "not_available_locally"}
 
     root = {"id": root_id, "status": "current_message"} if root_id == item["id"] else resolve(root_id)

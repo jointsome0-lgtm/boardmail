@@ -61,15 +61,17 @@ def reference(ref):
     return ref
 
 
-def saved(db, source, message_id):
-    if not schema.has(db, 'reply_attempts'):
+# These three read for show and for the commands that write. writing says that the connection writes: it has no
+# stand-in for a table that the file lacks, so the question goes to the schema module first.
+def saved(db, source, message_id, writing=False):
+    if writing and not schema.has(db, 'reply_attempts'):
         return None
     row = db.execute('SELECT * FROM reply_attempts WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     return dict(row) if row else None
 
 
-def receipt(db, source, message_id, attempt):
-    if not attempt or not schema.has(db, 'reply_verifications'):
+def receipt(db, source, message_id, attempt, writing=False):
+    if not attempt or writing and not schema.has(db, 'reply_verifications'):
         return None
     row = db.execute('SELECT evidence FROM reply_verifications WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     evidence = json.loads(row[0]) if row else None
@@ -77,12 +79,12 @@ def receipt(db, source, message_id, attempt):
     return {**evidence, 'key_scope': 'local'} if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
 
 
-def candidates(db, source, message_id, attempt):
+def candidates(db, source, message_id, attempt, writing=False):
     """Caller-supplied references, separate from receipts and confirmed reply URLs."""
-    if not attempt or attempt['state'] != 'unknown' or not schema.has(db, 'reply_candidates'):
+    if not attempt or attempt['state'] != 'unknown' or writing and not schema.has(db, 'reply_candidates'):
         return []
     checks = {}
-    if schema.has(db, 'reply_candidate_checks'):
+    if not writing or schema.has(db, 'reply_candidate_checks'):
         checks = {row['reply_ref']: {'checked_at': row['checked_at'], 'reason': row['reason'],
                                      'status': 'unverified'}
                   for row in db.execute('SELECT reply_ref,checked_at,reason FROM reply_candidate_checks '
@@ -109,13 +111,11 @@ def pending(db, after=0, limit=PAGE_SIZE):
             or type(limit) is not int or not 1 <= limit <= 100):
         raise MailError('invalid_arguments')
     counts = {state: 0 for state in NEXT_ACTION}
-    rows = []
-    if schema.has(db, 'reply_attempts'):
-        counts.update(db.execute('SELECT state, COUNT(*) FROM reply_attempts GROUP BY state'))
-        rows = db.execute("""SELECT m.arrival_seq, a.source, a.message_id id, a.state
-            FROM reply_attempts a JOIN messages m ON m.source=a.source AND m.id=a.message_id
-            WHERE a.state IN ('prepared','unknown') AND m.arrival_seq>?
-            ORDER BY m.arrival_seq LIMIT ?""", (after, limit + 1)).fetchall()
+    counts.update(db.execute('SELECT state, COUNT(*) FROM reply_attempts GROUP BY state'))
+    rows = db.execute("""SELECT m.arrival_seq, a.source, a.message_id id, a.state
+        FROM reply_attempts a JOIN messages m ON m.source=a.source AND m.id=a.message_id
+        WHERE a.state IN ('prepared','unknown') AND m.arrival_seq>?
+        ORDER BY m.arrival_seq LIMIT ?""", (after, limit + 1)).fetchall()
     items = [{'arrival_seq': row['arrival_seq'], 'source': row['source'], 'id': row['id'],
               **summary(row['source'], row['id'], row)} for row in rows[:limit]]
     next_after = items[-1]['arrival_seq'] if items else after
@@ -149,18 +149,19 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         reference(ref)
 
     changed, send_allowed = False, False
-    with store.connect(write=action != 'show') as db:
+    writing = action != 'show'
+    with store.connect(write=writing) as db:
         row = db.execute('SELECT * FROM messages WHERE source=? AND id=?', (source, message_id)).fetchone()
         if row is None:
             raise MailError('message_not_found')
-        message = store._message(row, db)
+        message = store._message(row, db, writing)
         if verification is not None:
             from .verification import check_source
-            check_source(db, source, settings)
+            check_source(db, source, settings, writing)
             if (action != 'confirm' or verification['thread_id'] != message['thread_id']
                     or verification['target_id'] != message_id):
                 raise MailError('reply_target_mismatch')
-        attempt = saved(db, source, message_id)
+        attempt = saved(db, source, message_id, writing)
         now = int(time.time())
         if action == 'prepare':
             if replace_key is not None and (attempt is None or attempt['idempotency_key'] != replace_key):
@@ -217,9 +218,9 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                                'DO UPDATE SET evidence=excluded.evidence',
                                (source, message_id, json.dumps(verification, ensure_ascii=True)))
                     changed = True
-        attempt = saved(db, source, message_id)
-        evidence = receipt(db, source, message_id, attempt)
-        references = candidates(db, source, message_id, attempt)
+        attempt = saved(db, source, message_id, writing)
+        evidence = receipt(db, source, message_id, attempt, writing)
+        references = candidates(db, source, message_id, attempt, writing)
 
     if attempt is None:
         following = 'inspect_recorded_reply' if message['reply_ref'] else 'prepare_reply'

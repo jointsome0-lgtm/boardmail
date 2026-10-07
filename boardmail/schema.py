@@ -3,6 +3,10 @@ about what it has. No other module writes one of these; tests/test_schema_guard.
 
 A part appears at the moment it always did. tests/file_shape.txt says for each command what the file then has.
 The file keeps the text of a statement as it is written here, line breaks and spaces included.
+
+A command that only reads gets every part: stand_in gives its connection an empty one, in memory, for each part
+that the file does not have. A command that writes gets none, because a stand-in would hide the table that it is
+about to make. Before it reads a part that it does not make, it asks has or whole.
 """
 from .config import MailError
 
@@ -47,6 +51,9 @@ LATER = {
     PRIMARY KEY (source,message_id,reply_ref))""",),
 }
 
+# The columns that a file gets later, each with what a row says without it.
+LATER_COLUMNS = {"messages": {"discovery": None, "addressing": None}, "sources": {"paused": 0}}
+
 
 def version(db):
     return db.execute("PRAGMA user_version").fetchone()[0]
@@ -64,6 +71,30 @@ def has(db, table):
 
 def columns(db, table):
     return {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+
+
+def stand_in(db):
+    """Give a connection that only reads an empty stand-in for each part that its file does not have."""
+    # In memory only: a read never leaves a file anywhere.
+    db.execute("PRAGMA temp_store=MEMORY")
+    there = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    # A version-1 file can have adapter_state: subscribe gives it one. Readers do not use it before the first
+    # collection, so they get an empty one in front of it.
+    hidden = {"adapter_state"} if version(db) == 1 else set()
+    for table, statements in LATER.items():
+        if table not in there or table in hidden:
+            db.execute(statements[0].replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE", 1))
+    for table, later in LATER_COLUMNS.items():
+        present = columns(db, table)
+        absent = [("NULL" if value is None else str(value)) + " AS " + name
+                  for name, value in later.items() if name not in present]
+        if absent:
+            db.execute(f"CREATE TEMP VIEW {table} AS SELECT *, {', '.join(absent)} FROM main.{table}")
+
+
+def whole(table, row):
+    """A row as a command that writes reads it: with each later column that its file does not have yet."""
+    return {**dict(row), **{name: value for name, value in LATER_COLUMNS[table].items() if name not in row.keys()}}
 
 
 def create(db):

@@ -2,7 +2,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -146,25 +145,6 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual((code, result['next_after'], result['messages'], result['thread_activity']), (4, 0, [], []))
         result, code = commands.execute(self.store, 'wait', after=1, timeout=0)
         self.assertEqual((code, result['event'], result['next_after']), (3, 'timeout', 1))
-
-    def test_legacy_reads_leave_bytes_unchanged_and_collection_migrates(self):
-        legacy = Path(self.temp.name) / 'legacy.sqlite3'
-        with sqlite3.connect(legacy) as db:
-            db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
-        store = Store(legacy)
-        before = legacy.read_bytes()
-        result, _ = commands.execute(store, 'list')
-        self.assertEqual(len(result['messages']), 2)
-        self.assertTrue(all(m['addressing'] is None for m in result['messages']))
-        self.assertTrue(all(m['shown_because'] == 'recipient_unconfirmed_shown_by_default'
-                            for m in result['messages']))
-        self.assertEqual(result['messages'][0]['brief']['parent']['status'], 'unknown')
-        commands.execute(store, 'settings')
-        commands.execute(store, 'wait', after=2, timeout=0)
-        self.assertEqual(legacy.read_bytes(), before)
-        store.prepare_collection()
-        self.assertEqual(store.show('moltbook', uid(10))['reply_ref'], 'https://example.invalid/reply/old')
-        self.assertEqual(store.page()['next_after'], 2)
 
     def test_brief_uses_fetched_public_originals_without_inbox_pollution_or_network(self):
         root = dict(mail(100), body='r' * 5000)

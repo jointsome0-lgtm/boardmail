@@ -14,12 +14,8 @@ def validate_name(tag):
         raise MailError('invalid_tag_name')
 
 
-def exists(db):
-    return schema.has(db, 'thread_tags')
-
-
-def names(db, source, thread):
-    if not exists(db):
+def names(db, source, thread, writing=False):
+    if writing and not schema.has(db, 'thread_tags'):
         return []
     return [r[0] for r in db.execute(
         'SELECT tag FROM thread_tags WHERE source=? AND thread_id=? ORDER BY tag', (source, thread))]
@@ -33,8 +29,6 @@ def predicate(db, tag=None, untagged=False):
         validate_name(tag)
     if tag is None and not untagged:
         return '1', ()
-    if not exists(db):
-        return ('0' if tag is not None else '1'), ()
     selected = ('EXISTS (SELECT 1 FROM thread_tags t WHERE t.source=messages.source '
                 'AND t.thread_id=messages.thread_id' + (' AND t.tag=?' if tag is not None else '') + ')')
     return ('NOT ' if untagged else '') + selected, (tag,) if tag is not None else ()
@@ -46,15 +40,13 @@ def read_action(*, unread=True, **filters):
 
 
 def overview(db):
-    rows = []
-    if exists(db):
-        rows = [dict(row) for row in db.execute("""WITH counts AS (
-            SELECT source,thread_id,COUNT(*) AS messages,SUM(read_at IS NULL) AS unread
-            FROM messages GROUP BY source,thread_id)
-            SELECT t.tag,COUNT(*) AS threads,COALESCE(SUM(c.messages),0) AS messages,
-                   COALESCE(SUM(c.unread),0) AS unread
-            FROM thread_tags t LEFT JOIN counts c ON t.source=c.source AND t.thread_id=c.thread_id
-            GROUP BY t.tag ORDER BY t.tag""")]
+    rows = [dict(row) for row in db.execute("""WITH counts AS (
+        SELECT source,thread_id,COUNT(*) AS messages,SUM(read_at IS NULL) AS unread
+        FROM messages GROUP BY source,thread_id)
+        SELECT t.tag,COUNT(*) AS threads,COALESCE(SUM(c.messages),0) AS messages,
+               COALESCE(SUM(c.unread),0) AS unread
+        FROM thread_tags t LEFT JOIN counts c ON t.source=c.source AND t.thread_id=c.thread_id
+        GROUP BY t.tag ORDER BY t.tag""")]
     for row in rows:
         row['read'] = read_action(tag=row['tag'])
         row['show'] = {'command': 'tag show', 'tool': 'boardmail_tag_show', 'arguments': {'tag': row['tag']}}
@@ -77,12 +69,11 @@ def metadata(db, source, thread):
                       (source, thread, thread)).fetchone()
     if root is not None:
         candidates.append(('stored_root', dict(root)))
-    if schema.has(db, 'originals'):
-        row = db.execute('SELECT value FROM originals WHERE source=? AND id=?', (source, thread)).fetchone()
-        if row is not None:
-            original = json.loads(row[0])
-            if original['id'] == thread and original['thread_id'] == thread:
-                candidates.append(('cached_root', original))
+    row = db.execute('SELECT value FROM originals WHERE source=? AND id=?', (source, thread)).fetchone()
+    if row is not None:
+        original = json.loads(row[0])
+        if original['id'] == thread and original['thread_id'] == thread:
+            candidates.append(('cached_root', original))
     for field in ('title', 'url'):
         for row in db.execute('SELECT id,title,url FROM messages WHERE source=? AND thread_id=? AND '
                               + field + "<>'' ORDER BY arrival_seq", (source, thread)):
@@ -105,13 +96,11 @@ def metadata(db, source, thread):
 
 
 def show(db, store, tag):
-    members = []
     subscriptions = {(r['source'], r['thread']) for r in store._subscriptions(db)}
-    if exists(db):
-        members = [dict(row) for row in db.execute("""SELECT t.source,t.thread_id AS thread,t.tagged_at,
-            COUNT(m.id) AS messages,COALESCE(SUM(m.id IS NOT NULL AND m.read_at IS NULL),0) AS unread
-            FROM thread_tags t LEFT JOIN messages m ON t.source=m.source AND t.thread_id=m.thread_id
-            WHERE t.tag=? GROUP BY t.source,t.thread_id,t.tagged_at ORDER BY t.source,t.thread_id""", (tag,))]
+    members = [dict(row) for row in db.execute("""SELECT t.source,t.thread_id AS thread,t.tagged_at,
+        COUNT(m.id) AS messages,COALESCE(SUM(m.id IS NOT NULL AND m.read_at IS NULL),0) AS unread
+        FROM thread_tags t LEFT JOIN messages m ON t.source=m.source AND t.thread_id=m.thread_id
+        WHERE t.tag=? GROUP BY t.source,t.thread_id,t.tagged_at ORDER BY t.source,t.thread_id""", (tag,))]
     for member in members:
         source, thread = member['source'], member['thread']
         member.update(metadata(db, source, thread), tags=names(db, source, thread),
@@ -158,7 +147,7 @@ def execute(store, action, *, tag=None, source=None, thread=None, id=None):
             schema.add(db, 'thread_tags')
             changed = bool(db.execute('INSERT OR IGNORE INTO thread_tags VALUES (?,?,?,?)',
                                      (tag, source, thread, int(time.time()))).rowcount)
-        elif exists(db):
+        elif schema.has(db, 'thread_tags'):
             changed = bool(db.execute('DELETE FROM thread_tags WHERE tag=? AND source=? AND thread_id=?',
                                      (tag, source, thread)).rowcount)
         return {'event': 'thread_tag', 'tag': tag, 'source': source, 'thread': thread,
