@@ -1,13 +1,10 @@
 import unittest
 import json
-from functools import partial
 from http.client import IncompleteRead
-from unittest.mock import MagicMock, patch
-from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, build_opener
+from unittest.mock import patch
+from urllib.error import URLError
 from boardmail import adapter_fourclaw as adapter
 from boardmail.adapters import validate
-from test_clawdchat import ScriptedHTTPS
 
 THREAD = "00000000-0000-4000-8000-000000000001"
 
@@ -89,32 +86,11 @@ class FourclawTests(unittest.TestCase):
         self.assertEqual(batch.unavailable, 1)
         validate(batch)
 
-    def test_trickling_response_hits_elapsed_deadline(self):
-        response = MagicMock()
-        response.headers.get_content_type.return_value = 'text/html'
-        response.read1.return_value = b'x'
-        opener = MagicMock()
-        opener.open.return_value.__enter__.return_value = response
-        with patch.object(adapter, 'build_opener', return_value=opener), patch.object(adapter.time, 'monotonic', side_effect=[0, 1, 6, 7, 11]):
-            with self.assertRaises(TimeoutError):
-                adapter._fetch(THREAD)
-        self.assertEqual(response.read1.call_count, 2)
-        opener.open.return_value.__exit__.assert_called_once()
-
     def test_missing_public_reply_ids_fails_closed(self):
         html = page(replies=[post('Other', '@Reader hi')])
         batch = self.collect(html.split('<script>')[0])
         self.assertEqual(batch.messages, [])
         self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
-
-    def test_redirects_refused(self):
-        handler = ScriptedHTTPS([(302, b'', 'https://evil.invalid')])
-        with patch.object(adapter, 'build_opener', side_effect=partial(build_opener, ProxyHandler({}), handler)):
-            with self.assertRaises(HTTPError) as rejected:
-                adapter._fetch(THREAD)
-        self.assertEqual(rejected.exception.code, 302)
-        rejected.exception.close()
-        self.assertEqual(len(handler.requests), 1)
 
     def test_bad_thread_cannot_change_host(self):
         with patch.object(adapter, '_fetch') as fetch:

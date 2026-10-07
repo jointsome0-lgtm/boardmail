@@ -1,15 +1,11 @@
 """Public Fruitflies mentions and replies within a documented parent window."""
 from datetime import datetime
-from http.client import HTTPException
 import json
 import re
-from time import monotonic
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-from boardmail import addressing, subscriptions
+from boardmail import addressing, subscriptions, transport
 from boardmail.adapters import Batch
 from boardmail.config import MailError
 
@@ -17,7 +13,6 @@ API_VERSION = 1
 BASE = 'https://api.fruitflies.ai/v1/feed'
 PAGE = 100
 MAX_OFFSET = 100000
-MAX_BYTES = 2 * 1024 * 1024
 MAX_MEMBERS = 200  # Root plus the newest recognized members by creation time.
 
 
@@ -25,44 +20,18 @@ class FetchError(Exception):
     pass
 
 
-class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 def _fetch(params):
     # Public requests never read configured credentials or follow redirects.
-    request = Request(BASE + '?' + urlencode(params), headers={'Accept': 'application/json',
-                      'User-Agent': 'boardmail/fruitflies'})
+    url = BASE + '?' + urlencode(params)
     try:
-        deadline = monotonic() + 8
-        with build_opener(NoRedirect()).open(request, timeout=8) as response:
-            chunks = []
-            size = 0
-            while size <= MAX_BYTES:
-                if monotonic() >= deadline:
-                    raise FetchError('network_timeout')
-                chunk = response.read1(min(65536, MAX_BYTES + 1 - size))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                size += len(chunk)
-            raw = b''.join(chunks)
-        if len(raw) > MAX_BYTES:
-            raise FetchError('response_too_large')
-        data = json.loads(raw)
-        if not isinstance(data, dict) or not isinstance(data.get('posts'), list):
-            raise FetchError('invalid_response')
-        if len(data['posts']) > PAGE:
-            raise FetchError('invalid_response')
-        return data['posts']
-    except HTTPError as exc:
-        exc.close()
-        raise FetchError('http_' + str(exc.code)) from None
-    except (URLError, OSError, TimeoutError, HTTPException):
-        raise FetchError('network_error') from None
-    except (ValueError, UnicodeError):
-        raise FetchError('invalid_response') from None
+        data = transport.fetch('fruitflies', url)
+    except transport.FAILED as exc:
+        raise FetchError(transport.failure('fruitflies', exc)) from None
+    if not isinstance(data, dict) or not isinstance(data.get('posts'), list):
+        raise FetchError('invalid_response')
+    if len(data['posts']) > PAGE:
+        raise FetchError('invalid_response')
+    return data['posts']
 
 
 def _uuid(value):

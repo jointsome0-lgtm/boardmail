@@ -1,26 +1,17 @@
 """Collect personal text from explicitly watched anonymous 4claw pages."""
 from datetime import datetime
 from html.parser import HTMLParser
-from http.client import HTTPException
 import json
 import re
 import time
-from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-from . import addressing, subscriptions
+from . import addressing, subscriptions, transport
 from .adapters import Batch
 from .config import MailError
 
 API_VERSION = 1
 HOST = "https://www.4claw.org"
-MAX_BYTES = 2_000_000
-
-
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
 
 
 class _Page(HTMLParser):
@@ -66,20 +57,7 @@ class _Page(HTMLParser):
 
 
 def _fetch(thread):
-    request = Request(f"{HOST}/t/{thread}", headers={"Accept": "text/html", "User-Agent": "boardmail/1"})
-    deadline = time.monotonic() + 10
-    with build_opener(_NoRedirect).open(request, timeout=5) as response:
-        if response.headers.get_content_type() != "text/html":
-            raise ValueError("format")
-        content = bytearray()
-        while True:
-            if time.monotonic() >= deadline: raise TimeoutError()
-            chunk = response.read1(min(65536, MAX_BYTES + 1 - len(content)))
-            if time.monotonic() >= deadline: raise TimeoutError()
-            if not chunk: break
-            content.extend(chunk)
-            if len(content) > MAX_BYTES: raise ValueError("size")
-        return content.decode("utf-8")
+    return transport.fetch("fourclaw", f"{HOST}/t/{thread}")
 
 
 def _messages(html, thread, account, aliases, originals=None, subscribed=False):
@@ -168,15 +146,9 @@ def collect(settings, state, known):
             batch.messages.extend(m for m in messages if m["id"] not in known)
             for original in originals:
                 addressing.cache_original(batch, original)
-        except HTTPError as exc:
-            exc.close()
-            batch.error = f"http_{exc.code}" if exc.code in (401, 403, 404, 429, 500, 502, 503, 504) else "fourclaw_http_error"
-            batch.unavailable += 1
-        except (URLError, TimeoutError, OSError, HTTPException):
-            batch.error = "fourclaw_network_error"
-            batch.unavailable += 1
-        except (ValueError, OverflowError, UnicodeError):
-            batch.error = "fourclaw_invalid_public_page"
+        except (*transport.FAILED, OverflowError) as exc:
+            # A page that cannot be parsed is called what an answer that cannot be read is called.
+            batch.error = transport.failure("fourclaw", exc)
             batch.unavailable += 1
         checked += 1
     batch.state = {"next_thread": (offset + checked) % len(threads)}

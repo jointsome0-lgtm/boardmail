@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 import boardmail
-from boardmail import commands, errors, providers
+from boardmail import commands, errors, providers, transport
 
 
 TESTS = Path(__file__).resolve().parent
@@ -16,6 +16,8 @@ BUILT = {"adapter_botnet.py: 'http_' + str(code)",       # an HTTP status
          "adapter_clawdchat.py: 'http_' + str(code)",    # an HTTP status
          'config.py: error',                             # the code that a call names with error=
          'providers.py: code',                           # a Colony sign-in code
+         'transport.py: about.large',                    # what a board calls an answer over its size cap
+         'transport.py: about.late',                     # what a board calls an answer after its time budget
          "verification.py: error or 'reply_' + status"}  # reply_deleted, reply_missing or a Moltbook lookup error
 
 
@@ -71,6 +73,9 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual(literal - set(errors.CODES), set())
         self.assertEqual(built, BUILT)
         self.assertEqual({code.lower() for code in providers.COLONY_AUTH_CODES} - set(errors.CODES), set())
+        named = {code for about in transport.BOARDS.values()
+                 for code in (about.late, about.large, about.network, about.content, about.status)}
+        self.assertEqual(named - set(errors.CODES) - {None}, set())
         self.assertEqual(UNLISTED & set(errors.CODES), set())
 
     def test_mcp_flags_every_error_code(self):

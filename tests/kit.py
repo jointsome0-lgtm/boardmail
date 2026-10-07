@@ -35,15 +35,45 @@ UPDATE = 'UPDATE_STORIES'
 
 
 class Request(NamedTuple):
-    """One request as it left the process."""
+    """One request as it left the process, and how long its socket may stay silent."""
     method: str
     url: str
     headers: dict
     body: bytes
+    timeout: float | None = None
 
     @property
     def path(self):
         return urlsplit(self.url).path
+
+
+class Pieces(list):
+    """A body that a board sends piece by piece and without its length, so it ends where the connection closes.
+
+    A piece that is a function sends nothing. It is called when the reader has taken every piece before it, so a
+    board can let time pass in the middle of its answer or before its end."""
+
+
+class Reply(io.RawIOBase):
+    """An answer that is read one piece at a time."""
+    def __init__(self, pieces):
+        self.pieces = list(pieces)
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        while self.pieces:
+            piece = self.pieces.pop(0)
+            if callable(piece):
+                piece()
+                continue
+            taken = min(len(buffer), len(piece))
+            buffer[:taken] = piece[:taken]
+            if taken < len(piece):
+                self.pieces.insert(0, piece[taken:])
+            return taken
+        return 0
 
 
 class Wire:
@@ -55,7 +85,8 @@ class Wire:
         self.sent += data
 
     def makefile(self, *args, **kwargs):
-        return io.BytesIO(self.answer(self.sent))
+        answer = self.answer(self.sent)
+        return io.BytesIO(answer) if isinstance(answer, bytes) else io.BufferedReader(Reply(answer))
 
     def close(self):
         pass
@@ -66,25 +97,34 @@ class Network:
 
     Inside the with block no connection leaves the process. What urllib or http.client sends to a host goes to
     boards[host](request), which returns (status, value) or (status, value, headers). A value that is not bytes
-    is sent as JSON. A host that has no board fails the test.
+    is sent as JSON, and one that is Pieces is sent piece by piece. A board that returns bytes or Pieces alone
+    sends them as they are, so its answer need not be HTTP. A board that is an exception is a host that cannot be
+    reached: every connection to it fails with that exception. A host that has no board fails the test.
+
+    answers has every answer that a client began to read, as http.client made it. The network holds on to
+    them, so an answer that its client did not close is still open when the test looks.
     """
     def __init__(self, boards):
-        self.boards = boards
+        self.boards, self.answers = boards, []
 
-    def answer(self, scheme, host, sent):
+    def answer(self, scheme, host, sent, timeout):
         head, _, body = sent.partition(b'\r\n\r\n')
         first, *lines = head.decode('iso-8859-1').split('\r\n')
         method, target, _ = first.split(' ', 2)
         headers = dict(line.split(': ', 1) for line in lines)
-        request = Request(method, f'{scheme}://{headers["Host"]}{target}', headers, body)
-        status, value, *more = self.boards[host](request)
+        answer = self.boards[host](Request(method, f'{scheme}://{headers["Host"]}{target}', headers, body, timeout))
+        if isinstance(answer, (bytes, Pieces)):
+            return answer
+        status, value, *more = answer
+        pieces = value if isinstance(value, Pieces) else None
         if not isinstance(value, bytes):
-            value = json.dumps(value).encode()
+            value = b'' if pieces is not None else json.dumps(value).encode()
         given = {'Content-Type': 'application/json', **(more[0] if more else {}),
-                 'Content-Length': len(value), 'Connection': 'close'}
+                 **({} if pieces is not None else {'Content-Length': len(value)}), 'Connection': 'close'}
         lines = [f'HTTP/1.1 {status} {http.client.responses[status]}']
         lines += [f'{name}: {text}' for name, text in given.items()]
-        return '\r\n'.join(lines).encode('iso-8859-1') + b'\r\n\r\n' + value
+        head = '\r\n'.join(lines).encode('iso-8859-1') + b'\r\n\r\n'
+        return head + value if pieces is None else [head, *pieces]
 
     def __enter__(self):
         def offline(scheme):
@@ -92,10 +132,20 @@ class Network:
                 host = connection.host
                 if host not in self.boards:
                     raise AssertionError(f'No invented board answers for {host}')
-                connection.sock = Wire(lambda sent: self.answer(scheme, host, sent))
+                if isinstance(self.boards[host], Exception):
+                    raise self.boards[host]
+                connection.sock = Wire(lambda sent: self.answer(scheme, host, sent, connection.timeout))
             return connect
 
+        answers = self.answers
+
+        class Kept(http.client.HTTPResponse):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                answers.append(self)
+
         self.stack = ExitStack()
+        self.stack.enter_context(patch.object(http.client.HTTPConnection, 'response_class', Kept))
         self.stack.enter_context(patch.object(http.client.HTTPSConnection, 'connect', offline('https')))
         self.stack.enter_context(patch.object(http.client.HTTPConnection, 'connect', offline('http')))
         # A proxy from the environment would turn every request into one to the proxy.
@@ -127,11 +177,11 @@ def fixed(clock):
 
     time.time() is the clock for everyone. time.monotonic() is the clock for a package module, so no deadline
     passes while a story runs unless the clock has a step, and stays real for anyone else: the event loop of the
-    MCP client needs it.
+    MCP client needs it. A package module that sleeps moves the clock by that long and does not wait.
     A uuid4() that a package module asks for counts up from 1, so a key is the same on every run and through
     both entry points, and no two keys are equal. Random bytes for anyone else stay random.
     """
-    turn, random, elapsed = count(1), os.urandom, time.monotonic
+    turn, random, elapsed, pause = count(1), os.urandom, time.monotonic, time.sleep
 
     def package_asks(frames):
         return sys._getframe(frames + 1).f_globals.get('__name__', '').startswith('boardmail.')
@@ -142,11 +192,18 @@ def fixed(clock):
         clock.advance(clock.step)
         return clock.now
 
+    def sleep(seconds):
+        if package_asks(1):
+            clock.advance(seconds)
+        else:
+            pause(seconds)
+
     def urandom(size):
         # uuid4() reads os.urandom itself, so the module that asked for the key is one frame further up.
         return next(turn).to_bytes(size, 'big') if package_asks(2) else random(size)
 
-    with patch('time.time', clock), patch('time.monotonic', monotonic), patch('os.urandom', urandom):
+    with patch('time.time', clock), patch('time.monotonic', monotonic), patch('time.sleep', sleep), \
+            patch('os.urandom', urandom):
         yield
 
 

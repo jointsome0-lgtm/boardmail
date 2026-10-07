@@ -1,0 +1,1258 @@
+What each board client sent and what the command gave, case by case. A case is one collect on a new inbox.
+A request line ends with the headers that the request carried, the seconds that its socket may stay silent and
+the seconds since the pass began at which it left. The sets of headers are numbered under the name of the board.
+
+== postingboard
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/0.2; X-Agent-Protocol: getpostingboard/1
+
+-- a healthy board
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 1.1 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 2.2 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 3.3 s]
+    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is a 301 that names another host
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another host
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 303 that names another host
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 307 that names another host
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 308 that names another host
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names no other place
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 300
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 400
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 401
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 403
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 404
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 408
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 410
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 418
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 429
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 500
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 502
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 503
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 504
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the socket stays silent for too long
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- every answer is not HTTP
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second before its time budget of 45 s ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 44.5 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 45.6 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 46.7 s]
+    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the first answer comes when its time budget ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 45 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 46.1 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 47.2 s]
+    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the first answer comes half a second after its time budget ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 45.5 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 46.6 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 47.7 s]
+    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is text that is not JSON
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is an empty JSON list
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer says that it is text/plain
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 1.1 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 2.2 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 3.3 s]
+    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is as long as the size cap of 16777216 bytes
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 1.1 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 2.2 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 3.3 s]
+    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is one byte longer than the size cap
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
+
+== the-colony
+    headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 53; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/0.2
+    headers 2: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-token; Connection: close; Host: thecolony.ai; User-Agent: boardmail/0.2
+    headers 3: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: thecolony.ai; User-Agent: boardmail/0.2
+
+-- a healthy board
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 0 s]
+    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
+
+-- every answer is a 301 that names another host
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another host
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 303 that names another host
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 307 that names another host
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 308 that names another host
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names no other place
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 300
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 400
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 401
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 403
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 404
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 408
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 410
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 418
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 429
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 500
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 502
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 503
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 504
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the socket stays silent for too long
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- every answer is not HTTP
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second before its time budget of 45 s ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 0.5 s, at 44.5 s]
+    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 44.5 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 44.5 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 44.5 s]
+    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
+
+-- the first answer comes when its time budget ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second after its time budget ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- every answer is text that is not JSON
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is an empty JSON list
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer says that it is text/plain
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 0 s]
+    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
+
+-- every answer is as long as the size cap of 16777216 bytes
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 0 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 0 s]
+    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
+
+-- every answer is one byte longer than the size cap
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
+
+== moltbook
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
+    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
+
+-- a healthy board
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- every answer is a 301 that names another host
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another host
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 303 that names another host
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 307 that names another host
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 308 that names another host
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names no other place
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 300
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 400
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 401
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 403
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 404
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 408
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 410
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 418
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 429
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 500
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 502
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 503
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 504
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the socket stays silent for too long
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- every answer is not HTTP
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second before its time budget of 45 s ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 44.5 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 44.5 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 44.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- the first answer comes when its time budget ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 45 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 45 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 45 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- the first answer comes half a second after its time budget ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 45.5 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 45.5 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 45.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- every answer is text that is not JSON
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is an empty JSON list
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer says that it is text/plain
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- every answer is as long as the size cap of 16777216 bytes
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- every answer is one byte longer than the size cap
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
+
+== clawdchat
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: clawdchat.cn; User-Agent: boardmail/0.2
+    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: clawdchat.cn; User-Agent: boardmail/0.2
+
+-- a healthy board
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is a 301 that names another host
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another host
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 303 that names another host
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 307 that names another host
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 308 that names another host
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names no other place
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 300
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 400
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 401
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 403
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 404
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 408
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 410
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 418
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 429
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 500
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 502
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 503
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 504
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the socket stays silent for too long
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- every answer is not HTTP
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second before its time budget of 5 s ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 4.5 s]
+    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 4.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the first answer comes when its time budget ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second after its time budget ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 5.5 s]
+    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 5.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is text that is not JSON
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is an empty JSON list
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer says that it is text/plain
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is as long as the size cap of 1048576 bytes
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is one byte longer than the size cap
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
+
+== botnet
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: botnet.com; User-Agent: boardmail
+    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: botnet.com; User-Agent: boardmail
+
+-- a healthy board
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/inbox?limit=8  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/post%3A00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topics/00000000-0000-0000-0000-0000000000c8  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/thread%3A00000000-0000-0000-0000-000000000064  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is a 301 that names another host
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another host
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 303 that names another host
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 307 that names another host
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 308 that names another host
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names no other place
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 300
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 400
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 401
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 403
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 404
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 408
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 410
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 418
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 429
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 500
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 502
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 503
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 504
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the socket stays silent for too long
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- every answer is not HTTP
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second before its time budget of 10 s ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/inbox?limit=8  [headers 1, silent 0.5 s, at 9.5 s]
+    GET https://botnet.com/api/forum/topic-messages/post%3A00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 9.5 s]
+    GET https://botnet.com/api/forum/topics/00000000-0000-0000-0000-0000000000c8  [headers 2, silent 4 s, at 9.5 s]
+    GET https://botnet.com/api/forum/topic-messages/thread%3A00000000-0000-0000-0000-000000000064  [headers 2, silent 4 s, at 9.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the first answer comes when its time budget ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second after its time budget ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 0, added 0, errors: none; the source: status ok, unavailable 0, backlog pending
+
+-- every answer is text that is not JSON
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is an empty JSON list
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer says that it is text/plain
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/inbox?limit=8  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/post%3A00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topics/00000000-0000-0000-0000-0000000000c8  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/thread%3A00000000-0000-0000-0000-000000000064  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is as long as the size cap of 1048576 bytes
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/inbox?limit=8  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/post%3A00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topics/00000000-0000-0000-0000-0000000000c8  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/thread%3A00000000-0000-0000-0000-000000000064  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is one byte longer than the size cap
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
+
+== fruitflies
+    headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: api.fruitflies.ai; User-Agent: boardmail/fruitflies
+
+-- a healthy board
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is a 301 that names another host
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_301; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another host
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 303 that names another host
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_303; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 307 that names another host
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_307; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 308 that names another host
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_308; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names no other place
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 300
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 400
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 401
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 403
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 404
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 408
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 410
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 418
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 429
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 500
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 502
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 503
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
+-- every answer has the status 504
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the socket stays silent for too long
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- every answer is not HTTP
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second before its time budget of 8 s ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 7.5 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 7.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the first answer comes when its time budget ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8 s]
+    exit code 1, added 1, errors: network_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer comes half a second after its time budget ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
+    exit code 1, added 1, errors: network_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
+    exit code 1, added 1, errors: network_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is text that is not JSON
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is an empty JSON list
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer says that it is text/plain
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is as long as the size cap of 2097152 bytes
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is one byte longer than the size cap
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
+
+== fourclaw
+    headers 1: Accept: text/html; Accept-Encoding: identity; Connection: close; Host: www.4claw.org; User-Agent: boardmail/1
+
+-- a healthy board
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is a 301 that names another host
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 302 that names another host
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 303 that names another host
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 307 that names another host
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 308 that names another host
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 302 that names another place on the board
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 302 that names no other place
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 300
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 400
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 401
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_401; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 403
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_403; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 404
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_404; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 408
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 410
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 418
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 429
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_429; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 500
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_500; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 502
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_502; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 503
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 1, backlog pending
+
+-- every answer has the status 504
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_504; the source: status error, unavailable 1, backlog pending
+
+-- the board cannot be reached
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- the socket stays silent for too long
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is not HTTP
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- the first answer comes half a second before its time budget of 10 s ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the first answer comes when its time budget ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- the first answer comes half a second after its time budget ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- the second half of the first answer comes half a second after its time budget ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is text that is not JSON
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer ends with a byte that is not UTF-8
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer is an empty JSON list
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a JSON object that has only an invented field
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer says that it is text/plain
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer is as long as the size cap of 2000000 bytes
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- every answer is one byte longer than the size cap
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending

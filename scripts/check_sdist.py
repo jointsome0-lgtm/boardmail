@@ -19,7 +19,8 @@ SMOKE_TESTS = [
     'test_agent_loop',
 ]
 REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
-            'boardmail/cli.py', 'boardmail/mcp.py', 'boardmail/table.py', 'docs/reference.md',
+            'boardmail/cli.py', 'boardmail/mcp.py', 'boardmail/table.py', 'boardmail/transport.py',
+            'docs/reference.md',
             'scripts/check_sdist.py', 'scripts/inner_reach.py', 'scripts/agent_view.py',
             'examples/demo.py', 'examples/fixtures.py',
             'examples/agent_loop.py', 'examples/custom_board.py',
@@ -36,6 +37,7 @@ REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
             'tests/test_story_older.py', 'tests/story_older.txt',
             'tests/test_file_shape.py', 'tests/file_shape.txt', 'tests/test_schema_guard.py',
             'tests/test_argument_errors.py', 'tests/argument_errors_cli.txt', 'tests/argument_errors_mcp.txt',
+            'tests/test_board_requests.py', 'tests/board_requests.txt',
             'tests/fixtures/v1.sql']
 GUARD = '''import socket
 import sys

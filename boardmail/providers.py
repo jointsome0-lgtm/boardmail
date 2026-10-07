@@ -10,9 +10,9 @@ import re
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import Request, build_opener
 
-from . import addressing, subscriptions
+from . import addressing, subscriptions, transport
 from .config import MailError, uuid
 
 HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai",
@@ -28,7 +28,7 @@ COLONY_AUTH_CODES = frozenset({
 })
 
 
-class NoRedirect(HTTPRedirectHandler):
+class NoRedirect(transport.NoRedirect):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise MailError("redirect_refused")
 
