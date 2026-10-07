@@ -7,7 +7,7 @@ never touched here. A root that consumes its pass keeps its own position and
 the next pass starts at the following root, so one slow thread cannot starve
 the others.
 """
-from .config import MailError, uuid
+from .errors import MailError, uuid
 
 STATE_KEY = "subscriptions"
 MAX_OWNERS = 400  # Retained ownership of fetched comments per root, oldest dropped first.

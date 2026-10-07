@@ -20,7 +20,7 @@ from typing import NamedTuple
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from .config import MailError
+from .errors import MailError
 
 
 class Board(NamedTuple):

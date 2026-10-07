@@ -17,7 +17,6 @@ import boardmail.store
 from boardmail import adapter_clawdchat, adapters, providers
 from boardmail.adapters import Batch
 from boardmail.cli import main
-from boardmail.config import PACKAGED_ADAPTERS
 from boardmail.mcp import create_server
 from boardmail.store import Store
 
@@ -106,7 +105,7 @@ class Patches(unittest.TestCase):
         module = importlib.import_module('boardmail.adapter_fruitflies')
         with patch.object(module, '_fetch'):
             pass
-        for name in PACKAGED_ADAPTERS.values():
+        for name in ('boardmail.adapter_botnet', 'boardmail.adapter_fourclaw'):
             other = importlib.import_module(name)
             with patch.object(other, 'collect'), patch(f'boardmail.{name}.Client'):
                 pass

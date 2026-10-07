@@ -1,16 +1,16 @@
 """Adapter interface v1: collect(settings, state, known) returns a Batch."""
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+from functools import partial
 import io
-import importlib
 import json
 import re
 import runpy
 from urllib.parse import urlsplit
 
 from . import transport
-from .config import LEGACY_ADAPTERS, PACKAGED_ADAPTERS, MailError, identifier
-from .errors import next_action
+from .errors import MailError, identifier, next_action
 
 
 @dataclass
@@ -26,6 +26,28 @@ class Batch:
     error: str | None = None
     unavailable: int = 0
     originals: list = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Board:
+    """What a board that ships with the package says of itself in its own module. boards.py lists them, and the
+    core asks that list instead of comparing names.
+
+    collect is collect(settings, state, known, *, fetch). fields are the settings that a config may give a
+    source of the board besides account_id and adapter, and required are the ones that it must give. account
+    takes an account id of the board and raises ValueError for any other value. configure, if the board has
+    one, holds its settings to its own rules in place and raises ValueError where they do not fit. since_v1
+    says that an inbox of schema v1, which has no adapter rows, holds the board under its own name.
+    """
+    name: str
+    coverage: str
+    collect: Callable
+    fields: frozenset = frozenset()
+    required: frozenset = frozenset()
+    account: Callable = identifier
+    configure: Callable | None = None
+    subscriptions: bool = True
+    since_v1: bool = False
 
 
 def validate(batch):
@@ -67,41 +89,45 @@ def validate(batch):
         raise MailError("invalid_adapter_result") from None
 
 
+def from_file(path):
+    """collect of a trusted adapter file on interface v1. The file runs here, and only a collection gets here."""
+    try:
+        module = runpy.run_path(path)
+    except (Exception, SystemExit):
+        raise MailError("adapter_load_failed") from None
+    if type(module.get("API_VERSION")) is not int or module["API_VERSION"] != 1:
+        raise MailError("adapter_version_unsupported")
+    # A file with no collect fails where it is called, like any other fault of its code.
+    return lambda settings, state, known: module["collect"](settings, state, known)
+
+
 def collect_all(store, sources, *, fetch=transport.fetch):
     """One pass over every source that is not paused.
 
-    fetch asks a board: the transport, or an invented board in its place. Every module of the package is handed
+    fetch asks a board: the transport, or an invented board in its place. Every board of the package is handed
     it. An adapter file of an operator gets the three arguments of the interface."""
+    from .boards import BOARDS, owner
     # This is the only automatic migration point. Local readers never migrate.
     store.prepare_collection()
     added, errors = 0, []
     for source, settings in sources.items():
         if store.is_paused(source):
             continue
-        adapter = str(settings.get("adapter", source))
+        adapter = owner(source, settings)
         try:
             known, state, revision = store.collection_state(source, settings["account_id"], adapter)
-            if adapter in LEGACY_ADAPTERS or adapter in PACKAGED_ADAPTERS:
+            board = BOARDS.get(adapter)
+            if board:
                 # Runtime selections are independent of the MCP operator's fixed config.
                 # A pass keeps its snapshot; unsubscribe does not cancel in-flight work.
                 settings = {**settings, "subscriptions": [item["thread"] for item in store.subscriptions(source)]}
-            if adapter in LEGACY_ADAPTERS:
-                from . import providers
-                batch = providers.collect(adapter, settings, state, known, fetch=fetch)
-            else:
-                # Shipped modules and trusted configured files load only during collect.
-                with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                    try:
-                        module = vars(importlib.import_module(PACKAGED_ADAPTERS[adapter])) if adapter in PACKAGED_ADAPTERS else runpy.run_path(adapter)
-                    except (Exception, SystemExit):
-                        raise MailError("adapter_load_failed") from None
-                    if type(module.get("API_VERSION")) is not int or module["API_VERSION"] != 1:
-                        raise MailError("adapter_version_unsupported")
-                    try:
-                        asks = {"fetch": fetch} if adapter in PACKAGED_ADAPTERS else {}
-                        batch = module["collect"](settings, state, frozenset(known), **asks)
-                    except (Exception, SystemExit):
-                        raise MailError("adapter_failed") from None
+            # A board of the package and a trusted configured file run the same way from here.
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                collect = partial(board.collect, fetch=fetch) if board else from_file(adapter)
+                try:
+                    batch = collect(settings, state, frozenset(known))
+                except (Exception, SystemExit):
+                    raise MailError("adapter_failed") from None
             validate(batch)
             count, stale = store.save_collection(source, settings["account_id"], adapter, revision, batch)
             added += count

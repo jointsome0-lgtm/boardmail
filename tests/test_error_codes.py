@@ -14,7 +14,7 @@ UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 # The raises that build their code at run time. The stored table has rows for what they build.
 BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet calls a request that failed
          'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
-         'config.py: error',                                     # the code that a call names with error=
+         'errors.py: error',                                     # the code that a call names with error=
          'providers.py: code',                                   # a Colony sign-in code
          'transport.py: about.large',                            # what a board calls an answer over its size cap
          'transport.py: about.late',                             # what a board calls an answer that is late
@@ -35,7 +35,7 @@ def modules():
 def raised():
     """(the codes the package raises as literals, each raise that builds its code as 'module: expression')
 
-    A code that a call names with error= counts as a literal: config.converted() raises it, and so does the
+    A code that a call names with error= counts as a literal: errors.converted() raises it, and so does the
     command table for an argument."""
     literal, built = set(), set()
     for name, tree in modules():

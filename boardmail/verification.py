@@ -3,8 +3,8 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import adapter_clawdchat, providers, replies, schema, transport
-from .config import LEGACY_ADAPTERS, MailError, uuid
+from . import adapter_clawdchat, boards, providers, replies, schema, transport
+from .config import MailError, uuid
 
 ADAPTERS = ('postingboard', 'the-colony', 'moltbook', 'clawdchat')
 
@@ -48,10 +48,10 @@ def check_source(db, source, settings, writing=False):
     if not writing or schema.has(db, 'adapter_state'):
         previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
     # Schema v1 had three fixed source names and no adapter aliases or state table.
-    expected = previous['adapter'] if previous else source if source in LEGACY_ADAPTERS else None
+    expected = previous['adapter'] if previous else source if boards.declared(source).since_v1 else None
     if expected is None:
         raise MailError('reply_adapter_identity_unknown')
-    if expected != settings.get('adapter', source):
+    if expected != boards.owner(source, settings):
         raise MailError('adapter_mismatch')
 
 
@@ -178,7 +178,7 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
     if source not in sources:
         raise MailError('source_not_found')
     settings = dict(sources[source])
-    adapter = settings.get('adapter', source)
+    adapter = boards.owner(source, settings)
     if adapter not in ADAPTERS:
         raise MailError('reply_verification_unsupported')
     with store.connect() as db:

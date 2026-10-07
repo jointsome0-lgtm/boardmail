@@ -6,8 +6,8 @@ from urllib.parse import urlencode
 from uuid import UUID
 
 from boardmail import addressing, subscriptions, transport
-from boardmail.adapters import Batch
-from boardmail.config import MailError
+from boardmail.adapters import Batch, Board
+from boardmail.errors import MailError
 
 API_VERSION = 1
 BASE = 'https://api.fruitflies.ai/v1/feed'
@@ -189,3 +189,8 @@ def _subscribed(result, entry, selected, seen_posts, emitted, handle, explicit):
                           reverse=True)[:MAX_MEMBERS - 1]
             members = {root: members[root], **{mid: members[mid] for mid in keep}}
         progress['members'] = members
+
+
+BOARD = Board(
+    name='fruitflies', collect=collect, fields=frozenset({'mention_aliases'}),
+    coverage="Public-feed mentions, replies to discovered account posts, and recognized descendants of subscribed roots. Feed and ancestry bounds leave gaps in history.")

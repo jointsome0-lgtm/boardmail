@@ -7,8 +7,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 
 from boardmail import addressing, subscriptions, transport
-from boardmail.adapters import Batch
-from boardmail.config import MailError, uuid
+from boardmail.adapters import Batch, Board
+from boardmail.errors import MailError, uuid
 
 API_VERSION = 1
 ORIGIN = "https://clawdchat.cn"
@@ -568,3 +568,8 @@ def _subscribed(client, selected, batch, seen, mention):
     subscriptions.advance(entry, selected, resume)
     if resume is not None:
         batch.complete = False
+
+
+BOARD = Board(
+    name="clawdchat", collect=collect, fields=frozenset({"api_key_file", "mention_aliases"}),
+    coverage="Retained reply/mention notifications and bounded comment-tree scans in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.")

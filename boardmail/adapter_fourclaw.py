@@ -7,8 +7,8 @@ import time
 from uuid import UUID
 
 from . import addressing, subscriptions, transport
-from .adapters import Batch
-from .config import MailError
+from .adapters import Batch, Board
+from .errors import MailError
 
 API_VERSION = 1
 HOST = "https://www.4claw.org"
@@ -153,3 +153,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     batch.state = {"next_thread": (offset + checked) % len(threads)}
     batch.complete = offset + checked >= len(threads) and batch.error is None
     return batch
+
+
+BOARD = Board(
+    name="fourclaw", collect=collect, fields=frozenset({"watched_threads", "mention_aliases"}),
+    coverage="Configured public threads and activity in subscribed roots, within the HTML parser's limits. No personal notification discovery or confirmed reply-parent relationships.")

@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import sqlite3
@@ -9,16 +10,19 @@ import subprocess
 import sys
 import tempfile
 import threading
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from boardmail import commands, config
 from boardmail.adapters import Batch, collect_all
+from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, original, settings, together, uid
 from kit import Clock, fixed, mark
 from test_subscription_providers import ThreadBoard
+
+# The boards of the package that take a subscription to a thread.
+SUBSCRIBING = tuple(name for name, about in BOARDS.items() if about.subscriptions)
 
 
 class SubscriptionTests(unittest.TestCase):
@@ -42,7 +46,7 @@ class SubscriptionTests(unittest.TestCase):
         return result['changed']
 
     def test_all_boards_cli_persistence_idempotence_and_saved_marks(self):
-        sources = {source: {'account_id': uid(n)} for n, source in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
+        sources = {source: {'account_id': uid(n)} for n, source in enumerate(SUBSCRIBING, 1)}
         commands.execute(self.store, 'init', sources=sources)
         # The invented Postingboard has mail for the account before any thread is selected. Its client waits
         # between two requests, so the clock is fixed for a pass and a wait only moves it.
@@ -213,10 +217,10 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_every_builtin_gets_current_source_selections_and_pause_still_applies(self):
         fused = ('postingboard', 'the-colony', 'moltbook')
-        self.assertEqual(config.SUBSCRIPTION_ADAPTERS[:3], fused)
+        self.assertEqual(SUBSCRIBING[:3], fused)
         key = settings(self.root)['moltbook']['api_key_file']
         sources = {f'board{n}': {'account_id': uid(n), 'adapter': adapter, **({'api_key_file': key} if adapter in fused else {})}
-                   for n, adapter in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
+                   for n, adapter in enumerate(SUBSCRIBING, 1)}
         before = deepcopy(sources)
         commands.execute(self.store, 'init', sources=sources)
         for source in sources:
@@ -238,11 +242,11 @@ class SubscriptionTests(unittest.TestCase):
             boards[adapter].calls.clear()
             return asked
 
-        with fixed(Clock(1790000000)), \
-                patch('boardmail.adapters.importlib.import_module', return_value=SimpleNamespace(API_VERSION=1, collect=collect)):
+        with fixed(Clock(1790000000)), patch.dict(BOARDS, {name: replace(BOARDS[name], collect=collect)
+                                                           for name in SUBSCRIBING[3:]}):
             self.assertFalse(collect_all(self.store, sources, fetch=together(boards))['failed'])
             self.assertEqual([threads(adapter) for adapter in fused], [[uid(100)]] * 3)
-            self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS[3:]])
+            self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in SUBSCRIBING[3:]])
             seen.clear()
             self.follow(self.store, 'board1', uid(100), subscribed=False)
             self.follow(self.store, 'board2', uid(101))
@@ -250,7 +254,7 @@ class SubscriptionTests(unittest.TestCase):
             self.assertFalse(collect_all(self.store, sources, fetch=together(boards))['failed'])
             self.assertEqual([threads(adapter) for adapter in fused[:2]], [[], [uid(100), uid(101)]])
         self.assertEqual(boards['moltbook'].calls, [])
-        self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS[3:]])
+        self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in SUBSCRIBING[3:]])
         self.assertEqual(sources, before)
 
     def test_custom_adapter_keeps_its_own_settings(self):
