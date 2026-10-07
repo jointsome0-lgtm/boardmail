@@ -27,6 +27,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 from boardmail import cli, commands, config
+from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import uid
 
@@ -171,6 +172,13 @@ def edge(board):
     return answer
 
 
+def new_inbox(path, sources=None):
+    """A new inbox file at this path, as the command init makes it for these sources. The Store of it."""
+    store = Store(path)
+    commands.execute(store, 'init', sources=sources)
+    return store
+
+
 def described(account, **gives):
     """The settings of a source whose adapter is the adapter file of the tests, tests/described.py. Each pass over
     the source gives what is described: messages, originals, state, complete, error and unavailable, as a Batch
@@ -189,6 +197,18 @@ def arrive(store, source, account, messages=(), **gives):
     if result['failed'] and gives.get('error') is None and 'meanwhile' not in gives:
         raise AssertionError(result)
     return result
+
+
+def one_pass(store, source, settings, fetch=None):
+    """One pass of the command collect over this one source, which asks the board that fetch is. What the pass
+    left for the source, in the words of the Batch that it saved, and how many messages it added. The messages of
+    that Batch are the ones that the pass added, as the inbox shows them, in the order of their arrival."""
+    before = store.status()['counts']['latest_arrival']
+    result, code = commands.execute(store, 'collect', sources={source: settings}, **({'fetch': fetch} if fetch else {}))
+    health, = (entry for entry in result['sources'] if entry['source'] == source)
+    state = store.collection_state(source, settings['account_id'], str(settings.get('adapter', source)))[1]
+    return Batch(messages=store.page(before)['messages'], state=state, complete=not health['backlog_pending'],
+                 error=health['error'], unavailable=health['unavailable']), result['added']
 
 
 def mark(store, source, message, action, ref=None):
@@ -293,6 +313,27 @@ def connections():
 
     with patch('sqlite3.connect', connect):
         yield closed
+
+
+@contextmanager
+def on_statement(act):
+    """Inside the with block, act(sql) is called before each statement that a package module runs on a connection
+    of SQLite. It is where a test lets another writer in between two statements, holds a writer back, or raises
+    what SQLite would raise. A connection that the test opens itself is left alone."""
+    real = sqlite3.connect
+
+    class Told(sqlite3.Connection):
+        def execute(self, sql, *args):
+            act(sql)
+            return super().execute(sql, *args)
+
+    def connect(database, *args, **kwargs):
+        if not sys._getframe(1).f_globals.get('__name__', '').startswith('boardmail.'):
+            return real(database, *args, **kwargs)
+        return real(database, *args, factory=Told, **kwargs)
+
+    with patch('sqlite3.connect', connect):
+        yield
 
 
 class Moltbook:

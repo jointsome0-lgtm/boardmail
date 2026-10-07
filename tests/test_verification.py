@@ -1,5 +1,5 @@
 """Remote reply reconciliation with invented provider originals, never publication."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -9,22 +9,21 @@ import sys
 import tempfile
 import threading
 import unittest
+from uuid import UUID
 
 from boardmail import cli, commands, providers, replies, schema, verification
-from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import KEY, FixtureBoard, named, original, uid
-from kit import Clock, Network, edge, fixed
-from test_clawdchat import Board as ClawdChat, original as clawd_original
-from test_mail import mail
-from test_replies import WriteBarrierStore, run_reply_workers
+from kit import Clock, Network, edge, fixed, mark, new_inbox, notify, on_statement
+from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file as clawd_key_file, original as clawd_original
+from test_replies import run_reply_workers
 
 
 class VerificationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'mail.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = new_inbox(self.path)
         self.key_file = Path(self.temp.name) / 'example.key'
         self.key_file.write_text(KEY + '\n')
         self.body = 'A synthetic reply. Кириллица.\r\nExact newline.\n'
@@ -38,10 +37,9 @@ class VerificationTests(unittest.TestCase):
             self.settings['api_key_file'] = self.key_file
         if root_target:
             self.target = self.root
-        self.store.save_collection(self.source, uid(1), adapter, 0, Batch())
-        self.store.save(self.source, uid(1), [{**mail(310), 'id': self.target, 'thread_id': self.root}])
-        self.store.mark(self.source, self.target, 'read')
-        self.store.mark(self.source, self.target, 'needs_reply')
+        self.deliver(adapter)
+        mark(self.store, self.source, self.target, 'read')
+        mark(self.store, self.source, self.target, 'needs_reply')
         if adapter == 'postingboard':
             self.client = FixtureBoard(adapter, self.settings)
             self.raw = named(320, 301, 1, body=self.body, reply_to=None if root_target else 310)
@@ -63,6 +61,35 @@ class VerificationTests(unittest.TestCase):
         self.call('begin', key=self.key)
         self.before = self.path.read_bytes()
         self.before_result = self.call('show')[0]
+
+    def deliver(self, adapter):
+        """One pass over an invented board brings the target: a comment of another account under the post of the
+        thread, or that post itself where the target is the root. It is another board than the one that the
+        verification asks afterwards."""
+        number, mention = int(UUID(self.target)), self.target == self.root
+        cfg = {**self.settings, 'api_key_file': self.key_file}
+        if adapter == 'postingboard':
+            cfg, board = {**cfg, 'inbox': True, 'threads': []}, FixtureBoard(adapter, cfg)
+            post = named(number, 301)
+            (board.roots if mention else board.others)[self.target] = post
+            board.inbox = [(1, post, ['mention'])]
+        elif adapter == 'clawdchat':
+            cfg, board = {**cfg, 'api_key_file': clawd_key_file(self)}, ClawdChat()
+            board.events = [{**clawd_event(number, 'mention_post' if mention else 'comment'), 'post_id': self.root}]
+            board.originals = {self.target: clawd_original(number, post_id=self.root, title='Example',
+                                                           post={'id': self.root, 'title': 'Example'})}
+        else:
+            colony = adapter == 'the-colony'
+            board = FixtureBoard(adapter, cfg)
+            board.root = {**original(301, 301, 10 if mention else 1, colony=colony), 'title': 'Example'}
+            board.comments, board.events = [], []
+            notify(board, original(number, 301, colony=colony), 'mention' if mention else None)
+            if mention:  # The notification is of the post, and no comment belongs to it.
+                board.comments.clear()
+                board.events[0]['comment_id' if colony else 'relatedCommentId'] = None
+        with fixed(Clock(1790000000)):  # The wait of the client of Postingboard between two requests only moves the clock.
+            result, code = commands.execute(self.store, 'collect', sources={self.source: cfg}, fetch=board)
+        self.assertEqual((code, result['added'], result['failed']), (0, 1, False), result)
 
     def call(self, action='verify', **options):
         if action == 'verify':
@@ -202,15 +229,20 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
             for ref in existing:
                 self.assertEqual(self.call(ref=ref)[1], 1)
         contenders = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in (500, 501)]
-        barrier = threading.Barrier(2)
-        stores = [WriteBarrierStore(self.path, lambda: barrier.wait(timeout=5)) for _ in contenders]
+        barrier, worker = threading.Barrier(2), threading.local()
+
+        def at_once(sql):
+            # Each contender waits for the other before its first write, so both ask SQLite for the lock together.
+            if sql == 'BEGIN IMMEDIATE' and not getattr(worker, 'waited', False):
+                worker.waited = True
+                barrier.wait(timeout=5)
 
         def invoke(index):
-            return commands.outcome(lambda: verification.execute(stores[index], {self.source: self.settings},
+            return commands.outcome(lambda: verification.execute(Store(self.path), {self.source: self.settings},
                 self.source, self.target, key=self.key, ref=contenders[index], fetch=self.client))
 
         asked = len(self.client.calls)
-        with self.unreached():
+        with self.unreached(), on_statement(at_once):
             results = run_reply_workers([lambda: invoke(0), lambda: invoke(1)])
         self.assertEqual(sorted(code for _, code in results), [1, 2])
         winner = next(i for i, (_, code) in enumerate(results) if code == 1)
@@ -318,7 +350,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
 
     def test_diagnostic_write_failure_preserves_provider_failure_and_saved_candidate(self):
         self.setup_source('postingboard')
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             schema.add(db, 'reply_candidate_checks')
             db.execute("CREATE TRIGGER fail_check BEFORE INSERT ON reply_candidate_checks "
                        "BEGIN SELECT RAISE(ABORT, 'private database detail'); END")
@@ -368,7 +400,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                     old = db.execute(f'SELECT {column} FROM {table} WHERE source=?', (self.source,)).fetchone()[0]
                 committed = {}
                 def changed_then_failed(path, *args, **kwargs):
-                    with self.store.connect(write=True) as db:
+                    with closing(sqlite3.connect(self.path)) as db, db:
                         db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (value, self.source))
                     committed['bytes'] = self.path.read_bytes()
                     raise TimeoutError()
@@ -377,12 +409,12 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertEqual((code, result['verification']['reason']), (1, 'network_error'))
                 self.assertFalse(result['last_check_saved'])
                 self.assertEqual(self.path.read_bytes(), committed['bytes'])
-                with self.store.connect(write=True) as db:
+                with closing(sqlite3.connect(self.path)) as db, db:
                     db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (old, self.source))
 
     def test_legacy_candidates_have_no_diagnostic_and_keep_positional_writes(self):
         self.setup_source('postingboard')
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             schema.add(db, 'reply_candidates')
             db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                        (self.source, self.target, self.key, self.ref, self.adapter, uid(1), 1000))
@@ -392,7 +424,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         with self.unreached():
             self.call()
         other = providers.parent_reference(self.adapter, self.root, uid(321))
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                        (self.source, self.target, self.key, other, self.adapter, uid(1), 1001))
         candidates = {c['reply_ref']: c for c in self.call('show')[0]['reply_candidates']}
@@ -403,7 +435,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         for order in ((320, 321), (321, 320)):
             with self.subTest(order=order):
                 self.path = Path(self.temp.name) / f'identical-{order[0]}.sqlite3'
-                self.store = Store(self.path); self.store.initialize()
+                self.store = new_inbox(self.path)
                 self.setup_source('postingboard')
                 self.client.others[uid(321)] = named(321, 301, 1, body=self.body, reply_to=310)
                 refs = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in order]
@@ -435,7 +467,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.setup_source('postingboard')
         with self.unreached():
             self.call()
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TRIGGER fail_candidate BEFORE INSERT ON reply_candidates "
                        "BEGIN SELECT RAISE(ABORT, 'stop'); END")
         before, asked = self.path.read_bytes(), len(self.client.asked)
@@ -516,7 +548,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(code, 0)
         legacy = dict(verified['verification_receipt'])
         legacy.pop('key_scope', None)
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE reply_verifications SET evidence=? WHERE source=?',
                        (json.dumps(legacy), self.source))
         before, calls = self.path.read_bytes(), len(self.client.calls)
@@ -609,7 +641,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(self.call()[0]['error'], 'reply_verification_unsupported')
         self.settings['adapter'] = 'moltbook'
         self.assertEqual(self.path.read_bytes(), self.before)
-        self.store.set_paused(self.source, True)
+        commands.execute(self.store, 'pause', source=self.source)
         before = self.path.read_bytes()
         self.assertEqual(self.call()[0]['error'], 'source_paused')
         self.assertEqual(self.client.calls, [])
@@ -620,16 +652,16 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         get = self.client.get
         def racing_get(path, *args, **kwargs):
             # A second SQLite connection can write while the request is in flight.
-            self.store.set_paused(self.source, True)
+            commands.execute(self.store, 'pause', source=self.source)
             return get(path, *args, **kwargs)
         self.client.get = racing_get
         result, code = self.call()
         self.assertEqual((code, result['error']), (2, 'source_paused'))
         self.assertEqual(self.call('show')[0]['reply']['state'], 'unknown')
         self.assertIsNone(self.store.show(self.source, self.target)['replied_at'])
-        self.store.set_paused(self.source, False)
+        commands.execute(self.store, 'resume', source=self.source)
         def conflicting_get(path, *args, **kwargs):
-            self.store.mark(self.source, self.target, 'replied', ref='https://example.invalid/other')
+            mark(self.store, self.source, self.target, 'replied', ref='https://example.invalid/other')
             return get(path, *args, **kwargs)
         self.client.get = conflicting_get
         result, code = self.call()
@@ -638,12 +670,12 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
 
     def test_unrecorded_alias_does_not_take_its_identity_from_current_config(self):
         self.setup_source('moltbook')
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('DELETE FROM adapter_state WHERE source=?', (self.source,))
         for remove_table in (False, True):
             with self.subTest(remove_table=remove_table):
                 if remove_table:
-                    with self.store.connect(write=True) as db:
+                    with closing(sqlite3.connect(self.path)) as db, db:
                         db.execute('DROP TABLE adapter_state')
                 before = self.path.read_bytes()
                 result, code = self.call()
@@ -663,7 +695,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 with self.store.connect() as db:
                     old = db.execute(f'SELECT {column} FROM {table} WHERE source=?', (self.source,)).fetchone()[0]
                 def changed_get(path, *args, **kwargs):
-                    with self.store.connect(write=True) as db:
+                    with closing(sqlite3.connect(self.path)) as db, db:
                         db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (value, self.source))
                     return get(path, *args, **kwargs)
                 self.client.get = changed_get
@@ -672,14 +704,14 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertEqual(self.call('show')[0]['reply']['state'], 'unknown')
                 if column == 'idempotency_key':
                     self.assertEqual(self.call('show')[0]['reply_candidates'], [])
-                with self.store.connect(write=True) as db:
+                with closing(sqlite3.connect(self.path)) as db, db:
                     db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (old, self.source))
 
     def test_receipt_and_confirmation_roll_back_together(self):
         self.setup_source('postingboard')
         with self.unreached():
             self.call()
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TRIGGER fail_mark BEFORE UPDATE OF replied_at ON messages BEGIN SELECT RAISE(ABORT, 'stop'); END")
         before = self.path.read_bytes()
         self.assertEqual(self.call()[0]['error'], 'local_state_error')

@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from boardmail import commands, verification
+from boardmail import commands
 from boardmail.config import MailError
-from boardmail.store import Store
+from kit import arrive, new_inbox
 from test_mail import mail
 
 SECRET = '/invented/private/path token=do-not-expose'
@@ -52,8 +52,8 @@ class CommandErrorTests(unittest.TestCase):
     def test_missing_message_hint_does_not_reinterpret_numeric_remote_id(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)/'invented.sqlite3'
-            store = Store(path); store.initialize()
-            store.save('synthetic', 'owner', [dict(mail(10), id='1087')])
+            store = new_inbox(path)
+            arrive(store, 'synthetic', 'owner', [dict(mail(10), id='1087')])
             before = path.read_bytes()
             result, code = commands.outcome(lambda: commands.execute(store, 'show', source='synthetic', id='1087'))
             self.assertEqual((code, result['message']['id']), (0, '1087'))
@@ -68,10 +68,10 @@ class CommandErrorTests(unittest.TestCase):
     def test_reply_write_failure_offers_exact_read_only_recovery_without_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)/'invented.sqlite3'
-            store = Store(path); store.initialize()
-            store.save('synthetic', 'owner', [dict(mail(10), id='1087')])
+            store = new_inbox(path)
+            arrive(store, 'synthetic', 'owner', [dict(mail(10), id='1087')])
             before = path.read_bytes()
-            with patch.object(store, 'connect', side_effect=PermissionError(errno.EACCES, SECRET)):
+            with patch('sqlite3.connect', side_effect=PermissionError(errno.EACCES, SECRET)):
                 result, code = commands.outcome(lambda: commands.execute(store, 'reply_prepare',
                                     source='synthetic', id='1087', body='Invented answer.'))
             self.assertEqual((result['error'], code, result['reason']), ('local_state_error', 2, 'permission_denied'))
@@ -88,10 +88,16 @@ class CommandErrorTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
 
     def test_reply_operations_keep_unknown_cause_and_never_authorize_sending(self):
+        key, ref = {'key': 'an-invented-key'}, {'ref': 'https://example.invalid/an-answer'}
+        given = {'reply_prepare': {'body': 'Invented answer.'}, 'reply_begin': key, 'reply_show': {},
+                 'reply_confirm': {**key, **ref, 'readback_body': 'Invented answer.'}, 'reply_verify': {**key, **ref}}
+        store = new_inbox(Path(self.enterContext(tempfile.TemporaryDirectory()))/'invented.sqlite3')
         for command in ('reply_prepare', 'reply_begin', 'reply_show', 'reply_confirm', 'reply_verify'):
-            with self.subTest(command=command), patch.object(commands.replies, 'execute', side_effect=sqlite_error(sqlite3.SQLITE_CANTOPEN)), \
-                    patch.object(verification, 'execute', side_effect=sqlite_error(sqlite3.SQLITE_CANTOPEN)):
-                result, code = commands.outcome(lambda: commands.execute(None, command, source='alias', id='numeric-20'))
+            # The inbox file cannot be opened, and SQLite does not say why.
+            with self.subTest(command=command), patch('sqlite3.connect', side_effect=sqlite_error(sqlite3.SQLITE_CANTOPEN)) as opened:
+                result, code = commands.outcome(lambda: commands.execute(store, command, source='alias', id='numeric-20',
+                                                                         **given[command]))
+                opened.assert_called_once()
                 self.assertEqual((result['error'], code), ('local_state_error', 2))
                 self.assertNotIn('reason', result)
                 self.assertFalse(result['send_allowed'])
@@ -100,10 +106,9 @@ class CommandErrorTests(unittest.TestCase):
                 self.assertNotIn(SECRET, json.dumps(result))
 
     def test_invalid_target_does_not_produce_recovery_route(self):
-        with patch.object(commands.replies, 'execute', side_effect=OSError(errno.EROFS, SECRET)):
-            for source, mid in ((None, '10'), ('alias', None), ('alias', 'bad\nidentifier')):
-                result, _ = commands.outcome(lambda: commands.execute(None, 'reply_prepare', source=source, id=mid))
-                self.assertNotIn('recovery', result)
+        for source, mid in ((None, '10'), ('alias', None), ('alias', 'bad\nidentifier')):
+            result, _ = commands.local_state_result(OSError(errno.EROFS, SECRET), source, mid)
+            self.assertNotIn('recovery', result)
         result, code = commands.outcome(lambda: fail(MailError('invalid_arguments')))
         self.assertEqual((result['error'], code), ('invalid_arguments', 2))
         self.assertNotIn('identifier_hint', result)

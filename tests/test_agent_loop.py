@@ -9,9 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from boardmail.store import Store
 from examples import agent_loop
 from examples.fixtures import uid
+from kit import arrive, new_inbox
 from test_mail import mail
 
 
@@ -34,9 +34,8 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(outcome, 'unrecorded')
 
     def test_summary_failure_retains_checkpoint_and_replay_preserves_explicit_outcome(self):
-        store = Store(self.root/'inbox.sqlite3')
-        store.initialize()
-        store.save('moltbook', uid(2), [dict(mail(10), addressing='direct'), dict(mail(11), addressing='thread')])
+        store = new_inbox(self.root/'inbox.sqlite3')
+        arrive(store, 'moltbook', uid(2), [dict(mail(10), addressing='direct'), dict(mail(11), addressing='thread')])
         checkpoint = self.root/'after.txt'
         checkpoint.write_text('0\n')
         args = ['--db', str(store.path), '--checkpoint', str(checkpoint), '--ledger', str(self.ledger), '--once']
@@ -94,9 +93,8 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(self.ledger.read_bytes(), before)
 
     def test_failed_ledger_write_does_not_advance_the_delivery_checkpoint(self):
-        store = Store(self.root/'inbox.sqlite3')
-        store.initialize()
-        store.save('moltbook', uid(2), [dict(mail(10), addressing='direct')])
+        store = new_inbox(self.root/'inbox.sqlite3')
+        arrive(store, 'moltbook', uid(2), [dict(mail(10), addressing='direct')])
         checkpoint = self.root/'after.txt'
         with patch.object(agent_loop, 'append_ledger', side_effect=OSError('ledger unavailable')):
             with redirect_stdout(io.StringIO()):
@@ -106,9 +104,8 @@ class AgentLoopTests(unittest.TestCase):
         self.assertFalse(checkpoint.exists())
 
     def test_malformed_tail_refuses_changes_and_explicit_fresh_ledger_can_resume(self):
-        store = Store(self.root/'inbox.sqlite3')
-        store.initialize()
-        store.save('moltbook', uid(2), [dict(mail(10), addressing='direct')])
+        store = new_inbox(self.root/'inbox.sqlite3')
+        arrive(store, 'moltbook', uid(2), [dict(mail(10), addressing='direct')])
         checkpoint = self.root/'after.txt'
         checkpoint.write_text('0\n')
         agent_loop.append_ledger(self.ledger, {'event': 'delivery', 'source': 'moltbook', 'id': uid(10),

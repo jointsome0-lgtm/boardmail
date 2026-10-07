@@ -5,9 +5,9 @@ import tempfile
 import unittest
 
 from boardmail import providers
-from boardmail.adapters import validate
-from boardmail.store import Store
+from boardmail.adapters import collect_all, validate
 from examples.fixtures import FixtureBoard, original, settings, uid
+from kit import mark, new_inbox
 
 
 class AddressingIntegrationTests(unittest.TestCase):
@@ -24,14 +24,11 @@ class AddressingIntegrationTests(unittest.TestCase):
                     child = board.comments[0]
                     child['parent_id'] = uid(90)
                     board.events = [board.events[0]]
-                    store = Store(Path(directory) / 'inbox.sqlite3')
-                    store.initialize()
+                    store = new_inbox(Path(directory) / 'inbox.sqlite3')
 
                     def collect():
-                        known, state, revision = store.collection_state(source, board.owner, source)
-                        batch = providers.collect(source, config, state, known, fetch=board)
-                        validate(batch)
-                        return store.save_collection(source, board.owner, source, revision, batch)
+                        result = collect_all(store, {source: config}, fetch=board)
+                        return result['added'], result['failed']
 
                     self.assertEqual(collect(), (1, False))
                     page = store.page(scope='addressed')
@@ -39,7 +36,7 @@ class AddressingIntegrationTests(unittest.TestCase):
                     self.assertIsNone(page['messages'][0]['addressing'])
                     self.assertEqual(page['thread_activity'], [])
                     checkpoint = page['next_after']
-                    store.mark(source, child['id'], 'read')
+                    mark(store, source, child['id'], 'read')
                     stored = store.show(source, child['id'])
                     later = deepcopy(board.events[0])
                     later['id'] = uid(9999)

@@ -12,11 +12,10 @@ from urllib.error import URLError
 
 from boardmail import cli, commands, providers
 from boardmail.config import MailError
-from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, named, original, settings, uid
-from kit import Clock, Network, edge, fixed
-from test_clawdchat import Board as ClawdChat, original as clawd_original
-from test_mail import mail
+from kit import Clock, Network, edge, fixed, mark, new_inbox
+from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file as clawd_key_file, original as clawd_original
+from test_fourclaw import THREAD, page, threads
 
 
 class ExpandTests(unittest.TestCase):
@@ -25,20 +24,31 @@ class ExpandTests(unittest.TestCase):
         self.path = Path(self.temp.name) / 'mail.sqlite3'
         self.cfg = settings(self.temp.name)['postingboard']
         self.sources = {'postingboard': self.cfg}
-        self.store = Store(self.path); self.store.initialize(self.sources)
+        self.store = new_inbox(self.path, self.sources)
         self.fixture = FixtureBoard('postingboard', self.cfg)
         self.clock = Clock(1790000000)
-        self.fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our answer.'),
-                               uid(602): named(602, 600, reply_to=601, body='Edited follow-up.'),
-                               uid(603): named(603, 600, reply_to=601), uid(604): named(604, 600, reply_to=600)}
-        # Arrival order (by created_at, then id): root, two replies to our answer, a reply to the root, another thread.
-        self.store.save('postingboard', self.cfg['account_id'], [
-            {**mail(600), 'thread_id': uid(600)},
-            {**mail(602), 'thread_id': uid(600), 'parent_id': uid(601)},
-            {**mail(603), 'thread_id': uid(600), 'parent_id': uid(601)},
-            mail(611),
-            {**mail(604), 'thread_id': uid(600), 'parent_id': uid(600)}])
-        self.store.mark('postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        current = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our answer.'),
+                   uid(602): named(602, 600, reply_to=601, body='Edited follow-up.'),
+                   uid(603): named(603, 600, reply_to=601), uid(604): named(604, 600, reply_to=600),
+                   uid(605): named(605, 600, reply_to=600)}
+        # The mail arrives with the text that the posts had then, in the order of their age: the root, two replies to
+        # our answer, a reply to the root, a post of another thread.
+        self.fixture.others = {**{mid: {**post, 'body': 'Synthetic text'} for mid, post in current.items()},
+                               uid(601): current[uid(601)], uid(611): named(611, 100, body='Synthetic text')}
+        self.arrives(600, 602, 603, 604, 611)
+        # The posts have another text now, and the post of the other thread is gone.
+        self.fixture.others = current
+        mark(self.store, 'postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+
+    def arrives(self, *numbers):
+        """A pass in which the inbox of the invented Postingboard tells the account of these posts, which become
+        its mail. The pass watches no thread."""
+        self.fixture.inbox += [(len(self.fixture.inbox) + 1, self.fixture.others[uid(n)], ['mention']) for n in numbers]
+        with fixed(self.clock):
+            result, code = commands.execute(self.store, 'collect', fetch=self.fixture,
+                                            sources={'postingboard': {**self.cfg, 'inbox': True, 'threads': []}})
+        self.assertEqual((code, result['added'], result['failed']), (0, len(numbers), False), result)
+        self.fixture.calls.clear()
 
     def expand(self, thread=600, *, through=5, after=0, limit=None, local=False, sources='configured', board=None):
         sources = self.sources if sources == 'configured' else sources
@@ -70,8 +80,8 @@ class ExpandTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
         # New arrivals and marks after the summary never enter the interval; continuation keeps through.
-        self.store.save('postingboard', self.cfg['account_id'], [{**mail(605), 'thread_id': uid(600), 'parent_id': uid(600)}])
-        self.store.mark('postingboard', uid(603), 'read')
+        self.arrives(605)
+        mark(self.store, 'postingboard', uid(603), 'read')
         self.fixture.calls.clear()
         result, code = self.expand(after=2)
         self.assertEqual((code, [i['id'] for i in result['items']], result['next_after'], result['more']), (0, [uid(603), uid(604)], 4, False))
@@ -149,7 +159,11 @@ class ExpandTests(unittest.TestCase):
         self.assertEqual(len(self.fixture.calls), 5)
 
     def test_local_paused_unconfigured_and_unsupported_reads_never_build_a_client(self):
-        self.store.save('fourclaw', 'demo', [{**mail(800), 'thread_id': uid(800)}])
+        # On 4claw the opening post of a thread of another account names this account, and is its mail.
+        fourclaw = {'fourclaw': {'adapter': 'fourclaw', 'account_id': 'demo', 'watched_threads': [THREAD]}}
+        result, code = commands.execute(self.store, 'collect', sources=fourclaw,
+                                        fetch=threads({THREAD: page(opening='@demo an opening.')}))
+        self.assertEqual((code, result['added']), (0, 1), result)
         board = FakeBoard([])  # It has no answer, and it is asked nothing.
         cases = [('local', dict(local=True)), ('unconfigured', dict(sources=None)), ('other source', dict(sources={'moltbook': settings()['moltbook']}))]
         for name, args in cases:
@@ -161,12 +175,12 @@ class ExpandTests(unittest.TestCase):
                 self.assertEqual([i['complete'] for i in result['items']], [True, False, False, True])
                 # A recorded parent identity still links the exchange although the parent text is unknown.
                 self.assertEqual((result['items'][1]['previous_exchange']['status'], result['items'][1]['parent']['id']), ('linked', uid(601)))
-        self.store.set_paused('postingboard', True)
+        commands.execute(self.store, 'pause', source='postingboard')
         result, code = self.expand(board=board)
         self.assertEqual((code, result['fetched'], result['items'][3]['complete']), (1, False, True))
-        self.store.set_paused('postingboard', False)
-        result, code = commands.execute(self.store, 'expand', source='fourclaw', thread=uid(800), through=10,
-                                        sources={'fourclaw': {'adapter': 'fourclaw', 'account_id': 'demo'}}, fetch=board)
+        commands.execute(self.store, 'resume', source='postingboard')
+        result, code = commands.execute(self.store, 'expand', source='fourclaw', thread=THREAD, through=10,
+                                        sources=fourclaw, fetch=board)
         self.assertEqual((code, result['fetched'], result['complete'], result['items'][0]['target']['origin']), (0, False, True, 'local'))
         self.assertEqual(board.asked, [])
 
@@ -243,15 +257,27 @@ class ExpandReuseTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'mail.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = new_inbox(self.path)
+
+    def clawd_arrives(self, source, *comments, ours=()):
+        """One pass over an invented ClawdChat that tells the account of these comments, which become its mail.
+        The board also has the comments of the account itself."""
+        board = ClawdChat()
+        board.originals = {comment['id']: comment for comment in (*comments, *ours)}
+        board.events = [{**clawd_event(0, 'reply' if comment['parent_id'] else 'comment'), 'id': uid(5000 + n),
+                         'post_id': comment['post_id'], 'comment_id': comment['id']} for n, comment in enumerate(comments)]
+        cfg = {'account_id': uid(1), 'adapter': 'clawdchat', 'api_key_file': clawd_key_file(self)}
+        result, code = commands.execute(self.store, 'collect', sources={source: cfg}, fetch=board)
+        self.assertEqual((code, result['added'], result['failed']), (0, len(comments), False), result)
 
     def test_conflicting_saved_relatives_require_local_integrity_or_current_originals(self):
         cfg = {'account_id': uid(1), 'adapter': 'clawdchat'}
-        self.store.save('clawdchat', uid(1), [
-            dict(mail(100), thread_id=uid(999)), dict(mail(11), thread_id=uid(999)),
-            dict(mail(12), parent_id=uid(100)), dict(mail(13), parent_id=uid(11))])
-        self.store.mark('clawdchat', uid(12), 'read')
-        self.store.mark('clawdchat', uid(13), 'needs_reply')
+        # Two comments of a thread name as what they answer a comment that arrived under another post.
+        elsewhere = {'post_id': uid(999), 'post': {'id': uid(999), 'title': 'Elsewhere'}}
+        self.clawd_arrives('clawdchat', clawd_original(100, **elsewhere), clawd_original(11, **elsewhere),
+                           clawd_original(12, parent_id=uid(100)), clawd_original(13, parent_id=uid(11)))
+        mark(self.store, 'clawdchat', uid(12), 'read')
+        mark(self.store, 'clawdchat', uid(13), 'needs_reply')
         saved = {mid: self.store.show('clawdchat', mid) for mid in (uid(12), uid(13))}
         before = self.path.read_bytes()
         board = ClawdChat()
@@ -285,15 +311,20 @@ class ExpandReuseTests(unittest.TestCase):
                 self.assertEqual(self.path.read_bytes(), before)
 
     def test_moltbook_comment_pages_are_read_once_for_every_target_and_parent(self):
-        cfg = {**settings()['moltbook'], 'adapter': 'moltbook'}
+        cfg = {**settings(self.temp.name)['moltbook'], 'adapter': 'moltbook'}
         client = FixtureBoard('moltbook', cfg)
-        client.per_page = 1  # The board gives one comment on a page.
+        # A comment under the post of the account, the answer of the account to it, a reply to that answer, and one
+        # more comment. The three of others are the mail of the account.
         client.comments = [original(209, 201), original(211, 201, 1, body='Our published answer.'),
-                           {**original(212, 201, body='Current reply.'), 'parent_id': uid(211)}, original(213, 201)]
-        self.store.save('molt', cfg['account_id'], [
-            {**mail(211), 'thread_id': uid(201)}, {**mail(212), 'thread_id': uid(201), 'parent_id': uid(211), 'body': 'Saved reply.'},
-            {**mail(213), 'thread_id': uid(201)}])
-        self.store.mark('molt', uid(211), 'replied', ref=providers.parent_reference('moltbook', uid(201), uid(211)))
+                           {**original(212, 201, body='Saved reply.'), 'parent_id': uid(211)}, original(213, 201)]
+        client.events = [{'id': uid(n + 1000), 'type': kind, 'relatedPostId': uid(201), 'relatedCommentId': uid(n), 'isRead': True}
+                         for n, kind in ((209, 'post_comment'), (212, 'comment_reply'), (213, 'post_comment'))]
+        result, code = commands.execute(self.store, 'collect', sources={'molt': cfg}, fetch=client)
+        self.assertEqual((code, result['added'], result['failed']), (0, 3, False), result)
+        client.comments[2]['content'] = 'Current reply.'
+        client.per_page = 1  # The board gives one comment on a page.
+        client.calls.clear()
+        mark(self.store, 'molt', uid(209), 'replied', ref=providers.parent_reference('moltbook', uid(201), uid(211)))
         before = self.path.read_bytes()
         def expand():
             return commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg},
@@ -303,9 +334,9 @@ class ExpandReuseTests(unittest.TestCase):
         self.assertEqual((result['root']['origin'], result['root']['remote_status']), ('remote', 'available'))
         first, second, third = result['items']
         self.assertEqual((second['target']['current_message']['body'], second['target']['differs_from_saved']), ('Current reply.', True))
-        self.assertEqual((second['parent']['current_message']['body'], second['parent']['origin'], second['parent']['differs_from_saved']),
-                         ('Our published answer.', 'local', True))
-        self.assertEqual((second['previous_exchange']['status'], [m['id'] for m in second['previous_exchange']['messages']]), ('linked', [uid(211)]))
+        self.assertEqual((second['parent']['message']['body'], second['parent']['origin'], second['parent']['differs_from_saved']),
+                         ('Our published answer.', 'remote', None))
+        self.assertEqual((second['previous_exchange']['status'], [m['id'] for m in second['previous_exchange']['messages']]), ('linked', [uid(209)]))
         self.assertEqual((first['parent'], third['parent']), ({'id': uid(201), 'status': 'same_as_root'},) * 2)
         # One thread read and each of the four one-comment pages exactly once, although
         # every target restarts the comment scan from the first page.
@@ -337,9 +368,9 @@ class ExpandReuseTests(unittest.TestCase):
                            uid(12): clawd_original(12, parent_id=uid(11)), uid(13): clawd_original(13, parent_id=uid(11)),
                            uid(14): clawd_original(14, post_id=uid(999), post={'id': uid(999), 'title': 'Elsewhere'}),
                            uid(15): 404}
-        self.store.save('clawd', uid(1), [
-            {**mail(12), 'thread_id': uid(100), 'parent_id': uid(11)}, {**mail(13), 'thread_id': uid(100), 'parent_id': uid(11)},
-            {**mail(14), 'thread_id': uid(100), 'parent_id': uid(11)}, {**mail(15), 'thread_id': uid(100)}])
+        # When the mail arrived, the four comments were under one post. Since then one moved and one is gone.
+        self.clawd_arrives('clawd', *(clawd_original(n, parent_id=uid(11)) for n in (12, 13, 14)), clawd_original(15),
+                           ours=[board.originals[uid(11)]])
         before = self.path.read_bytes()
         result, code = commands.execute(self.store, 'expand', source='clawd', thread=uid(100), through=4,
                                         sources={'clawd': cfg}, fetch=board)

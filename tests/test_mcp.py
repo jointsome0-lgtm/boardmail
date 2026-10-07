@@ -11,10 +11,11 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import providers
+from boardmail import commands, providers
 from boardmail.mcp import create_server
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, settings, together, uid
+from kit import arrive, described, mark
 import kit
 from test_mail import mail
 
@@ -40,6 +41,17 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result.structured_content['history_complete'], False)
         return result.structured_content
 
+    def told_of(self, cfg, *posts):
+        """A pass in which the inbox of an invented Postingboard tells the account of these posts, which become
+        its mail. The pass watches no thread."""
+        board = FixtureBoard('postingboard', cfg)
+        board.others = {post['id']: post for post in posts}
+        board.inbox = [(seq, post, ['mention']) for seq, post in enumerate(posts, 1)]
+        with kit.fixed(kit.Clock(900_000)):
+            result, code = commands.execute(self.store, 'collect', fetch=board,
+                                            sources={'postingboard': {**cfg, 'inbox': True, 'threads': []}})
+        self.assertEqual((code, result['added'], result['failed']), (0, len(posts), False), result)
+
     async def test_discovery_errors_arrivals_and_independent_marks(self):
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             tools = (await c.list_tools()).tools
@@ -62,7 +74,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                                ('expand', {'source':'moltbook', 'thread':uid(100), 'through':3, 'limit':101})]:
                 self.assertEqual((await self.call(c, name, args, error=True))['error'], 'invalid_arguments')
             self.assertEqual((await self.call(c, 'collect', error=True))['error'], 'config_missing')
-            self.store.save('moltbook', uid(2), [mail(10), mail(11), mail(12)])
+            arrive(self.store, 'moltbook', uid(2), [mail(10), mail(11), mail(12)])
             page = await self.call(c, 'list', {'limit':2})
             self.assertEqual([m['arrival_seq'] for m in page['messages']], [1,2])
             self.assertEqual(page['next_after'], 2)
@@ -90,7 +102,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(before, self.path.read_bytes())
 
     async def test_wait_allows_other_calls_and_cancellation_leaves_checkpoint(self):
-        self.store.initialize()
+        commands.execute(self.store, 'init')
         started, finished = threading.Event(), threading.Event()
         original_wait = self.store.wait
         def observed_wait(*args, **kwargs):
@@ -111,7 +123,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     await waiter
                 self.assertTrue(await asyncio.to_thread(finished.wait, 2))
                 self.assertEqual(before, self.path.read_bytes())
-                self.store.save('moltbook',uid(2),[mail(10)])
+                arrive(self.store, 'moltbook', uid(2), [mail(10)])
                 page = await self.call(c, 'wait', {'after':0,'timeout':0})
                 self.assertEqual((page['event'],page['next_after']), ('messages',1))
 
@@ -127,9 +139,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(clock.now - start, 1800)
 
     async def test_topics_share_cli_membership_and_global_marks_without_restarting_mcp(self):
-        self.store.initialize({'moltbook': {'account_id': uid(2)}})
-        self.store.save('moltbook', uid(2), [dict(mail(10), addressing='thread'),
-                                          dict(mail(11), thread_id=uid(200))])
+        commands.execute(self.store, 'init', sources={'moltbook': described(uid(2))})
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(10), addressing='thread'),
+                                                dict(mail(11), thread_id=uid(200))])
         target = {'source': 'moltbook', 'id': uid(10)}
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             before = self.path.read_bytes()
@@ -168,7 +180,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.store.subscriptions(), [])
 
     async def test_tag_schemas_reject_ambiguous_targets_and_filters_before_writing(self):
-        self.store.initialize({'moltbook': {'account_id': uid(2)}})
+        commands.execute(self.store, 'init', sources={'moltbook': {'account_id': uid(2)}})
         target = {'tag': 'htalk', 'source': 'moltbook'}
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             before = self.path.read_bytes()
@@ -184,9 +196,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.path.read_bytes(), before)
 
     async def test_pending_reply_discovery_routes_and_cli_parity(self):
-        self.store.initialize()
-        self.store.save('moltbook', uid(2), [mail(n) for n in range(10, 31)])
-        self.store.save('custom', uid(3), [mail(42)])
+        commands.execute(self.store, 'init')
+        arrive(self.store, 'moltbook', uid(2), [mail(n) for n in range(10, 31)])
+        arrive(self.store, 'custom', uid(3), [mail(42)])
         async with Client(create_server(self.store), raise_exceptions=True) as c:
             for source, number in [('moltbook', n) for n in range(10, 31)] + [('custom', 42)]:
                 target = {'source': source, 'id': uid(number)}
@@ -225,9 +237,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.path.read_bytes(), before)
 
     async def test_reply_attempt_survives_cli_mcp_handoffs_without_reset_or_implicit_marks(self):
-        self.store.initialize()
-        self.store.save('moltbook', uid(2), [mail(10)])
-        self.store.mark('moltbook', uid(10), 'needs_reply')
+        commands.execute(self.store, 'init')
+        arrive(self.store, 'moltbook', uid(2), [mail(10)])
+        mark(self.store, 'moltbook', uid(10), 'needs_reply')
         target = {'source':'moltbook', 'id':uid(10)}
         body = 'Exact synthetic reply.\r\nКириллица.\n'
         path = Path(self.temp.name) / 'reply.txt'; path.write_bytes(body.encode('utf-8'))
@@ -294,9 +306,8 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_reply_verify_checks_provider_and_exposes_durable_evidence(self):
         cfg = {'postingboard': settings(self.temp.name)['postingboard']}
-        self.store.initialize(cfg)
-        self.store.save('postingboard', cfg['postingboard']['account_id'], [
-            {**mail(610), 'thread_id': uid(600)}])
+        commands.execute(self.store, 'init', sources=cfg)
+        self.told_of(cfg['postingboard'], named(610, 600))
         fixture = FixtureBoard('postingboard', cfg['postingboard'])
         reply = named(620, 600, 3, body='Exact reply.\r\n', reply_to=610)
         fixture.others = {uid(620): reply}
@@ -340,8 +351,8 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(shown['reply_candidates'], [])
 
     async def test_reading_settings_thread_summary_and_replay(self):
-        self.store.initialize()
-        self.store.save('moltbook', uid(2), [dict(mail(10), addressing='thread'), dict(mail(11), addressing='direct')])
+        commands.execute(self.store, 'init')
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(10), addressing='thread'), dict(mail(11), addressing='direct')])
         async with Client(create_server(self.store), mode='2026-07-28', raise_exceptions=True) as c:
             self.assertEqual((await self.call(c, 'settings'))['settings']['scope'], 'addressed')
             page = await self.call(c, 'wait', {'timeout': 0, 'limit': 1})
@@ -362,7 +373,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cli_and_live_mcp_share_subscriptions_without_restart(self):
         cfg = {'postingboard': {**settings(self.temp.name)['postingboard'], 'threads': []}}
-        self.store.initialize(cfg)
+        commands.execute(self.store, 'init', sources=cfg)
         board = FixtureBoard('postingboard', cfg['postingboard'])
 
         def cli(command):
@@ -391,7 +402,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_collection_partial_success_replay_and_account_isolation(self):
         cfg = settings(self.temp.name)
-        self.store.initialize(cfg)
+        commands.execute(self.store, 'init', sources=cfg)
         boards = {name: FixtureBoard(name, config) for name, config in cfg.items()}
         boards['moltbook'].fail = True
         # The client of Postingboard waits between two requests. Here its wait only moves the clock.
@@ -414,10 +425,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_context_returns_saved_and_current_text_without_marks(self):
         cfg = {'postingboard': settings(self.temp.name)['postingboard']}
-        self.store.initialize(cfg)
-        self.store.save('postingboard', cfg['postingboard']['account_id'], [
-            {**mail(610), 'thread_id': uid(600), 'parent_id': uid(601)}, mail(611)])
-        self.store.mark('postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        commands.execute(self.store, 'init', sources=cfg)
+        self.told_of(cfg['postingboard'], named(610, 600, reply_to=601, body='Synthetic text'), named(611, 100))
+        mark(self.store, 'postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
         fixture = FixtureBoard('postingboard', cfg['postingboard'])
         fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our previous reply.'),
                           uid(610): named(610, 600, reply_to=601, body='Edited reply text')}
@@ -458,7 +468,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pause_is_shared_with_cli_without_restarting_server(self):
         cfg = {'moltbook': settings(self.temp.name)['moltbook']}
-        self.store.initialize(cfg)
+        commands.execute(self.store, 'init', sources=cfg)
         board = FixtureBoard('moltbook', cfg['moltbook'])
         async with Client(create_server(self.store, cfg, fetch=board), mode='2026-07-28', raise_exceptions=True) as c:
             process = await asyncio.create_subprocess_exec(
@@ -510,7 +520,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((config.parent/'missing-key').exists())
 
     async def test_stdio_modern_and_legacy_clients(self):
-        self.store.initialize()
+        commands.execute(self.store, 'init')
         params = StdioServerParameters(command=sys.executable,
             args=['-m','boardmail.mcp','--db',str(self.path)])
         for mode in ('2026-07-28', 'legacy'):
@@ -519,7 +529,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await self.call(c,'wait',{'timeout':0}))['event'],'timeout')
 
     async def test_cancelled_collection_finishes_before_next_collection(self):
-        self.store.initialize()
+        commands.execute(self.store, 'init')
         cfg = {'moltbook': settings(self.temp.name)['moltbook']}
         board = FixtureBoard('moltbook', cfg['moltbook'])
         started, release, second = threading.Event(), threading.Event(), threading.Event()
@@ -552,7 +562,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(second.is_set())
 
     async def test_modern_http_without_initialization_or_session(self):
-        self.store.initialize()
+        commands.execute(self.store, 'init')
         app = create_server(self.store).streamable_http_app(json_response=True, stateless_http=True)
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://127.0.0.1:8766') as c:
@@ -699,8 +709,8 @@ raise SystemExit(main())
 '''
 
     def wait_fixture(self):
-        self.store.initialize()
-        self.store.save('fixture', uid(2), [mail(10)])
+        commands.execute(self.store, 'init')
+        arrive(self.store, 'fixture', uid(2), [mail(10)])
         return self.path.read_bytes()
 
     def assert_cancelled_wait(self, before):

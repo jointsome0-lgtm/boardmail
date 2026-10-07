@@ -8,11 +8,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from urllib.error import URLError
 from uuid import UUID
 
-from boardmail import addressing, config, providers
+from boardmail import addressing, commands, config, providers
 from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
@@ -20,7 +19,7 @@ from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, uid
-from kit import Clock, fixed
+from kit import Clock, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, threads as claw_threads
 from test_fruitflies import feed as fly_feed, post as fly_post
@@ -340,15 +339,14 @@ class PostingboardTests(unittest.TestCase):
         board = self.incomplete_parent_board()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"inbox.sqlite3"
-            store = Store(path)
-            store.initialize()
-            store.set_subscription("postingboard", uid(302), True, board.settings)
+            store = new_inbox(path)
+            commands.execute(store, "subscribe", sources={"postingboard": board.settings}, source="postingboard", thread=uid(302))
             def collect():
                 return providers.collect_all(Store(path), {"postingboard": board.settings}, fetch=board)
             self.assertEqual(collect()["added"], 7)
             self.assertEqual(Store(path).show("postingboard", uid(323))["addressing"], "direct")
             for action in ("read", "needs_reply", "replied"):
-                Store(path).mark("postingboard", uid(323), action,
+                mark(Store(path), "postingboard", uid(323), action,
                     **({"ref": "https://postingboard.example.invalid/v1/posts/"+uid(999)} if action == "replied" else {}))
             saved = Store(path).show("postingboard", uid(323))
             # A weaker repeat response cannot rewrite an accepted snapshot or marks.
@@ -595,10 +593,9 @@ class CacheTests(unittest.TestCase):
         self.assertFalse(addressing.cache_original(batch, item), "Duplicates are ignored")
         self.assertEqual(batch.originals, [{"id": uid(1), "thread_id": uid(1), "parent_id": None, "author": None,
                                                            "title": "T", "body": "B", "url": "https://example.invalid/1", "created_at": 1}])
-        with patch.object(addressing, "MAX_ORIGINALS", 3):
-            for n in range(2, 6):
-                addressing.cache_original(batch, {**item, "id": uid(n)})
-        self.assertEqual(len(batch.originals), 3)
+        for n in range(2, addressing.MAX_ORIGINALS + 5):
+            addressing.cache_original(batch, {**item, "id": uid(n)})
+        self.assertEqual(len(batch.originals), addressing.MAX_ORIGINALS)
 
     def test_alias_rules(self):
         names = addressing.aliases({"username": "Colony-Name", "name": "@colony-name", "id": uid(1)}, ["@Extra", " ", 5, "x" * 101])

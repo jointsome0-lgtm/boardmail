@@ -9,11 +9,11 @@ from urllib.error import URLError
 from urllib.parse import quote, unquote, urlsplit
 
 from boardmail import adapter_botnet as adapter, commands
-from boardmail.adapters import Batch, validate
+from boardmail.adapters import validate
 from boardmail.config import MailError, load
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, status
-from kit import Clock, fixed
+from kit import Clock, fixed, mark, new_inbox, one_pass
 
 KEY = "synthetic-key-only"
 
@@ -128,19 +128,11 @@ class BotnetTests(unittest.TestCase):
         self.key = self.path / "example.key"
         self.key.write_text(KEY + "\n")
         self.settings = load(cfg)["sources"]["botnet"]
-        self.store = Store(self.path / "mail.sqlite3")
-        self.store.initialize()
+        self.store = new_inbox(self.path / "mail.sqlite3")
         self.board = Board()
 
     def collect(self):
-        self.store.prepare_collection()
-        known, state, revision = self.store.collection_state("botnet", OWNER, "botnet")
-        before = deepcopy(state)
-        batch = adapter.collect(self.settings, state, frozenset(known), fetch=self.board)
-        self.assertEqual(state, before)
-        validate(batch)
-        added, stale = self.store.save_collection("botnet", OWNER, "botnet", revision, batch)
-        self.assertFalse(stale)
+        batch, added = one_pass(self.store, "botnet", self.settings, self.board)
         self.assertNotIn("PRIVATE PREVIEW", json.dumps(batch.__dict__))
         return batch, added
 
@@ -157,7 +149,7 @@ class BotnetTests(unittest.TestCase):
                          (TOPIC, OPENER, "reply_to_post", "direct"))
         self.assertEqual(message["created_at"], 1790593200)
         self.assertEqual(self.store.show("botnet", mid(11))["addressing"], "mention")
-        self.store.mark("botnet", mid(10), "read")
+        mark(self.store, "botnet", mid(10), "read")
         saved = self.store.show("botnet", mid(10))
         self.assertEqual(self.collect()[1], 0)
         self.assertEqual(self.store.show("botnet", mid(10)), saved)
@@ -173,7 +165,7 @@ class BotnetTests(unittest.TestCase):
         for n in (13, 14):
             self.assertEqual(self.store.show("botnet", mid(n))["addressing"], "direct+mention")
         with self.assertRaisesRegex(MailError, "^subscriptions_unsupported$"):
-            self.store.set_subscription("botnet", TOPIC, True, self.settings)
+            commands.execute(self.store, "subscribe", sources={"botnet": self.settings}, source="botnet", thread=TOPIC)
 
     def test_new_head_backfill_and_failed_reference_survive_reopen_and_upstream_expiry(self):
         for n in range(10, 30):
@@ -231,22 +223,30 @@ class BotnetTests(unittest.TestCase):
         self.assertEqual(self.store.path.read_bytes(), before)
 
     def pending_backlog(self):
+        """Sixty messages that the account was told of in passes that had no time for an original. The state that
+        these passes left: sixty references that wait. The last of the passes was healthy at self.healthy."""
         for number in range(10, 70):
             self.board.add(number)
-        return {"pending": [{"id": mid(number), "reasons": ["reply"]} for number in range(10, 70)]}
+        ready, clock = self.board.originals, Clock(1)
+        self.board.originals = dict.fromkeys(ready, slow(clock, 46))
+        for _ in range(8):  # A pass reads the head of the inbox and one older page of it: eight references a page.
+            result, code = self.collect_command(clock)
+            self.assertEqual((code, result["added"], result["errors"]), (0, 0, []))
+        self.board.originals, self.healthy = ready, result["sources"][0]["last_ok"]
+        self.board.asked.clear()
+        state = self.store.collection_state("botnet", OWNER, "botnet")[1]
+        self.assertCountEqual([entry["id"] for entry in state["pending"]], [mid(number) for number in range(10, 70)])
+        return state
 
-    def collect_command(self, state, clock=None):
-        """One pass of the collect command over a saved state: what it gave and its exit code. With a clock the
-        time stands still for the pass unless the board moves it."""
-        self.store.prepare_collection()
-        self.store.save_collection("botnet", OWNER, "botnet", 0, Batch(state=state))
-        self.store.save("botnet", OWNER, [], now=1)
+    def collect_command(self, clock=None):
+        """One pass of the collect command: what it gave and its exit code. With a clock the time stands still
+        for the pass unless the board moves it."""
         with fixed(clock) if clock else nullcontext():
             return commands.execute(self.store, "collect", sources={"botnet": self.settings}, fetch=self.board)
 
     def test_real_request_cap_saves_healthy_partial_progress(self):
         state = self.pending_backlog()
-        result, code = self.collect_command(state)
+        result, code = self.collect_command()
         known, saved, _ = self.store.collection_state("botnet", OWNER, "botnet")
         pending = {entry["id"] for entry in saved["pending"]}
         self.assertEqual((len(self.board.asked), result["added"], len(pending)), (40, 36, 24))
@@ -255,41 +255,42 @@ class BotnetTests(unittest.TestCase):
         self.assertEqual((code, result["failed"], result["errors"]), (0, False, []))
         health = result["sources"][0]
         self.assertEqual((health["status"], health["error"], health["backlog_pending"]), ("ok", None, True))
-        self.assertGreater(health["last_ok"], 1)
+        self.assertGreater(health["last_ok"], self.healthy)
         self.assertEqual(commands.execute(self.store, "status", require_fresh=True)[1], 0)
 
     def test_real_cap_does_not_hide_an_earlier_network_failure(self):
         state = self.pending_backlog()
-        self.board.originals[mid(10)] = URLError("Synthetic transport failure")
-        result, code = self.collect_command(state)
+        first = state["pending"][0]["id"]  # The reference that the pass tries first.
+        self.board.originals[first] = URLError("Synthetic transport failure")
+        result, code = self.collect_command()
         self.assertEqual((len(self.board.asked), code), (40, 1))
         self.assertGreater(result["added"], 0)
         self.assertEqual(result["errors"][0]["error"], "network_error")
         health = result["sources"][0]
-        self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", 1, True))
-        self.assertIn(mid(10), {entry["id"] for entry in self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"]})
+        self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", self.healthy, True))
+        self.assertIn(first, {entry["id"] for entry in self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"]})
 
     def test_real_time_budget_after_identity_is_healthy_partial_progress(self):
         state, clock = self.pending_backlog(), Clock(1790000000)
         # The inbox takes longer than the 45 seconds of the pass.
         self.board.page_errors[None] = slow(clock, 46)
-        result, code = self.collect_command(state, clock)
+        result, code = self.collect_command(clock)
         self.assertEqual((len(self.board.asked), result["added"], code, result["errors"]), (2, 0, 0, []))
         self.assertCountEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"], state["pending"])
         health = result["sources"][0]
         self.assertEqual((health["status"], health["backlog_pending"]), ("ok", True))
-        self.assertGreater(health["last_ok"], 1)
+        self.assertGreater(health["last_ok"], self.healthy)
 
     def test_identity_preflight_budget_failure_remains_an_error(self):
         state, clock = self.pending_backlog(), Clock(1790000000)
         # The profile takes longer than the ten seconds that it has.
         self.board.profile = slow(clock, 11, self.board.profile)
-        result, code = self.collect_command(state, clock)
+        result, code = self.collect_command(clock)
         self.assertEqual((len(self.board.asked), result["added"], code), (1, 0, 1))
         self.assertEqual(result["errors"][0]["error"], "budget_exhausted")
         self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1], state)
         health = result["sources"][0]
-        self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", 1, True))
+        self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", self.healthy, True))
 
 
 class PassTests(unittest.TestCase):

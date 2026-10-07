@@ -9,9 +9,8 @@ from urllib.error import HTTPError
 
 from boardmail import config, providers
 from boardmail.adapters import collect_all, next_action
-from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, settings, together, uid
-from kit import Clock, fixed
+from kit import Clock, fixed, new_inbox
 
 
 def refused(status, raw=b'{"detail":{"code":"AUTH_2FA_REQUIRED"}}'):
@@ -58,10 +57,12 @@ class ColonyAuthTests(unittest.TestCase):
     def test_required_factor_preserves_health_and_other_sources_continue(self):
         for status in (400, 401, 403):
             with self.subTest(status=status):
-                store = Store(self.root / f'health-{status}.sqlite3')
                 sources = {'the-colony': self.settings, 'moltbook': settings(self.root)['moltbook']}
-                store.initialize(sources)
-                store.save('the-colony', uid(1), [], now=123)
+                store = new_inbox(self.root / f'health-{status}.sqlite3', sources)
+                healthy = FixtureBoard('the-colony', self.settings)
+                healthy.key = 'synthetic-api-key'
+                with fixed(Clock(123)):  # The last pass over Colony that went well.
+                    self.assertFalse(collect_all(store, {'the-colony': self.settings}, fetch=healthy)['failed'])
                 colony = FakeBoard(lambda asked: refused(
                     status, b'{"detail":{"code":"AUTH_2FA_REQUIRED","message":"SYNTHETIC-SECRET"}}'))
                 boards = {'the-colony': colony, 'moltbook': FixtureBoard('moltbook', sources['moltbook'])}

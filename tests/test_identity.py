@@ -6,10 +6,9 @@ import unittest
 from urllib.parse import urlsplit
 
 from boardmail import config, providers
-from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, settings, uid
-from kit import Clock, fixed
+from kit import Clock, fixed, mark, new_inbox
 
 
 class IdentityTests(unittest.TestCase):
@@ -20,13 +19,15 @@ class IdentityTests(unittest.TestCase):
             key.write_text('synthetic-A')
             cfg = {'adapter': 'postingboard', 'account_id': uid(1), 'api_key_file': key,
                    'inbox': True, 'threads': []}
-            store = Store(root / 'mail.sqlite3'); store.initialize({'account-a': cfg})
-            calls = []
+            store = new_inbox(root / 'mail.sqlite3', {'account-a': cfg})
+            calls, meanwhile = [], []
 
             def answer(asked):
                 """A board that knows two accounts, each by its key."""
                 path = urlsplit(asked.url).path
                 calls.append(path)
+                if path == '/v1/inbox' and meanwhile:
+                    meanwhile.pop()()
                 account, seq = (uid(1), 10) if asked.headers == {'Authorization': 'Bearer synthetic-A'} else (uid(2), 20)
                 if path == '/v1/me': return {'id': account}
                 if path == '/v1/inbox':
@@ -40,7 +41,7 @@ class IdentityTests(unittest.TestCase):
             board = FakeBoard(answer)
             with fixed(Clock(1_000_000)):  # The wait of the client between two requests only moves the clock.
                 self.assertEqual(providers.collect_all(store, {'account-a': cfg}, fetch=board)['added'], 1)
-                store.mark('account-a', uid(10), 'needs_reply')
+                mark(store, 'account-a', uid(10), 'needs_reply')
                 row = store.show('account-a', uid(10))
                 before = store.collection_state('account-a', uid(1), 'postingboard')
                 key.write_text('synthetic-B'); calls.clear()
@@ -50,10 +51,16 @@ class IdentityTests(unittest.TestCase):
                 self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard'), before)
                 self.assertEqual(store.show('account-a', uid(10)), row)
                 # A valid pass started before the key failed still owns its checkpoint revision.
-                self.assertEqual(store.save_collection('account-a', uid(1), 'postingboard', before[2],
-                    Batch(state={**before[1], 'inbox_after': 15})), (0, False))
-                self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard')[1]['inbox_after'], 15)
                 key.write_text('synthetic-A')
+                def key_fails():
+                    key.write_text('synthetic-B')
+                    failed.append(providers.collect_all(Store(store.path), {'account-a': cfg}, fetch=board))
+                    key.write_text('synthetic-A')
+                failed = []
+                meanwhile.append(key_fails)
+                self.assertFalse(providers.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
+                self.assertEqual(failed[0]['errors'][0]['error'], 'account_mismatch')
+                self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard')[2], before[2] + 1)
                 self.assertFalse(providers.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
 
     def test_every_authenticated_legacy_adapter_fails_closed_and_other_sources_continue(self):
@@ -62,13 +69,14 @@ class IdentityTests(unittest.TestCase):
                 with self.subTest(source=source, profile=profile), tempfile.TemporaryDirectory() as folder:
                     cfg = {**cfg, 'adapter': source, 'api_key_file': Path(folder) / 'alias.key'}
                     cfg['api_key_file'].write_text('the-key-of-the-alias')
-                    store = Store(Path(folder) / 'mail.sqlite3'); store.initialize({'alias': cfg})
-                    state = {'threads': {uid(301): 20}, 'discovery': {'offset': 100}, 'pending': {}}
-                    store.prepare_collection()
-                    store.save_collection('alias', cfg['account_id'], source, 0, Batch(state=state))
-                    last_ok = store.status()['sources'][0]['last_ok']
+                    store = new_inbox(Path(folder) / 'mail.sqlite3', {'alias': cfg})
                     board = FixtureBoard(source, cfg)
                     board.key = 'the-key-of-the-alias'
+                    with fixed(Clock(900_000)):  # A pass that went well leaves its position and its time.
+                        self.assertFalse(providers.collect_all(store, {'alias': cfg}, fetch=board)['failed'])
+                    state, revision = store.collection_state('alias', cfg['account_id'], source)[1:]
+                    last_ok = store.status()['sources'][0]['last_ok']
+                    board.calls.clear()
                     endpoint = '/v1/me' if source == 'postingboard' else '/agents/me'
                     def get(path, params=None, *, authenticated=False):
                         board.calls.append((path, params, authenticated))
@@ -87,8 +95,7 @@ class IdentityTests(unittest.TestCase):
                         'next_action': 'restore_source_identity_or_use_a_new_source' if error == 'account_mismatch' else 'retry_collect'}])
                     self.assertGreater(result['added'], 0)
                     self.assertEqual(len(board.calls), 1)
-                    self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[1], state)
-                    self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[2], 1)
+                    self.assertEqual(store.collection_state('alias', cfg['account_id'], source)[1:], (state, revision))
                     self.assertEqual(next(s for s in store.status()['sources'] if s['source'] == 'alias')['last_ok'], last_ok)
 
 

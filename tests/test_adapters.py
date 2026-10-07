@@ -2,7 +2,6 @@
 from contextlib import closing, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
-from unittest.mock import patch
 import io
 import json
 import shutil
@@ -17,7 +16,7 @@ from boardmail.adapters import Batch, collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, uid
-from kit import Clock, fixed
+from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox
 from test_mail import mail
 
 
@@ -26,7 +25,7 @@ class AdapterTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.db = self.root/'mail.sqlite3'
-        self.store = Store(self.db); self.store.initialize()
+        self.store = new_inbox(self.db)
 
     def cli(self, *args):
         result = subprocess.run([sys.executable, '-m', 'boardmail', *args], capture_output=True, text=True, timeout=10)
@@ -92,26 +91,25 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT seq FROM sqlite_sequence WHERE name="messages"').fetchone()[0], 3)
 
     def test_stale_collector_keeps_mail_but_cannot_rewind_progress(self):
-        self.store.prepare_collection()
-        first = self.store.collection_state('moltbook', uid(2), 'moltbook')
-        second = self.store.collection_state('moltbook', uid(2), 'moltbook')
-        a = Batch(messages=[mail(10)], state={'cursor': 'new'})
-        b = Batch(messages=[mail(11)], state={'cursor': 'old'})
-        self.assertEqual(self.store.save_collection('moltbook', uid(2), 'moltbook', first[2], a), (1, False))
-        self.store.mark('moltbook', uid(10), 'needs_reply')
-        self.assertEqual(self.store.save_collection('moltbook', uid(2), 'moltbook', second[2], b), (1, True))
-        known, state, revision = self.store.collection_state('moltbook', uid(2), 'moltbook')
+        def another_pass():
+            # It starts after the pass that is under way and ends before it.
+            other = arrive(self.store, 'moltbook', uid(2), [mail(10)], state={'cursor': 'new'})
+            self.assertEqual((other['added'], other['failed']), (1, False))
+            mark(self.store, 'moltbook', uid(10), 'needs_reply')
+        late = arrive(self.store, 'moltbook', uid(2), [mail(11)], state={'cursor': 'old'}, meanwhile=another_pass)
+        self.assertEqual((late['added'], [error['error'] for error in late['errors']]), (1, ['collection_conflict']))
+        known, state, revision = self.store.collection_state('moltbook', uid(2), str(DESCRIBED))
         self.assertEqual(state, {'cursor': 'new'}); self.assertEqual(revision, 1)
         self.assertEqual(known, {uid(10), uid(11)})
         self.assertTrue(self.store.show('moltbook', uid(10))['needs_reply'])
-        with self.assertRaises(MailError): self.store.collection_state('moltbook', uid(999), 'moltbook')
+        with self.assertRaises(MailError): self.store.collection_state('moltbook', uid(999), str(DESCRIBED))
         with self.assertRaises(MailError): self.store.collection_state('moltbook', uid(2), 'different-adapter')
 
     def test_failing_original_cannot_starve_later_or_late_public_originals(self):
         for source in ('the-colony', 'moltbook'):
             with self.subTest(source=source):
                 cfg = settings(self.root)[source]
-                store = Store(self.root/(source+'.sqlite3')); store.initialize()
+                store = new_inbox(self.root/(source+'.sqlite3'))
                 colony = source == 'the-colony'
                 events = [{'id': uid(n+1000), 'notification_type' if colony else 'type': 'comment_on_post' if colony else 'post_comment',
                            'post_id' if colony else 'relatedPostId': uid(n),
@@ -152,23 +150,24 @@ class AdapterTests(unittest.TestCase):
         cfg = settings(self.root)['postingboard']; cfg['threads'] = [uid(301)]
         board = FixtureBoard('postingboard',cfg)
         board.comments[uid(301)] = [named(n,301) for n in range(400,10400)]
-        # Seed a deep unfinished sweep and previously delivered mail.
-        self.store.save_collection('postingboard',cfg['account_id'],'postingboard',0,
-                                   Batch(state={'threads':{uid(301):5000}}))
-        for item in board.comments[uid(301)]:
-            item.update(thread_id=uid(301),kind='reply_to_post',url='https://example.invalid/'+item['id'])
-        self.store.save('postingboard',cfg['account_id'],board.comments[uid(301)])
-        board.comments[uid(301)].append(named(10401,301))
         # The client waits 1.1 seconds between two requests, and a root has 45 seconds. Here a wait moves the clock.
         self.enterContext(fixed(Clock(1_000_000)))
+        position = lambda: self.store.collection_state('postingboard',cfg['account_id'],'postingboard')[1]['threads'][uid(301)]
+        # Pass after pass delivers the whole root. The pass after them finds nothing new: it starts the sweep
+        # again and stops deep in mail that is delivered.
+        while collect_all(self.store,{'postingboard':cfg},fetch=board)['added']: pass
+        self.assertEqual(len(self.store.known('postingboard',cfg['account_id'])),10000)
+        self.assertEqual(position(),9200)
+        board.comments[uid(301)].append(named(10401,301))
+        board.calls.clear()
         result=collect_all(self.store,{'postingboard':cfg},fetch=board)
         self.assertEqual(result['added'],1)
         self.assertEqual(self.store.show('postingboard',uid(10401))['body'],'A synthetic named-board reply.')
         self.assertEqual(board.calls[0],('/v1/me', {}, True))
         self.assertEqual(board.calls[1][1],{'limit':30})
         # The sweep goes on where it was, a page of 30 after the other, until the time of the root is over.
-        self.assertEqual([call[1] for call in board.calls[2:]],[{'limit':30,'before':before} for before in range(5000,3830,-30)])
-        self.assertEqual(self.store.collection_state('postingboard',cfg['account_id'],'postingboard')[1]['threads'],{uid(301):3830})
+        self.assertEqual([call[1] for call in board.calls[2:]],[{'limit':30,'before':before} for before in range(9200,8030,-30)])
+        self.assertEqual(position(),8030)
         self.assertTrue(result['sources'][0]['backlog_pending'])
 
     def test_moltbook_comment_cursor_progress_and_expired_cursor_recovery(self):
@@ -194,8 +193,6 @@ class AdapterTests(unittest.TestCase):
         board=FixtureBoard('postingboard',cfg)
         board.comments[uid(301)]=[named(n,301) for n in range(400,460)]
         board.summaries={uid(405)}
-        self.store.save_collection('postingboard',cfg['account_id'],'postingboard',0,
-                                   Batch(state={'threads':{uid(301):406}}))
         get=board.get
         def limited(path,params=None,**kw):
             if path.endswith(uid(405)):
@@ -207,6 +204,7 @@ class AdapterTests(unittest.TestCase):
             result=collect_all(self.store,{'postingboard':cfg},fetch=board)
             self.assertEqual(result['sources'][0]['error'],'http_429')
             self.assertTrue(result['sources'][0]['backlog_pending'])
+            # The sweep stays before the post that it could not read.
             self.assertEqual(self.store.collection_state('postingboard',cfg['account_id'],'postingboard')[1]['threads'][uid(301)],406)
         board.get=get
         collect_all(self.store,{'postingboard':cfg},fetch=board)
@@ -222,12 +220,21 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(self.store.page()['messages'],[])
         self.assertEqual(self.store.collection_state('custom','demo-agent',str(adapter))[1],{})
 
+    def adapter_file(self, name, body='return settings["gives"]()', version=1):
+        """An adapter file in the folder of the test. Its collect() is this Python text: without one it gives what
+        the function under 'gives' in the settings of its source returns. It says this version of the interface,
+        or none."""
+        path = self.root/name
+        path.write_text('from boardmail.adapters import Batch\n' + ('' if version is None else f'API_VERSION = {version!r}\n')
+                        + 'def collect(settings, state, known):\n' + ''.join('    ' + line + '\n' for line in body.splitlines()))
+        return path
+
     def extension_checkpoint(self):
-        cfg = {'account_id': 'demo-agent', 'adapter': self.root/'custom.py'}
-        self.store.save_collection('custom', cfg['account_id'], str(cfg['adapter']), 0,
-                                   Batch(messages=[mail(10)], state={'cursor': 'saved'}, originals=[mail(20)]))
-        self.store.mark('custom', uid(10), 'read')
-        self.store.mark('custom', uid(10), 'needs_reply')
+        cfg = {'account_id': 'demo-agent', 'adapter': self.adapter_file('custom.py')}
+        first = Batch(messages=[mail(10)], state={'cursor': 'saved'}, originals=[mail(20)])
+        self.assertFalse(collect_all(self.store, {'custom': {**cfg, 'gives': lambda: first}})['failed'])
+        mark(self.store, 'custom', uid(10), 'read')
+        mark(self.store, 'custom', uid(10), 'needs_reply')
         with self.store.connect() as db:
             originals = [tuple(row) for row in db.execute('SELECT * FROM originals WHERE source=?', ('custom',))]
         return cfg, (self.store.collection_state('custom', cfg['account_id'], str(cfg['adapter'])),
@@ -241,24 +248,17 @@ class AdapterTests(unittest.TestCase):
 
     def test_state_serializer_failure_returns_json_preserves_progress_and_continues(self):
         cfg, before = self.extension_checkpoint()
-        rejected = Batch(messages=[mail(11)], state={'cursor': 'next'}, originals=[{**mail(20), 'body': 'replacement'}, mail(21)])
-        accepted = Batch(messages=[mail(30)], state={'cursor': 'independent'})
-        later = {**cfg, 'adapter': self.root/'later.py'}
+        # The state that the pass gives is nested deeper than the serializer of JSON goes.
+        self.adapter_file('custom.py', 'state = {"cursor": "next"}\nfor _ in range(100_000):\n    state = {"deeper": state}\n'
+                          f'return Batch(messages=[{mail(11)!r}], state=state, originals={[{**mail(20), "body": "replacement"}, mail(21)]!r})')
+        later = {**cfg, 'adapter': self.adapter_file(
+            'later.py', f'return Batch(messages=[{mail(30)!r}], state={{"cursor": "independent"}})')}
         config = self.root/'config.json'
         config.write_text(json.dumps({'database': str(self.db), 'sources': {
             'custom': {**cfg, 'adapter': str(cfg['adapter'])},
             'later': {**later, 'adapter': str(later['adapter'])}}}))
-        serialize = json.dumps
-        def fail_target(value, *args, **kwargs):
-            if value is rejected.state:
-                raise RecursionError('synthetic serializer diagnostic must stay private')
-            return serialize(value, *args, **kwargs)
-        def module(path):
-            batch = rejected if str(path) == str(cfg['adapter']) else accepted
-            return {'API_VERSION': 1, 'collect': lambda *_: batch}
         output = io.StringIO()
-        with patch('boardmail.adapters.runpy.run_path', side_effect=module), \
-             patch('boardmail.adapters.json.dumps', side_effect=fail_target), redirect_stdout(output):
+        with redirect_stdout(output):
             code = cli.main(['--config', str(config), 'collect'])
         result = json.loads(output.getvalue())
         self.assertEqual(code, 1)
@@ -267,7 +267,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result['added'], 1)
         self.assertTrue(result['failed'])
         self.assertFalse(result['history_complete'])
-        self.assertNotIn('synthetic serializer diagnostic', output.getvalue())
+        self.assertNotIn('recursion', output.getvalue().lower())
         self.assertEqual({s['source']: s['error'] for s in result['sources']},
                          {'custom': 'invalid_adapter_result', 'later': None})
         self.assert_extension_checkpoint(cfg, before)
@@ -279,10 +279,8 @@ class AdapterTests(unittest.TestCase):
         calls = []
         for version in (None, 2, True, '1'):
             with self.subTest(version=version):
-                module = {'collect': lambda *_: calls.append('collected')}
-                if version is not None: module['API_VERSION'] = version
-                with patch('boardmail.adapters.runpy.run_path', return_value=module):
-                    result = collect_all(self.store, {'custom': cfg})
+                self.adapter_file('custom.py', version=version)
+                result = collect_all(self.store, {'custom': {**cfg, 'gives': lambda: calls.append('collected')}})
                 self.assertEqual(result['errors'][0]['error'], 'adapter_version_unsupported')
                 self.assertEqual(result['errors'][0]['next_action'], 'check_trusted_adapter_code')
                 self.assertEqual(result['added'], 0)
@@ -318,8 +316,7 @@ class AdapterTests(unittest.TestCase):
                 # Preserve invalid originals/container fields; otherwise exercise cache atomicity too.
                 if isinstance(batch, Batch) and name != 'invalid_cached_original':
                     batch.originals = [{**mail(20), 'body': 'replacement'}, mail(21)]
-                with patch('boardmail.adapters.runpy.run_path', return_value={'API_VERSION': 1, 'collect': lambda *_: batch}):
-                    result = collect_all(self.store, {'custom': cfg})
+                result = collect_all(self.store, {'custom': {**cfg, 'gives': lambda: batch}})
                 self.assertEqual(result['errors'][0]['error'], 'invalid_adapter_result')
                 self.assertEqual(result['errors'][0]['next_action'], 'check_trusted_adapter_code')
                 self.assertEqual(result['added'], 0)
@@ -331,9 +328,8 @@ class AdapterTests(unittest.TestCase):
         cached = {**mail(21), 'created_at': 2**63-1}
         del cached['kind']
         batch = Batch(messages=[mail(10), item], state={'cursor': 'next'}, originals=[cached])
-        with patch('boardmail.adapters.runpy.run_path', return_value={'API_VERSION': 1, 'collect': lambda *_: batch}):
-            first = collect_all(self.store, {'custom': cfg})
-            replay = collect_all(self.store, {'custom': cfg})
+        first = collect_all(self.store, {'custom': {**cfg, 'gives': lambda: batch}})
+        replay = collect_all(self.store, {'custom': {**cfg, 'gives': lambda: batch}})
         self.assertFalse(first['failed'])
         self.assertEqual(first['added'], 1)
         self.assertFalse(replay['failed'])
@@ -371,8 +367,9 @@ class AdapterTests(unittest.TestCase):
                 self.assertIn(uid(bad),self.store.known(source,cfg['account_id']))
 
     def test_source_coverage_uses_adapter_identity(self):
-        self.store.save_collection('alias',uid(2),'moltbook',0,Batch())
-        self.store.save_collection('moltbook','handle','/example/custom.py',0,Batch())
+        cfg=settings(self.root)['moltbook']
+        collect_all(self.store,{'alias':{**cfg,'adapter':'moltbook'}},fetch=FixtureBoard('moltbook',cfg))
+        arrive(self.store,'moltbook','handle')
         sources={s['source']:s for s in self.store.status()['sources']}
         self.assertIn('anonymous public originals',sources['alias']['coverage'])
         self.assertIn('Configured adapter',sources['moltbook']['coverage'])

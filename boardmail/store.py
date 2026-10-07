@@ -179,14 +179,6 @@ class Store:
         if previous and previous[0] != account_id:
             raise MailError("account_mismatch")
 
-    def save(self, source, account_id, messages, *, unavailable=0, error=None, now=None):
-        stamp = int(time.time()) if now is None else now
-        with self.connect(write=True) as db:
-            self._check_account(db, source, account_id)
-            added = self._insert_messages(db, source, messages, stamp)
-            self._save_health(db, source, account_id, unavailable, error, stamp)
-            return added
-
     @staticmethod
     def _insert_messages(db, source, messages, stamp):
         added = 0
@@ -216,13 +208,12 @@ class Store:
             unavailable=excluded.unavailable""",
             (source,account_id,"error" if error else "ok",stamp,None if error else stamp,unavailable,error))
 
-    def failure(self, source, account_id, error, *, now=None):
-        stamp = int(time.time()) if now is None else now
+    def failure(self, source, account_id, error):
         with self.connect(write=True) as db:
             db.execute("""INSERT INTO sources (source,account_id,status,last_checked,error)
                 VALUES (?,?,'error',?,?) ON CONFLICT(source) DO UPDATE SET
                 status='error',last_checked=excluded.last_checked,error=excluded.error""",
-                (source,account_id,stamp,error))
+                (source,account_id,int(time.time()),error))
 
     @staticmethod
     def _health(db, stale_after=STALE_AFTER):

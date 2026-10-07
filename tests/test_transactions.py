@@ -8,9 +8,10 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail.adapters import Batch
+from boardmail import commands
 from boardmail.store import Store
 from examples.fixtures import settings, uid
+from kit import DESCRIBED, arrive, described, mark
 from test_mail import mail
 
 
@@ -36,38 +37,45 @@ class TransactionTests(unittest.TestCase):
         with closing(self.connect(self.path)) as db:
             db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
 
+    def migrate(self):
+        """A collection brings the file up to date before it looks at a source. This one has no source."""
+        commands.execute(Store(self.path), 'collect', sources={})
+
     def test_late_checkpoint_failure_rolls_back_entire_batch_and_can_retry(self):
-        source, owner = 'moltbook', uid(2)
-        self.store.initialize(settings())
-        self.store.save_collection(source, owner, source, 0,
-                                   Batch(messages=[mail(10)], originals=[mail(100)], state={'cursor': 'old'}))
-        for mark in ('read', 'needs_reply'):
-            self.store.mark(source, uid(10), mark)
-        self.store.mark(source, uid(10), 'replied', ref='https://example.invalid/reply')
-        self.store.set_subscription(source, uid(100), True)
-        self.store.set_paused(source, True)
-        revision = self.store.collection_state(source, owner, source)[2]
+        source, owner = 'custom', uid(2)
+        sources = {source: described(owner), **settings()}
+        commands.execute(self.store, 'init', sources=sources)
+        arrive(self.store, source, owner, [mail(10)], originals=[mail(100)], state={'cursor': 'old'})
+        for action in ('read', 'needs_reply'):
+            mark(self.store, source, uid(10), action)
+        mark(self.store, source, uid(10), 'replied', ref='https://example.invalid/reply')
+        # Another source has a subscription and is paused, so the file holds every kind of row.
+        commands.execute(self.store, 'subscribe', sources=sources, source='moltbook', thread=uid(100))
+        commands.execute(self.store, 'pause', sources=sources, source='moltbook')
+        revision = self.store.collection_state(source, owner, str(DESCRIBED))[2]
         with closing(self.connect(self.path)) as db:
             db.execute("""CREATE TRIGGER fail_checkpoint BEFORE UPDATE ON adapter_state
                 BEGIN SELECT RAISE(ABORT, 'synthetic_checkpoint_failure'); END""")
             db.commit()
         before = self.snapshot()
-        batch = Batch(messages=[{**mail(10), 'body': 'Replay must not change marks'}, mail(11), mail(12)],
-                      originals=[{**mail(100), 'body': 'Replacement context'}, mail(101)],
-                      state={'cursor': 'new'}, complete=False, error='http_503', unavailable=2)
+        # What the next pass gives. The inbox file fails it at its last write, the position of the source.
+        gives = dict(messages=[{**mail(10), 'body': 'Replay must not change marks'}, mail(11), mail(12)],
+                     originals=[{**mail(100), 'body': 'Replacement context'}, mail(101)],
+                     state={'cursor': 'new'}, complete=False, error='http_503', unavailable=2)
         with self.assertRaisesRegex(sqlite3.IntegrityError, 'synthetic_checkpoint_failure'):
-            self.store.save_collection(source, owner, source, revision, batch)
+            arrive(self.store, source, owner, **gives)
         # This independent connection observes DML, arrival sequence, local marks,
         # health, subscriptions and progress exactly as before the failed commit.
         self.assertEqual(self.snapshot(), before)
         with closing(self.connect(self.path)) as db:
             db.execute('DROP TRIGGER fail_checkpoint')
             db.commit()
-        self.assertEqual(self.store.save_collection(source, owner, source, revision, batch), (2, False))
-        known, state, current = self.store.collection_state(source, owner, source)
+        result = arrive(self.store, source, owner, **gives)
+        self.assertEqual((result['added'], [error['error'] for error in result['errors']]), (2, ['http_503']))
+        known, state, current = self.store.collection_state(source, owner, str(DESCRIBED))
         self.assertEqual((known, state, current), ({uid(10), uid(11), uid(12)}, {'cursor': 'new'}, revision + 1))
         self.assertEqual([row['arrival_seq'] for row in self.store.page()['messages']], [1, 2, 3])
-        self.assertTrue(self.store.is_paused(source))
+        self.assertTrue(self.store.is_paused('moltbook'))
         self.assertEqual(self.snapshot()['rows']['messages'][0], before['rows']['messages'][0])
 
     def test_failure_after_migration_version_write_rolls_back_schema_and_data(self):
@@ -88,14 +96,14 @@ class TransactionTests(unittest.TestCase):
         def failing_connect(*args, **kwargs):
             return self.connect(*args, factory=FailingMigration, **kwargs)
 
-        with patch('boardmail.store.sqlite3.connect', failing_connect):
+        with patch('sqlite3.connect', failing_connect):
             with self.assertRaisesRegex(RuntimeError, 'synthetic_migration_failure'):
-                self.store.prepare_collection()
+                self.migrate()
         self.assertEqual(len(observed), 1)
         self.assertEqual(observed[0][:2], (2, 'moltbook'))
         self.assertTrue({'discovery', 'addressing'} <= observed[0][2])
         self.assertEqual(self.snapshot(), before)
-        self.store.prepare_collection()
+        self.migrate()
         after = self.snapshot()
         self.assertEqual(after['rows']['messages'], [row + (None, None) for row in before['rows']['messages']])
         self.assertEqual(after['rows']['sources'], before['rows']['sources'])
@@ -128,15 +136,16 @@ class TransactionTests(unittest.TestCase):
 
         def coordinated_connect(*args, **kwargs):
             connection = self.connect(*args, factory=CoordinatedConnection, **kwargs)
-            with lock:
-                connections.append(connection)
+            if 'mode=rw' in args[0]:  # The connection of a migration. The status that follows it only reads.
+                with lock:
+                    connections.append(connection)
             return connection
 
         def migrate():
             start.wait(timeout=2)
-            Store(self.path).prepare_collection()
+            self.migrate()
 
-        with patch('boardmail.store.sqlite3.connect', coordinated_connect):
+        with patch('sqlite3.connect', coordinated_connect):
             with ThreadPoolExecutor(2) as pool:
                 futures = [pool.submit(migrate) for _ in range(2)]
                 for future in futures:
@@ -148,7 +157,7 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(after['rows']['messages'], [row + (None, None) for row in before['rows']['messages']])
         self.assertEqual(after['rows']['sources'], before['rows']['sources'])
         self.assertEqual(after['rows']['adapter_state'], [('moltbook', 'moltbook', 0, '{}', 0)])
-        self.store.prepare_collection()
+        self.migrate()
         self.assertEqual(self.snapshot(), after)
 
 
