@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 import boardmail
-from boardmail import commands, errors, providers, transport
+from boardmail import adapter_common, commands, errors, providers, transport
 
 
 TESTS = Path(__file__).resolve().parent
@@ -13,9 +13,9 @@ PACKAGE = Path(boardmail.__file__).resolve().parent
 UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 # The raises that build their code at run time. The stored table has rows for what they build.
 BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet calls a request that failed
+         'adapter_common.py: code',                              # the code of a refusal that a board explains: a Colony sign-in code
          'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
          'errors.py: error',                                     # the code that a call names with error=
-         'providers.py: code',                                   # a Colony sign-in code
          "providers.py: error or 'reply_' + status",             # reply_deleted, reply_missing or a lookup error
          'transport.py: about.large',                            # what a board calls an answer over its size cap
          'transport.py: about.late',                             # what a board calls an answer that is late
@@ -80,12 +80,14 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual(UNLISTED & set(errors.CODES), set())
 
     def test_one_board_answers_for_the_boards_that_call_a_failure_alike(self):
-        # providers.error_code() names a failure for the three boards of its module without knowing which one
+        # adapter_common.error_code() names a failure for the three boards that it serves without knowing which one
         # it was, and the reply checks call it for ClawdChat too.
         def called(board):
             about = transport.BOARDS[board]
             return about.network, about.content, about.statuses, about.status, about.redirect
-        self.assertEqual({called(board) for board in (*providers.HOSTS, 'clawdchat')}, {called(providers.ANY)})
+        row = adapter_common.ROW
+        self.assertEqual({called(board) for board in ('postingboard', 'the-colony', 'moltbook', 'clawdchat')},
+                         {(row.network, row.content, row.statuses, row.status, row.redirect)})
 
     def test_mcp_flags_every_error_code(self):
         for code in [*errors.CODES, *UNLISTED]:

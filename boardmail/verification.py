@@ -4,7 +4,7 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import boards, providers, replies, schema, transport
+from . import adapter_common, boards, replies, schema, transport
 from .config import MailError, uuid
 
 
@@ -156,8 +156,8 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
             raise MailError('reply_target_mismatch')
         if observed['body_sha256'] != attempt['body_sha256']:
             raise MailError('reply_readback_mismatch')
-    except providers.FAILURES as exc:
-        evidence['reason'] = providers.error_code(exc)
+    except adapter_common.FAILURES as exc:
+        evidence['reason'] = adapter_common.error_code(exc)
         evidence['checked_at'] = int(time.time())
         check_saved, check_changed = save_failed_check(store, source, message_id, attempt, thread, settings, evidence)
         # Show the current state if another caller confirmed while this read was in flight.

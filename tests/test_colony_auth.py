@@ -8,7 +8,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 from boardmail import config, providers
-from boardmail.boards import collect_all
+from boardmail.boards import BOARDS, collect_all
 from boardmail.errors import next_action
 from examples.fixtures import FakeBoard, FixtureBoard, settings, together, uid
 from kit import Clock, fixed, new_inbox
@@ -32,7 +32,7 @@ class ColonyAuthTests(unittest.TestCase):
     def collect(self, board, *, totp=False):
         """One pass over Colony, which is the board that is handed in."""
         cfg = {**self.settings, **({'totp_secret_file': self.secret} if totp else {})}
-        return providers.collect('the-colony', cfg, {}, set(), fetch=board)
+        return BOARDS['the-colony'].collect(cfg, {}, set(), fetch=board)
 
     def test_auth_body_uses_rfc_vectors_and_reuses_only_the_jwt_in_memory(self):
         # RFC 6238 Appendix B SHA-1 results, truncated to six digits.
@@ -109,7 +109,7 @@ class ColonyAuthTests(unittest.TestCase):
         # What Colony says of a sign-in names no failure of another board, of a request that is not the one of
         # the account, or of a status that is no refusal.
         moltbook = settings(self.root)['moltbook']
-        self.assertEqual(providers.collect('moltbook', moltbook, {}, set(), fetch=FakeBoard([refused(401)])).error, 'http_401')
+        self.assertEqual(BOARDS['moltbook'].collect(moltbook, {}, set(), fetch=FakeBoard([refused(401)])).error, 'http_401')
         board = FixtureBoard('the-colony', self.settings)
         board.key, get = 'synthetic-api-key', board.get
         def public(path, params=None, **asks):

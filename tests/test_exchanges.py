@@ -7,8 +7,9 @@ import unittest
 from urllib.error import HTTPError
 from uuid import UUID
 
-from boardmail import commands, providers
+from boardmail import commands
 from boardmail.store import Store
+from boardmail import adapter_postingboard as postingboard
 from examples.fixtures import FixtureBoard, named, original, settings, uid
 from kit import Clock, arrive, fixed, mark, notify
 from test_mail import mail
@@ -153,7 +154,7 @@ class ExchangeTests(unittest.TestCase):
         arrive(self.store, 'custom', uid(3), [{**mail(610), 'thread_id': uid(600), 'parent_id': uid(601)}, mail(611)])
         for source in ('postingboard', 'custom'):
             self.assertEqual(self.store.show(source, uid(610))['parent_id'], uid(601))
-            mark(self.store, source, uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+            mark(self.store, source, uid(611), 'replied', ref=postingboard.HOST + '/v1/posts/' + uid(601))
             result, code = commands.execute(self.store, 'context', source=source, id=uid(610), local=True)
             exchange = result['previous_exchange']
             if source == 'postingboard':

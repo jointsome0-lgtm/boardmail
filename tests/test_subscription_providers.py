@@ -23,6 +23,7 @@ from boardmail.adapters import Batch, validate
 from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
+from boardmail.boards import BOARDS
 from examples.fixtures import FixtureBoard, named, original, settings, status, uid
 from kit import Clock, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
@@ -69,7 +70,7 @@ class PostingboardSubscriptionTests(unittest.TestCase):
         return client
 
     def collect(self, client, state=None, known=()):
-        batch = providers.collect("postingboard", client.settings, deepcopy(state or {}), set(known), fetch=client)
+        batch = BOARDS["postingboard"].collect(client.settings, deepcopy(state or {}), set(known), fetch=client)
         shape(self, batch)
         return batch
 
@@ -193,7 +194,7 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         return ThreadBoard(source, cfg, self.clock)
 
     def collect(self, client, state=None, known=()):
-        batch = providers.collect(client.source, client.settings, deepcopy(state or {}), set(known), fetch=client)
+        batch = BOARDS[client.source].collect(client.settings, deepcopy(state or {}), set(known), fetch=client)
         shape(self, batch)
         return batch
 

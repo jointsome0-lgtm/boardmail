@@ -11,7 +11,7 @@ import threading
 import unittest
 from uuid import UUID
 
-from boardmail import cli, commands, providers, replies, schema, verification
+from boardmail import cli, commands, replies, schema, verification
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import KEY, FixtureBoard, named, original, uid
@@ -761,7 +761,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         flags = {'verification_status': 'verified', 'is_deleted': False, 'is_spam': False}
         self.client.root = {**original(100, 100), **flags, 'title': 'Legacy example'}
         self.client.comments = [{**original(320, 100, 2, body=self.body), **flags, 'parent_id': self.target}]
-        self.ref = providers.parent_reference('moltbook', self.root, self.reply)
+        self.ref = BOARDS['moltbook'].reference(self.root, self.reply)
         other = self.store.show('moltbook', uid(10))
         self.key = self.call('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.call('begin', key=self.key)
@@ -770,7 +770,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.settings['adapter'] = 'postingboard'
         self.client = FixtureBoard('postingboard', self.settings)
         self.client.others[self.reply] = named(320, 100, 2, body=self.body, reply_to=11)
-        self.ref = providers.parent_reference('postingboard', self.root, self.reply)
+        self.ref = BOARDS['postingboard'].reference(self.root, self.reply)
         before = self.path.read_bytes()
         rejected, code = self.call()
         self.assertEqual((code, rejected.get('error')), (2, 'adapter_mismatch'))

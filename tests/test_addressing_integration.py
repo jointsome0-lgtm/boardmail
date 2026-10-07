@@ -4,9 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from boardmail import providers
 from boardmail.adapters import validate
 from boardmail.boards import collect_all
+from boardmail.boards import BOARDS
 from examples.fixtures import FixtureBoard, original, settings, uid
 from kit import mark, new_inbox
 
@@ -59,7 +59,7 @@ class AddressingIntegrationTests(unittest.TestCase):
                 parent['author'] = author
                 board.comments = [parent, child]
                 board.events = board.events[:1]
-                batch = providers.collect(source, config, {}, set(), fetch=board)
+                batch = BOARDS[source].collect(config, {}, set(), fetch=board)
                 validate(batch)
                 self.assertIsNone(batch.messages[0]['addressing'])
 
@@ -74,7 +74,7 @@ class AddressingIntegrationTests(unittest.TestCase):
                 board.events = [event]
                 key = uid(mid if source == 'the-colony' else root)
                 state = {'pending': {key: {'post': uid(root), 'ids': {uid(mid): 'reply_to_comment'}, 'cursor': None}}}
-                batch = providers.collect(source, config, state, set(), fetch=board)
+                batch = BOARDS[source].collect(config, state, set(), fetch=board)
                 validate(batch)
                 self.assertEqual(batch.messages[0]['addressing'], 'direct+mention')
 
@@ -85,7 +85,7 @@ class AddressingIntegrationTests(unittest.TestCase):
                 board = FixtureBoard(source, config)
                 del board.comments[0]['parent_id']
                 board.events = board.events[:1]
-                batch = providers.collect(source, config, {}, set(), fetch=board)
+                batch = BOARDS[source].collect(config, {}, set(), fetch=board)
                 validate(batch)
                 self.assertNotIn(batch.messages[0]['addressing'], ('direct', 'direct+mention'))
 
@@ -98,7 +98,7 @@ class AddressingIntegrationTests(unittest.TestCase):
         child['parent_id'] = uid(90)
         board.comments = [parent, child]
         board.events = board.events[:1]
-        batch = providers.collect(source, config, {}, set(), fetch=board)
+        batch = BOARDS[source].collect(config, {}, set(), fetch=board)
         self.assertNotIn(uid(90), [o['id'] for o in batch.originals])
         self.assertNotIn(batch.messages[0]['addressing'], ('direct', 'direct+mention'))
 

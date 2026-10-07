@@ -1,4 +1,5 @@
-"""A board of the package outside providers.py goes through the same local delivery as a supplied file.
+"""A board of the package other than Postingboard, Colony and Moltbook goes through the same local delivery as a
+supplied file.
 
 Every board here is invented, and each has one message for the account."""
 import json
@@ -6,7 +7,6 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from boardmail import providers
 from boardmail.boards import BOARDS, collect_all
 from boardmail.config import load
 from kit import mark, new_inbox
@@ -49,7 +49,7 @@ INVENTED = {'botnet': ({'account_id': test_botnet.OWNER, 'api_key_file': KEY}, b
 
 class PackagedAdapterTests(unittest.TestCase):
     def test_named_boards_deliver_once_and_local_reads_keep_what_they_left(self):
-        self.assertEqual(set(INVENTED), set(BOARDS) - {board.name for board in providers.BOARDS})
+        self.assertEqual(set(INVENTED), set(BOARDS) - {'postingboard', 'the-colony', 'moltbook'})
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / KEY).write_text(test_botnet.KEY + '\n')

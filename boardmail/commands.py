@@ -4,7 +4,7 @@ import errno
 from functools import wraps
 import sqlite3
 
-from . import boards, config, providers, replies, table, tags, transport, verification
+from . import adapter_common, boards, config, replies, table, tags, transport, verification
 from .config import MailError
 from .errors import exit_code, next_action
 
@@ -318,7 +318,7 @@ class CachedClient:
                 raise MailError("budget_exhausted")
             try:
                 self.cache[key] = self.client.get(path, params, authenticated=authenticated)
-            except providers.FAILURES as exc:
+            except adapter_common.FAILURES as exc:
                 if isinstance(exc, MailError) and str(exc) in ("budget_exhausted", "source_timeout"):
                     self.exhausted = True
                 self.cache[key] = exc
