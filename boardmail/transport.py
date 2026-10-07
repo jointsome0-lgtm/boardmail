@@ -141,7 +141,11 @@ def fetch(board, url, *, left=None, headers=None, body=None):
 def failure(board, exc):
     """What a request to this board is called when it failed with exc: one of FAILED, from fetch() or from a
     stand-in for it. Anything else that is handed in is called what an unreadable answer is called."""
-    about = BOARDS[board]
+    return called(BOARDS[board], exc)
+
+
+def called(about, exc):
+    """failure() for a board of which only its entry is at hand."""
     if isinstance(exc, MailError):
         return str(exc)
     if isinstance(exc, HTTPError):

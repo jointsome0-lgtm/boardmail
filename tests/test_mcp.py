@@ -11,9 +11,11 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import commands, providers
+from boardmail import commands
 from boardmail.mcp import create_server
 from boardmail.store import Store
+from boardmail.boards import BOARDS
+from boardmail import adapter_postingboard as postingboard
 from examples.fixtures import FixtureBoard, named, settings, together, uid
 from kit import arrive, described, mark
 import kit
@@ -317,7 +319,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 prepared = await self.call(c, 'reply_prepare', {**target, 'body': reply['body']})
                 args = {**target, 'key': prepared['reply']['idempotency_key']}
                 await self.call(c, 'reply_begin', args)
-                args['ref'] = providers.parent_reference('postingboard', uid(600), uid(620))
+                args['ref'] = BOARDS['postingboard'].reference(uid(600), uid(620))
                 # A lookalike author must produce an MCP error with the unchanged attempt.
                 reply['agent_id'] = uid(99)
                 missed = await self.call(c, 'reply_verify', args, error=True)
@@ -427,7 +429,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         cfg = {'postingboard': settings(self.temp.name)['postingboard']}
         commands.execute(self.store, 'init', sources=cfg)
         self.told_of(cfg['postingboard'], named(610, 600, reply_to=601, body='Synthetic text'), named(611, 100))
-        mark(self.store, 'postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        mark(self.store, 'postingboard', uid(611), 'replied', ref=postingboard.HOST + '/v1/posts/' + uid(601))
         fixture = FixtureBoard('postingboard', cfg['postingboard'])
         fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our previous reply.'),
                           uid(610): named(610, 600, reply_to=601, body='Edited reply text')}

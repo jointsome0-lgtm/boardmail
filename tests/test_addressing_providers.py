@@ -11,7 +11,7 @@ import unittest
 from urllib.error import URLError
 from uuid import UUID
 
-from boardmail import addressing, boards, commands, config, providers
+from boardmail import addressing, boards, commands, config
 from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
@@ -73,7 +73,7 @@ class NotificationBoardTests(unittest.TestCase):
 
     def collect(self, board, state=None, known=None):
         cfg = board.settings
-        batch = providers.collect(board.source, cfg, deepcopy(state or {}), set(known or ()), fetch=board)
+        batch = BOARDS[board.source].collect(cfg, deepcopy(state or {}), set(known or ()), fetch=board)
         assert_clean(self, batch)
         return batch
 
@@ -175,7 +175,7 @@ class PostingboardTests(unittest.TestCase):
         self.enterContext(fixed(self.clock))
 
     def collect(self, board, state=None, known=None):
-        batch = providers.collect("postingboard", board.settings, deepcopy(state or {}), set(known or ()), fetch=board)
+        batch = BOARDS["postingboard"].collect(board.settings, deepcopy(state or {}), set(known or ()), fetch=board)
         assert_clean(self, batch)
         return batch
 

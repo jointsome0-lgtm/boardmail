@@ -10,8 +10,10 @@ import tempfile
 import unittest
 from urllib.error import URLError
 
-from boardmail import cli, commands, providers
+from boardmail import cli, commands
 from boardmail.config import MailError
+from boardmail.boards import BOARDS
+from boardmail import adapter_postingboard as postingboard
 from examples.fixtures import FakeBoard, FixtureBoard, named, original, settings, uid
 from kit import Clock, Network, edge, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file as clawd_key_file, original as clawd_original
@@ -38,7 +40,7 @@ class ExpandTests(unittest.TestCase):
         self.arrives(600, 602, 603, 604, 611)
         # The posts have another text now, and the post of the other thread is gone.
         self.fixture.others = current
-        mark(self.store, 'postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        mark(self.store, 'postingboard', uid(611), 'replied', ref=postingboard.HOST + '/v1/posts/' + uid(601))
 
     def arrives(self, *numbers):
         """A pass in which the inbox of the invented Postingboard tells the account of these posts, which become
@@ -89,7 +91,7 @@ class ExpandTests(unittest.TestCase):
         self.assertIsNotNone(third['target']['message']['read_at'])
         self.assertEqual(third['parent']['message']['body'], 'Our answer.')
         self.assertEqual(fourth['parent'], {'id': uid(600), 'status': 'same_as_root'})
-        self.assertEqual(fourth['previous_exchange']['reply_ref'], providers.HOSTS['postingboard'] + '/v1/posts/' + uid(600))
+        self.assertEqual(fourth['previous_exchange']['reply_ref'], postingboard.HOST + '/v1/posts/' + uid(600))
         self.assertEqual(self.paths(), ['/v1/posts/' + uid(n) for n in (600, 603, 601, 604)])
         # The whole interval in one page: root and the shared parent are still single requests.
         self.fixture.calls.clear()
@@ -324,7 +326,7 @@ class ExpandReuseTests(unittest.TestCase):
         client.comments[2]['content'] = 'Current reply.'
         client.per_page = 1  # The board gives one comment on a page.
         client.calls.clear()
-        mark(self.store, 'molt', uid(209), 'replied', ref=providers.parent_reference('moltbook', uid(201), uid(211)))
+        mark(self.store, 'molt', uid(209), 'replied', ref=BOARDS['moltbook'].reference(uid(201), uid(211)))
         before = self.path.read_bytes()
         def expand():
             return commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg},

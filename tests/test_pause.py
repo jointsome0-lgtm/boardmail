@@ -11,8 +11,8 @@ import tempfile
 import threading
 import unittest
 
-from boardmail import commands, config, providers
-from boardmail.boards import collect_all
+from boardmail import commands, config
+from boardmail.boards import BOARDS, collect_all
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, together, uid
 from kit import Clock, fixed, mark
@@ -136,7 +136,7 @@ class PauseTests(unittest.TestCase):
         commands.execute(self.store, 'init', sources=sources)
         boards = {s: FixtureBoard(s, sources[s]) for s in sources}
         # What the same pass over Moltbook gives and keeps when nothing comes in between.
-        alone = providers.collect('moltbook', sources['moltbook'], {}, set(), fetch=FixtureBoard('moltbook', sources['moltbook']))
+        alone = BOARDS['moltbook'].collect(sources['moltbook'], {}, set(), fetch=FixtureBoard('moltbook', sources['moltbook']))
         self.assertEqual((len(alone.messages), bool(alone.state)), (1, True))
         entered, finish = threading.Event(), threading.Event()
         get = boards['moltbook'].get

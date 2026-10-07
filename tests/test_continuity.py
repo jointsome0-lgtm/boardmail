@@ -11,9 +11,10 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import boards, cli, commands, config, providers
+from boardmail import boards, cli, commands, config
 from boardmail.config import MailError
 from boardmail.store import Store
+from boardmail import adapter_postingboard as postingboard
 from examples.fixtures import FixtureBoard, named, settings, uid
 from kit import Clock, Network, arrive, edge, fixed, mark
 from test_mail import mail
@@ -544,7 +545,7 @@ class ContextTests(unittest.TestCase):
         # then gets another text for the nested reply.
         self.fixture.others[uid(603)] = named(603, 600)
         self.arrives(603)
-        mark(self.store, 'postingboard', uid(603), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        mark(self.store, 'postingboard', uid(603), 'replied', ref=postingboard.HOST + '/v1/posts/' + uid(601))
         self.fixture.others[uid(602)]['body'] = '@sample-agent nested reply, edited.'
         before = self.path.read_bytes()  # The key of the account is in the folder already, in example.key.
         (root/'config.json').write_text(json.dumps({'database': 'other.sqlite3', 'sources': {'postingboard': {

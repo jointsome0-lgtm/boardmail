@@ -8,11 +8,11 @@ from functools import partial
 import io
 import runpy
 
-from . import adapter_botnet, adapter_clawdchat, adapter_fourclaw, adapter_fruitflies, providers, transport
+from . import adapter_botnet, adapter_clawdchat, adapter_fourclaw, adapter_fruitflies, adapter_postingboard, providers, transport
 from .adapters import Board, validate
 from .errors import MailError, next_action
 
-BOARDS = {board.name: board for board in (*providers.BOARDS, adapter_clawdchat.BOARD, adapter_fourclaw.BOARD,
+BOARDS = {board.name: board for board in (adapter_postingboard.BOARD, *providers.BOARDS, adapter_clawdchat.BOARD, adapter_fourclaw.BOARD,
                                           adapter_fruitflies.BOARD, adapter_botnet.BOARD)}
 # What stands for an adapter file where the core asks what a board declares.
 FILE = Board(name="", coverage="Configured adapter scope; consult its instructions.", collect=None, subscriptions=False)
