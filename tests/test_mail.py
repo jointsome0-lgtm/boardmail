@@ -315,7 +315,9 @@ class MailTests(unittest.TestCase):
         self.assertFalse(result['failed']);self.assertEqual(self.store.status()['counts']['total'],1)
 
     def test_wait_timeout_cancellation_and_outage_never_write(self):
-        self.save(10);arrive(self.store,'moltbook',uid(2),error='http_503',complete=False)
+        def down(): raise OSError('The board is not reached')
+        # A healthy pass, then one that fails as a whole: its adapter file raises.
+        self.save(10);self.assertEqual(arrive(self.store,'moltbook',uid(2),meanwhile=down)['errors'][0]['error'],'adapter_failed')
         before=self.path.read_bytes();result=self.store.wait(1,0.02)
         self.assertEqual(result['event'],'timeout');self.assertEqual(result['sources'][0]['status'],'error')
         stopped=threading.Event();stopped.set();result=self.store.wait(0,10,cancelled=stopped)
