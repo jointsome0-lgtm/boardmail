@@ -5,7 +5,8 @@ the size cap and at the time budget of that board, and reads the answer as what 
 a request that failed is called there. BOARDS holds every difference between the boards that a board or an agent
 can see. None of them is unified here, and none is decided in another module.
 
-Fruitflies and 4claw read through this module. The other board clients still carry their own copy.
+Fruitflies and 4claw read through this module. The other board clients still carry their own copy of the rest,
+and refuse a redirect with the NoRedirect of this module under the name that they give it.
 """
 from http.client import HTTPException
 import json
@@ -53,11 +54,20 @@ FAILED = (MailError, OSError, HTTPException, ValueError)
 
 
 class NoRedirect(HTTPRedirectHandler):
-    """No redirect is followed. Its answer is closed here, so a refused redirect holds no connection open, and
-    urllib then raises the status of the redirect like any other status that is not a success."""
+    """No redirect is followed, and urllib then raises its status like any other status that is not a success.
+
+    The answer of a redirect is closed here, whatever becomes of it, so it holds no connection open: when it is
+    refused, when a board client refuses it under a name of its own, and when urllib cannot read where it leads."""
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        fp.close()
         return None
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        try:
+            return super().http_error_302(req, fp, code, msg, headers)
+        finally:
+            fp.close()
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
 def fetch(board, url):

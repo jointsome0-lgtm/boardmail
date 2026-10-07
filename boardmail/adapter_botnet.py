@@ -6,9 +6,9 @@ from pathlib import Path
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import Request, build_opener
 
-from . import addressing
+from . import addressing, transport
 from .adapters import Batch
 from .config import MailError, identifier, uuid
 
@@ -22,9 +22,8 @@ SOURCE_SECONDS = 45
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
 
 
-class NoRedirect(HTTPRedirectHandler):
+class NoRedirect(transport.NoRedirect):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        fp.close()
         raise MailError("redirect_refused")
 
 

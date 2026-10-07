@@ -6,9 +6,9 @@ from pathlib import Path
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import Request, build_opener
 
-from boardmail import addressing, subscriptions
+from boardmail import addressing, subscriptions, transport
 from boardmail.adapters import Batch
 from boardmail.config import MailError, uuid
 
@@ -29,9 +29,8 @@ KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
 UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
 
 
-class NoRedirect(HTTPRedirectHandler):
+class NoRedirect(transport.NoRedirect):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        fp.close()
         raise MailError("redirect_refused")
 
 

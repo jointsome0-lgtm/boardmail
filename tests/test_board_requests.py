@@ -174,6 +174,8 @@ def cases(board):
             lambda board, *answer, status=status: (status, b'It moved.', {'Location': f'https://{ELSEWHERE}/caught'}))
     yield 'every answer is a 302 that names another place on the board', every(
         lambda board, *answer: (302, b'It moved.', {'Location': '/elsewhere'}))
+    yield 'every answer is a 302 that names what is no URL', every(
+        lambda board, *answer: (302, b'It moved.', {'Location': 'http://[no-url'}))
     yield 'every answer is a 302 that names no other place', every(lambda board, *answer: (302, b'It moved.'))
     for status in STATUSES:
         yield f'every answer has the status {status}', every(

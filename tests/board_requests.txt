@@ -36,6 +36,10 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names what is no URL
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
 -- every answer is a 302 that names no other place
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
@@ -209,6 +213,11 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names no other place
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
@@ -400,6 +409,10 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names what is no URL
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
 -- every answer is a 302 that names no other place
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
@@ -563,6 +576,10 @@ the seconds since the pass began at which it left. The sets of headers are numbe
 -- every answer is a 302 that names another place on the board
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names no other place
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
@@ -737,6 +754,10 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names what is no URL
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
 -- every answer is a 302 that names no other place
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
@@ -908,6 +929,12 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names no other place
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
@@ -1110,6 +1137,10 @@ the seconds since the pass began at which it left. The sets of headers are numbe
 -- every answer is a 302 that names another place on the board
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
     exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 302 that names what is no URL
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 302 that names no other place
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
