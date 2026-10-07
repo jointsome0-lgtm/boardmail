@@ -1,5 +1,4 @@
 """Mail, pagination, replay and wait contracts. All provider data is invented."""
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
 from copy import deepcopy
 from http.client import IncompleteRead
@@ -17,11 +16,11 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import cli, providers, table
+from boardmail import cli, commands, providers, table
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, together, uid
-from kit import Clock, fixed
+from kit import Clock, arrive, described, fixed, mark, new_inbox
 
 
 def mail(n, *, created=100):
@@ -35,8 +34,7 @@ class MailTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'inbox.sqlite3'
-        self.store = Store(self.path)
-        self.store.initialize()
+        self.store = new_inbox(self.path)
 
     def boards(self):
         """The three invented boards and one fetch for them. The client of Postingboard waits between two
@@ -46,7 +44,21 @@ class MailTests(unittest.TestCase):
         return boards, together(boards)
 
     def save(self,*numbers):
-        return self.store.save('moltbook',uid(2),[mail(n) for n in numbers])
+        """A pass that gives these messages. How many of them are new."""
+        return arrive(self.store,'moltbook',uid(2),[mail(n) for n in numbers])['added']
+
+    def went_well(self,store,source,cfg,board,at=123):
+        """An earlier pass over the source that went well and brought nothing: the board had nothing for the
+        account then, and the account watched no thread. The time that the source has for it."""
+        quiet = {**cfg,'threads':[],'inbox':True} if source=='postingboard' else cfg
+        events = getattr(board,'events',None)
+        if events is not None: board.events = []
+        with fixed(Clock(at)):
+            result = providers.collect_all(store,{source:quiet},fetch=board)
+        if events is not None: board.events = events
+        self.assertEqual((result['added'],result['failed']),(0,False),result)
+        board.calls.clear()
+        return next(s['last_ok'] for s in result['sources'] if s['source']==source)
 
     def test_bounded_pages_and_race_between_list_and_wait(self):
         self.save(10,11,12,13,14)
@@ -54,7 +66,7 @@ class MailTests(unittest.TestCase):
         self.assertEqual([m['arrival_seq'] for m in first['messages']],[1,2])
         self.assertEqual(first['next_after'],2);self.assertTrue(first['more'])
         # Insert after list, before wait; even an old creation date must wake.
-        self.store.save('moltbook',uid(2),[mail(15,created=1)])
+        arrive(self.store,'moltbook',uid(2),[mail(15,created=1)])
         arrivals,after = [],first['next_after']
         for _ in range(4):
             result = self.store.wait(after,0,2)
@@ -66,28 +78,32 @@ class MailTests(unittest.TestCase):
         self.assertEqual(self.store.status()['counts']['unread'],6)
 
     def test_concurrent_replay_preserves_identity_and_independent_marks(self):
-        with ThreadPoolExecutor(2) as pool:
-            self.assertEqual(sum(pool.map(lambda _:self.save(10,11),range(2))),2)
-        self.store.mark('moltbook',uid(10),'read')
-        self.store.mark('moltbook',uid(10),'needs_reply')
-        with self.assertRaises(MailError):self.store.mark('moltbook',uid(10),'replied')
-        self.store.mark('moltbook',uid(10),'replied',ref='https://board.example.invalid/reply/1')
+        # Two passes that overlap give the same two messages. Each message arrives once.
+        inner = []
+        outer = arrive(self.store,'moltbook',uid(2),[mail(10),mail(11)],meanwhile=lambda:inner.append(self.save(10,11)))
+        self.assertEqual((inner,outer['added'],[e['error'] for e in outer['errors']]),([2],0,['collection_conflict']))
+        mark(self.store, 'moltbook',uid(10),'read')
+        mark(self.store, 'moltbook',uid(10),'needs_reply')
+        with self.assertRaises(MailError):mark(self.store, 'moltbook',uid(10),'replied')
+        mark(self.store, 'moltbook',uid(10),'replied',ref='https://board.example.invalid/reply/1')
         before = self.store.show('moltbook',uid(10))
         self.assertEqual(self.save(10,11),0)
         self.assertEqual(self.store.show('moltbook',uid(10)),before)
-        self.store.save('the-colony',uid(1),[mail(10)])
+        arrive(self.store,'the-colony',uid(1),[mail(10)])
         self.assertIsNone(self.store.show('the-colony',uid(10))['read_at'])
-        self.store.mark('moltbook',uid(10),'unread')
+        mark(self.store, 'moltbook',uid(10),'unread')
         updated = self.store.show('moltbook',uid(10))
         self.assertTrue(updated['needs_reply']);self.assertIsNotNone(updated['replied_at'])
         with self.assertRaises(MailError):self.store.known('moltbook',uid(999))
-        with self.assertRaises(MailError):self.store.save('moltbook',uid(999),[mail(12)])
+        result,_ = commands.execute(self.store,'collect',sources={'moltbook':described(uid(999),messages=[mail(12)])})
+        self.assertEqual((result['added'],[e['error'] for e in result['errors']]),(0,['account_mismatch']))
 
     def test_partial_source_transaction_has_no_visible_arrival(self):
         broken = mail(11);del broken['body']
-        with self.assertRaises(KeyError):self.store.save('moltbook',uid(2),[mail(10),broken])
+        result,_ = commands.execute(self.store,'collect',sources={'moltbook':described(uid(2),messages=[mail(10),broken])})
+        self.assertEqual((result['added'],[e['error'] for e in result['errors']]),(0,['invalid_adapter_result']))
         self.assertEqual(self.store.wait(0,0)['event'],'timeout')
-        self.assertEqual(self.store.status()['sources'],[])
+        self.assertEqual([s['status'] for s in self.store.status()['sources']],['error'])
         self.save(10);self.assertEqual(self.store.page()['next_after'],1)
 
     def test_public_shapes_pages_nested_replies_and_source_isolation(self):
@@ -205,7 +221,7 @@ class MailTests(unittest.TestCase):
                 else:
                     board.comments[uid(301)] = [named(n,301) for n in range(400,431)]
                     first_count, total = 30,31
-                self.store.save(source,cfg['account_id'],[],now=123)
+                self.went_well(self.store,source,cfg,board)
                 get = board.get
                 def broken(path,params=None,**kw):
                     if source=='moltbook' and path=='/notifications':
@@ -245,8 +261,8 @@ class MailTests(unittest.TestCase):
         get = board.get
         for failure in ('source_timeout','http_503'):
             with self.subTest(failure=failure):
-                store = Store(Path(self.temp.name)/(failure+'.sqlite3'));store.initialize()
-                store.save('postingboard',cfg['account_id'],[],now=123)
+                store = new_inbox(Path(self.temp.name)/(failure+'.sqlite3'))
+                earlier = self.went_well(store,'postingboard',cfg,board)
                 clock, calls = Clock(1_000_000), []
                 def respond(path,params=None,**kw):
                     calls.append((path,clock.now))
@@ -270,7 +286,7 @@ class MailTests(unittest.TestCase):
                         else:
                             self.assertTrue(result['failed'])
                             self.assertEqual(result['sources'][0]['error'],failure)
-                            self.assertEqual(result['sources'][0]['last_ok'],123)
+                            self.assertEqual(result['sources'][0]['last_ok'],earlier)
                             self.assertEqual(count,1)
                             if attempt:self.assertEqual(result['added'],0)
                 # Actual HTTP requests stay paced across both configured roots.
@@ -299,7 +315,9 @@ class MailTests(unittest.TestCase):
         self.assertFalse(result['failed']);self.assertEqual(self.store.status()['counts']['total'],1)
 
     def test_wait_timeout_cancellation_and_outage_never_write(self):
-        self.save(10);self.store.failure('moltbook',uid(2),'http_503')
+        def down(): raise OSError('The board is not reached')
+        # A healthy pass, then one that fails as a whole: its adapter file raises.
+        self.save(10);self.assertEqual(arrive(self.store,'moltbook',uid(2),meanwhile=down)['errors'][0]['error'],'adapter_failed')
         before=self.path.read_bytes();result=self.store.wait(1,0.02)
         self.assertEqual(result['event'],'timeout');self.assertEqual(result['sources'][0]['status'],'error')
         stopped=threading.Event();stopped.set();result=self.store.wait(0,10,cancelled=stopped)
@@ -382,7 +400,7 @@ class CLITests(unittest.TestCase):
 
     def test_init_with_explicit_config_preserves_an_existing_database(self):
         self.assertEqual(self.invoke('init')[0], 0)
-        Store(self.db).save('moltbook', uid(2), [mail(10)])
+        arrive(Store(self.db), 'moltbook', uid(2), [mail(10)])
         before = self.db.read_bytes()
         config = self.init_config()
         code, result = self.invoke('--config', str(config), 'init')
@@ -449,7 +467,7 @@ class CLITests(unittest.TestCase):
     def test_latin1_stdout_preserves_unicode_messages_as_json(self):
         self.invoke('init')
         item = mail(10);item['body'] = 'Привет, мир 🌍'
-        Store(self.db).save('moltbook',uid(2),[item])
+        arrive(Store(self.db),'moltbook',uid(2),[item])
         for args in (('list',),('show','moltbook',uid(10)),('wait','--timeout','0')):
             result = subprocess.run([*self.command,*args],capture_output=True,timeout=5,
                                     env={**os.environ,'PYTHONIOENCODING':'latin-1'})

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from boardmail.adapters import Batch, collect_all
 from boardmail.config import PACKAGED_ADAPTERS, load
-from boardmail.store import Store
+from kit import mark, new_inbox
 
 
 class PackagedAdapterTests(unittest.TestCase):
@@ -19,8 +19,7 @@ class PackagedAdapterTests(unittest.TestCase):
             path = root / 'config.json'
             path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': sources}))
             config = load(path)
-            store = Store(config['database'])
-            store.initialize(config['sources'])
+            store = new_inbox(config['database'], config['sources'])
             for name, module_name in PACKAGED_ADAPTERS.items():
                 with self.subTest(adapter=name):
                     self.assertEqual(config['sources'][name]['adapter'], name)
@@ -32,7 +31,7 @@ class PackagedAdapterTests(unittest.TestCase):
                         result = collect_all(store, {name: config['sources'][name]})
                         self.assertFalse(result['failed'])
                         self.assertEqual(result['added'], 1)
-                        store.mark(name, 'opaque-id', 'read')
+                        mark(store, name, 'opaque-id', 'read')
                         self.assertEqual(collect_all(store, {name: config['sources'][name]})['added'], 0)
                     with patch('boardmail.adapters.importlib.import_module', side_effect=AssertionError('local read imported adapter')):
                         self.assertIsNotNone(store.show(name, 'opaque-id')['read_at'])

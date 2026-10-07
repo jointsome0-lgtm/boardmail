@@ -1,6 +1,6 @@
 """Interrupted publishers and local recovery; every message and external effect is invented."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -16,6 +16,7 @@ from unittest.mock import patch
 from boardmail import commands, replies
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, uid
+from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox
 from test_mail import mail
 
 
@@ -44,31 +45,13 @@ def run_reply_workers(operations):
     return [outcome[1] for outcome in outcomes]
 
 
-class WriteBarrierStore(Store):
-    """Gate only the first write, before Store acquires its real SQLite transaction."""
-    def __init__(self, path, before_write, after_write=None):
-        super().__init__(path)
-        self.before_write, self.after_write = before_write, after_write
-
-    @contextmanager
-    def connect(self, *, write=False, create=False):
-        gate = self.before_write if write else None
-        if gate is not None:
-            self.before_write = None
-            gate()
-        with super().connect(write=write, create=create) as db:
-            yield db
-        if gate is not None and self.after_write is not None:
-            self.after_write()
-
-
 class ReplyRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.path = self.root / 'inbox.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
-        self.store.save('moltbook', uid(2), [mail(10), mail(11)])
+        self.store = new_inbox(self.path)
+        arrive(self.store, 'moltbook', uid(2), [mail(10), mail(11)])
         self.body = 'A synthetic reply. Кириллица, `backticks`, $HOME.\r\nSecond line.\n'
         self.ref = 'https://board.example.invalid/post/100#comment-200'
         self.file = self.root / 'reply.txt'; self.file.write_bytes(self.body.encode('utf-8'))
@@ -83,7 +66,7 @@ class ReplyRecoveryTests(unittest.TestCase):
         return json.loads(run.stdout), run.returncode
 
     def test_message_show_exposes_reply_state_and_followable_recovery_without_writing(self):
-        self.store.mark('moltbook', uid(10), 'needs_reply')
+        mark(self.store, 'moltbook', uid(10), 'needs_reply')
         for phase, state, next_action in (
                 ('empty', None, None),
                 ('prepared', 'prepared', 'begin_before_publishing'),
@@ -96,7 +79,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                 elif phase == 'begun':
                     self.command('begin', key=key)
                 elif phase == 'marked_replied':
-                    self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+                    mark(self.store, 'moltbook', uid(10), 'replied', ref=self.ref)
                 elif phase == 'confirmed':
                     self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
                 before = self.path.read_bytes()
@@ -128,8 +111,8 @@ class ReplyRecoveryTests(unittest.TestCase):
         for state in (None, 'prepared', 'unknown', 'confirmed'):
             with self.subTest(state=state):
                 path = self.root / f'{state}.sqlite3'
-                store = Store(path); store.initialize()
-                store.save('moltbook', uid(2), [mail(10)])
+                store = new_inbox(path)
+                arrive(store, 'moltbook', uid(2), [mail(10)])
                 if state is not None:
                     prepared, _ = replies.execute(store, 'prepare', 'moltbook', uid(10), body=self.body)
                     key = prepared['reply']['idempotency_key']
@@ -188,8 +171,8 @@ class ReplyRecoveryTests(unittest.TestCase):
                                            (11, 'confirmed', 'do_not_publish_again')):
             with self.subTest(state=state):
                 target = uid(number)
-                self.store.mark('moltbook', target, 'read')
-                self.store.mark('moltbook', target, 'needs_reply')
+                mark(self.store, 'moltbook', target, 'read')
+                mark(self.store, 'moltbook', target, 'needs_reply')
                 prepared, code = self.command('prepare', id=target, body=self.body)
                 self.assertEqual(code, 0)
                 key = prepared['reply']['idempotency_key']
@@ -206,7 +189,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                 journal = {k: v for k, v in original.items() if k != 'message'}
                 for clock in (100, 200):
                     with self.subTest(clock=clock):
-                        with patch('boardmail.store.time.time', return_value=clock):
+                        with fixed(Clock(clock)):
                             marked, code = commands.outcome(lambda: commands.execute(
                                 self.store, 'mark', source='moltbook', id=target,
                                 action='replied', ref=self.ref))
@@ -234,8 +217,8 @@ class ReplyRecoveryTests(unittest.TestCase):
                         self.assertEqual(recovered['message'], message)
 
     def test_process_exit_after_external_effect_recovers_same_body_key_and_receipt(self):
-        self.store.mark('moltbook', uid(10), 'read')
-        self.store.mark('moltbook', uid(10), 'needs_reply')
+        mark(self.store, 'moltbook', uid(10), 'read')
+        mark(self.store, 'moltbook', uid(10), 'needs_reply')
         incoming = self.store.show('moltbook', uid(10))
         effect = self.root / 'external-effect.json'
         # A separate process performs a fake external write, then dies before recording its receipt.
@@ -323,7 +306,7 @@ os._exit(79)
             self.assertEqual((code, result['recovery_guidance'], result['send_allowed']), (0, guidance, False))
             self.assertEqual(result['reply'], shown['reply'])
         self.assertEqual(self.path.read_bytes(), before)
-        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        mark(self.store, 'moltbook', uid(10), 'replied', ref=self.ref)
         before = self.path.read_bytes()
         marked, _ = self.cli('show')
         self.assertEqual((marked['recovery_guidance'], marked['reply']), (guidance, shown['reply']))
@@ -339,7 +322,7 @@ os._exit(79)
         prepared, _ = self.cli('prepare', '--body-file', self.file)
         key = prepared['reply']['idempotency_key']
         unknown, _ = self.cli('begin', '--key', key)
-        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        mark(self.store, 'moltbook', uid(10), 'replied', ref=self.ref)
         before = self.path.read_bytes()
         marked, _ = self.cli('show')
         self.assertEqual(self.path.read_bytes(), before)
@@ -394,8 +377,16 @@ os._exit(79)
 
                 class ContendingConnection(sqlite3.Connection):
                     def execute(connection, sql, *args):
-                        if sql != 'BEGIN IMMEDIATE' or worker.action == first_action:
+                        if sql != 'BEGIN IMMEDIATE':
                             return super().execute(sql, *args)
+                        if worker.action == first_action:
+                            # The first transaction holds its lock until the second one has asked for its own.
+                            result = super().execute(sql, *args)
+                            connection.held = True
+                            acquired.set()
+                            if not second_begin.wait(timeout=5):
+                                raise AssertionError('The second SQLite BEGIN did not start')
+                            return result
                         if not acquired.wait(timeout=5):
                             raise AssertionError('The first reply transaction did not acquire its lock')
 
@@ -413,16 +404,9 @@ os._exit(79)
                         finally:
                             connection.set_authorizer(None)
 
-                class HeldStore(Store):
-                    @contextmanager
-                    def connect(store, *, write=False, create=False):
-                        with super().connect(write=write, create=create) as db:
-                            if write:
-                                acquired.set()
-                                if not second_begin.wait(timeout=5):
-                                    raise AssertionError('The second SQLite BEGIN did not start')
-                            yield db
-                        if write:
+                    def close(connection):
+                        super().close()
+                        if getattr(connection, 'held', False):
                             committed.set()
 
                 def connect(*args, **kwargs):
@@ -430,17 +414,14 @@ os._exit(79)
                     connections.append(db)
                     return db
 
-                stores = {action: (HeldStore(self.path) if action == first_action else Store(self.path))
-                          for action in ('replace', 'begin')}
-
                 def invoke(action):
                     worker.action = action
                     barrier.wait(timeout=5)
                     options = {'body': new_body, 'replace_key': old_key} if action == 'replace' else {'key': old_key}
-                    return commands.outcome(lambda: replies.execute(stores[action],
+                    return commands.outcome(lambda: replies.execute(Store(self.path),
                         'prepare' if action == 'replace' else 'begin', 'moltbook', target, **options))
 
-                with patch('boardmail.store.sqlite3.connect', connect):
+                with patch('sqlite3.connect', connect):
                     replaced, begun = run_reply_workers([lambda: invoke('replace'), lambda: invoke('begin')])
                 self.assertEqual(observed, [(True, False)])
                 self.assertTrue(committed.is_set())
@@ -495,8 +476,8 @@ os._exit(79)
         self.assertEqual(self.store.show('moltbook', uid(10))['reply_ref'], self.ref)
 
     def test_invalid_reply_marks_preserve_message_and_unknown_attempt(self):
-        self.store.mark('moltbook', uid(10), 'read')
-        self.store.mark('moltbook', uid(10), 'needs_reply')
+        mark(self.store, 'moltbook', uid(10), 'read')
+        mark(self.store, 'moltbook', uid(10), 'needs_reply')
         key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.command('begin', key=key)
         invalid_refs = (
@@ -527,9 +508,9 @@ os._exit(79)
                 ((scheme, character) for scheme in ('http', 'https') for character in ('a', 'я')), 20):
             with self.subTest(scheme=scheme, character=character):
                 target = uid(number)
-                self.store.save('moltbook', uid(2), [mail(number)])
-                self.store.mark('moltbook', target, 'read')
-                self.store.mark('moltbook', target, 'needs_reply')
+                arrive(self.store, 'moltbook', uid(2), [mail(number)])
+                mark(self.store, 'moltbook', target, 'read')
+                mark(self.store, 'moltbook', target, 'needs_reply')
                 prefix = scheme + '://board.example.invalid/reply/'
                 ref = prefix + character * (1024 - len(prefix))
                 self.assertEqual(len(ref), 1024)
@@ -563,9 +544,9 @@ os._exit(79)
                 ((scheme, character) for scheme in ('http', 'https') for character in ('a', 'я')), 20):
             with self.subTest(scheme=scheme, character=character):
                 target = uid(number)
-                self.store.save('moltbook', uid(2), [mail(number)])
-                self.store.mark('moltbook', target, 'read')
-                self.store.mark('moltbook', target, 'needs_reply')
+                arrive(self.store, 'moltbook', uid(2), [mail(number)])
+                mark(self.store, 'moltbook', target, 'read')
+                mark(self.store, 'moltbook', target, 'needs_reply')
                 key = self.command('prepare', id=target, body=self.body)[0]['reply']['idempotency_key']
                 self.command('begin', id=target, key=key)
                 prefix = scheme + '://board.example.invalid/reply/'
@@ -590,8 +571,8 @@ os._exit(79)
                         self.assertEqual(self.command('show', id=target)[0]['reply'], attempt_before)
 
     def test_valid_reply_marks_and_corrected_mark_allow_confirmation(self):
-        self.store.mark('moltbook', uid(10), 'read')
-        self.store.mark('moltbook', uid(10), 'needs_reply')
+        mark(self.store, 'moltbook', uid(10), 'read')
+        mark(self.store, 'moltbook', uid(10), 'needs_reply')
         key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.command('begin', key=key)
         attempt_before = self.command('show')[0]['reply']
@@ -604,7 +585,7 @@ os._exit(79)
                 self.assertEqual(self.command('show')[0]['reply'], attempt_before)
         result, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
         self.assertEqual((code, result['error']), (2, 'reply_reference_conflict'))
-        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        mark(self.store, 'moltbook', uid(10), 'replied', ref=self.ref)
         result, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
         self.assertEqual((code, result['reply']['state']), (0, 'confirmed'))
         self.assertEqual(result['message']['reply_ref'], self.ref)
@@ -612,7 +593,7 @@ os._exit(79)
         self.assertTrue(result['message']['needs_reply'])
 
     def test_legacy_reply_mark_is_never_overwritten_or_mistaken_for_verification(self):
-        self.store.mark('moltbook', uid(10), 'replied', ref=self.ref)
+        mark(self.store, 'moltbook', uid(10), 'replied', ref=self.ref)
         before = self.path.read_bytes()
         shown, code = self.command('show')
         self.assertEqual((code, shown['reply'], shown['next_action']), (0, None, 'inspect_recorded_reply'))
@@ -623,7 +604,7 @@ os._exit(79)
         key = self.command('prepare', id=uid(11), body=self.body)[0]['reply']['idempotency_key']
         self.command('begin', id=uid(11), key=key)
         other = self.ref + '-manual'
-        self.store.mark('moltbook', uid(11), 'replied', ref=other)
+        mark(self.store, 'moltbook', uid(11), 'replied', ref=other)
         before = self.path.read_bytes()
         result, code = self.command('confirm', id=uid(11), key=key, ref=self.ref, readback_body=self.body)
         self.assertEqual((code, result['error']), (2, 'reply_reference_conflict'))
@@ -654,7 +635,7 @@ os._exit(79)
     def test_confirmation_transaction_rolls_back_both_receipt_and_mark_on_failure(self):
         key = self.command('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.command('begin', key=key)
-        with self.store.connect(write=True) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("""CREATE TRIGGER refuse_reply_mark BEFORE UPDATE OF replied_at ON messages
                           BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END""")
         before = self.path.read_bytes()
@@ -669,9 +650,9 @@ os._exit(79)
         from boardmail.config import COVERAGE
         for n, source in enumerate([*COVERAGE, 'custom'], 1):
             with self.subTest(source=source):
-                self.store.save(source, uid(2), [mail(20)])
-                self.store.set_paused(source, True)
-                original = self.store.collection_state(source, uid(2), source)
+                arrive(self.store, source, uid(2), [mail(20)])
+                commands.execute(self.store, 'pause', source=source)
+                original = self.store.collection_state(source, uid(2), str(DESCRIBED))
                 board = FakeBoard([])  # It has no answer, and it is asked nothing.
                 result, _ = commands.execute(self.store, 'reply_prepare', source=source, id=uid(20), body=self.body, fetch=board)
                 key = result['reply']['idempotency_key']
@@ -681,7 +662,7 @@ os._exit(79)
                                  ref=self.ref, readback_body=self.body, fetch=board)
                 self.assertEqual(board.asked, [])
                 self.assertTrue(self.store.is_paused(source))
-                self.assertEqual(self.store.collection_state(source, uid(2), source), original)
+                self.assertEqual(self.store.collection_state(source, uid(2), str(DESCRIBED)), original)
 
 
 if __name__ == '__main__':

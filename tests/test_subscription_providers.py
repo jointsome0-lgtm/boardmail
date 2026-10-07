@@ -18,12 +18,12 @@ from uuid import UUID
 from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
-from boardmail import addressing, providers, subscriptions
+from boardmail import addressing, commands, providers, subscriptions
 from boardmail.adapters import Batch, collect_all, validate
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, status, uid
-from kit import Clock, fixed
+from kit import Clock, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, thread as claw_thread, threads as claw_threads
 from test_fruitflies import feed as fly_feed, post as fly_post
@@ -360,15 +360,14 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         client.per_page = 3
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "mail.sqlite3"
-            store = Store(database)
-            store.initialize({client.source: client.settings})
-            store.set_subscription(client.source, uid(400), True, client.settings)
+            store = new_inbox(database, {client.source: client.settings})
+            commands.execute(store, "subscribe", sources={client.source: client.settings}, source=client.source, thread=uid(400))
             def collect(db):
                 client.requests, client.fits = 0, 2  # The time of a pass is over after the root and one page.
                 return collect_all(db, {client.source: client.settings}, fetch=client)
             self.assertEqual(collect(store)["added"], 2)
-            store.mark(client.source, uid(411), "read")
-            store.mark(client.source, uid(411), "replied", ref="https://thecolony.ai/posts/" + uid(400) + "#comment-" + uid(999))
+            mark(store, client.source, uid(411), "read")
+            mark(store, client.source, uid(411), "replied", ref="https://thecolony.ai/posts/" + uid(400) + "#comment-" + uid(999))
             marked = store.show(client.source, uid(411))
             self.assertEqual(collect(Store(database))["added"], 2)
             self.assertEqual(collect(Store(database))["added"], 1)

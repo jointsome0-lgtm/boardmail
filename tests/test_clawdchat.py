@@ -7,11 +7,11 @@ from urllib.error import URLError
 from urllib.parse import urlsplit
 
 from boardmail import adapter_clawdchat as adapter
-from boardmail.adapters import Batch, validate
+from boardmail.adapters import validate
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, status
-from kit import Clock, fixed
+from kit import Clock, fixed, mark, new_inbox, one_pass
 
 KEY = "synthetic-key-only"
 
@@ -88,23 +88,24 @@ class ClawdChatTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.store = Store(Path(self.temp.name) / "inbox.sqlite3")
-        self.store.initialize()
+        self.store = new_inbox(Path(self.temp.name) / "inbox.sqlite3")
         self.board = Board()
-        self.settings = {"account_id": uid(1), "api_key_file": key_file(self)}
+        self.settings = {"account_id": uid(1), "api_key_file": key_file(self), "adapter": "clawdchat"}
 
     def collect(self):
-        self.store.prepare_collection()
-        known, state, revision = self.store.collection_state("clawd", uid(1), "clawdchat")
+        batch, added = one_pass(self.store, "clawd", self.settings, self.board)
+        self.assertNotIn("PRIVATE NOTIFICATION", json.dumps(batch.state))
+        self.assertNotIn("PRIVATE NOTIFICATION", json.dumps(batch.messages))
+        return batch, added
+
+    def alone(self, state, known=()):
+        """A pass that has no inbox file: it gets its state and what the passes before it found from the test."""
         before = json.dumps(state)
         batch = adapter.collect(self.settings, state, frozenset(known), fetch=self.board)
         self.assertEqual(json.dumps(state), before, "Input state is a snapshot")
         validate(batch)
-        added, stale = self.store.save_collection("clawd", uid(1), "clawdchat", revision, batch)
-        self.assertFalse(stale)
-        self.assertNotIn("PRIVATE NOTIFICATION", json.dumps(batch.state))
-        self.assertNotIn("PRIVATE NOTIFICATION", json.dumps(batch.messages))
-        return batch, added
+        self.assertNotIn("PRIVATE NOTIFICATION", json.dumps([batch.state, batch.messages]))
+        return batch
 
     def test_nested_comment_stays_visible_when_target_signal_arrives_next_pass(self):
         for number, later_type in ((70, "reply"), (71, "mention_comment")):
@@ -119,7 +120,7 @@ class ClawdChatTests(unittest.TestCase):
                 self.assertIsNone(page["messages"][0]["addressing"])
                 self.assertEqual(page["thread_activity"], [])
                 checkpoint = page["next_after"]
-                self.store.mark("clawd", uid(number), "read")
+                mark(self.store, "clawd", uid(number), "read")
                 stored = self.store.show("clawd", uid(number))
 
                 later = {**event(number, later_type), "id": uid(number + 2000)}
@@ -144,7 +145,7 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual([m["kind"] for m in batch.messages], ["reply_to_post", "reply_to_comment", "mention", "mention"])
         self.assertEqual(batch.messages[1]["parent_id"], uid(9))
         self.assertEqual(batch.messages[-1]["body"], "")
-        self.store.mark("clawd", uid(10), "needs_reply")
+        mark(self.store, "clawd", uid(10), "needs_reply")
         before = self.store.show("clawd", uid(10))
         self.assertEqual(self.collect()[1], 0)
         self.assertEqual(self.store.show("clawd", uid(10)), before)
@@ -193,26 +194,23 @@ class ClawdChatTests(unittest.TestCase):
     def test_full_queue_reports_overflow_and_revisits_affected_discovery_page(self):
         # 256 references wait for originals that the board no longer has. The queue holds no more.
         waiting = [{"id": uid(n), "post": uid(100), "kind": "reply_to_post", "is_post": False} for n in range(1000, 1256)]
-        self.store.prepare_collection()
-        self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state={"pending": waiting, "offset": 8}))
         self.board.events = [event(n) for n in range(10, 34)]
         self.board.originals = {uid(n): original(n) for n in range(10, 34)}
-        batch, added = self.collect()
-        self.assertEqual((batch.error, added, batch.unavailable), ("pending_overflow", 8, 8))
+        batch = self.alone({"pending": waiting, "offset": 8})
+        self.assertEqual((batch.error, len(batch.messages), batch.unavailable), ("pending_overflow", 8, 8))
         self.assertEqual(batch.state["offset"], 8, "The page at which a reference was lost is read again")
         held = [entry["id"] for entry in batch.state["pending"]]
         # The eight that were tried first went to the end of the queue. The sixteen after them were the oldest
         # when the two pages came, and each new reference took the place of one.
         self.assertEqual(held, [uid(n) for n in (*range(1024, 1256), *range(1000, 1008), *range(18, 26))])
-        self.assertEqual(self.store.known("clawd", uid(1)), {uid(n) for n in range(10, 18)})
-        batch, added = self.collect()
-        self.assertEqual((batch.error, added, batch.state["offset"]), (None, 0, 16), "Nothing is lost now, so the sweep moves on")
+        found = {message["id"] for message in batch.messages}
+        self.assertEqual(found, {uid(n) for n in range(10, 18)})
+        batch = self.alone(batch.state, found)
+        self.assertEqual((batch.error, batch.messages, batch.state["offset"]), (None, [], 16), "Nothing is lost now, so the sweep moves on")
         self.assertEqual(len(batch.state["pending"]), 248)
 
     def test_slow_retry_backlog_cannot_consume_fresh_original_budget(self):
         pending = [{"id": uid(n), "post": uid(100), "kind": "reply_to_post", "is_post": False} for n in range(10, 20)]
-        self.store.prepare_collection()
-        self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state={"pending": pending, "offset": 0}))
         self.board.events = [event(20)]
         clock = Clock(1790000000)
 
@@ -223,9 +221,8 @@ class ClawdChatTests(unittest.TestCase):
 
         self.board.originals = {uid(20): original(20), **{uid(n): silent for n in range(10, 20)}}
         with fixed(clock):
-            batch, added = self.collect()
-        self.assertEqual(added, 1)
-        self.assertEqual(batch.messages[0]["id"], uid(20))
+            batch = self.alone({"pending": pending, "offset": 0})
+        self.assertEqual([message["id"] for message in batch.messages], [uid(20)])
         self.assertEqual(len(batch.state["pending"]), 10)
         # The fifteen seconds of the old references are four tries: three for the first of them, one for the next.
         self.assertEqual([path for path, _, _ in self.board.calls],
@@ -250,19 +247,20 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(len(self.store.known("clawd", uid(1))), 24)
 
     def test_wrong_token_owner_stops_before_notifications(self):
-        state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),
-                                          "kind": "reply_to_post", "is_post": False}]}
-        self.store.prepare_collection()
-        self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state=state))
+        # A pass leaves a reference to an original that the board does not have.
+        self.board.events = [event(10)]
+        self.collect()
+        _, state, revision = self.store.collection_state("clawd", uid(1), "clawdchat")
+        self.assertEqual([entry["id"] for entry in state["pending"]], [uid(10)])
         self.board.profile = {"id": uid(999)}
+        self.board.calls.clear()
         batch, added = self.collect()
         self.assertEqual(batch.error, "account_mismatch")
         self.assertEqual(added, 0)
         self.assertEqual([p for p, _, _ in self.board.calls], ["/agents/me"])
         self.assertEqual(batch.state, state)
-        self.assertEqual(self.store.collection_state("clawd", uid(1), "clawdchat")[2], 1)
-        self.assertEqual(self.store.save_collection("clawd", uid(1), "clawdchat", 1,
-            Batch(state={"offset": 16, "pending": []})), (0, False))
+        # The pass took no revision, so a pass that started before it and ends after it is not late.
+        self.assertEqual(self.store.collection_state("clawd", uid(1), "clawdchat")[2], revision)
 
     def test_local_setup_errors_keep_pending_state_and_planned_budget_is_partial(self):
         state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),

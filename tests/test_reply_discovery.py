@@ -7,11 +7,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from boardmail import commands, replies
-from boardmail.store import Store
 from examples.fixtures import FakeBoard, uid
+from kit import arrive, mark, new_inbox, on_statement
 from test_mail import mail
 
 
@@ -19,10 +18,10 @@ class ReplyDiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'mail.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = new_inbox(self.path)
 
     def attempt(self, source, number, state):
-        self.store.save(source, uid(2), [mail(number)])
+        arrive(self.store, source, uid(2), [mail(number)])
         result, _ = replies.execute(self.store, 'prepare', source, uid(number), body='Synthetic reply')
         key = result['reply']['idempotency_key']
         if state != 'prepared':
@@ -47,9 +46,9 @@ class ReplyDiscoveryTests(unittest.TestCase):
             expected.append((source, uid(10 + n), state))
         self.attempt('custom', 100, 'confirmed')
         self.attempt('moltbook', 101, 'confirmed')
-        self.store.mark('moltbook', uid(11), 'replied', ref='https://example.invalid/independent')
-        self.store.mark('moltbook', uid(11), 'read')
-        self.store.mark('moltbook', uid(11), 'clear_reply')
+        mark(self.store, 'moltbook', uid(11), 'replied', ref='https://example.invalid/independent')
+        mark(self.store, 'moltbook', uid(11), 'read')
+        mark(self.store, 'moltbook', uid(11), 'clear_reply')
         before = self.path.read_bytes()
         board = FakeBoard([])  # It has no answer, and it is asked nothing.
         status, code = commands.execute(self.store, 'status', fetch=board)
@@ -100,15 +99,17 @@ class ReplyDiscoveryTests(unittest.TestCase):
         key = self.attempt('moltbook', 10, 'unknown')
         with closing(sqlite3.connect(self.path)) as db:
             db.execute('PRAGMA journal_mode=WAL')
-        pending = replies.pending
+        waiting = [lambda: replies.execute(self.store, 'confirm', 'moltbook', uid(10), key=key,
+                                           ref='https://example.invalid/reply', readback_body='Synthetic reply')]
 
-        def confirm_after_status_started(db):
-            replies.execute(self.store, 'confirm', 'moltbook', uid(10), key=key,
-                            ref='https://example.invalid/reply', readback_body='Synthetic reply')
-            return pending(db)
+        def confirm_after_status_started(sql):
+            # The status has counted the messages and now turns to the attempts. A confirmation comes in between.
+            if 'FROM reply_attempts' in sql and waiting:
+                self.assertEqual(waiting.pop()()[0]['reply']['state'], 'confirmed')
 
-        with patch('boardmail.store.replies.pending', side_effect=confirm_after_status_started):
+        with on_statement(confirm_after_status_started):
             status = self.store.status()
+        self.assertEqual(waiting, [])
         self.assertEqual(status['counts']['replied'], 0)
         self.assertEqual(status['reply_attempts']['counts']['unknown'], 1)
         self.assertEqual(status['reply_attempts']['items'][0]['state'], 'unknown')
