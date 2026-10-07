@@ -15,6 +15,7 @@ from boardmail import providers
 from boardmail.mcp import create_server
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, settings, uid
+import kit
 from test_mail import mail
 
 try:
@@ -113,6 +114,17 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.store.save('moltbook',uid(2),[mail(10)])
                 page = await self.call(c, 'wait', {'after':0,'timeout':0})
                 self.assertEqual((page['event'],page['next_after']), ('messages',1))
+
+    async def test_wait_without_a_timeout_ends_after_the_30_seconds_that_its_schema_says(self):
+        # A minute passes each time the package asks how long it has waited, so this wait ends at its first look.
+        start = 1_800_000_000
+        clock = kit.Clock(start, step=60)
+        with kit.fixed(clock):
+            async with Client(create_server(self.store), raise_exceptions=True) as c:
+                await self.call(c, 'init')
+                self.assertEqual((await self.call(c, 'wait'))['event'], 'timeout')
+        # The 1800 seconds that the command line waits would take thirty looks more.
+        self.assertLess(clock.now - start, 1800)
 
     async def test_topics_share_cli_membership_and_global_marks_without_restarting_mcp(self):
         self.store.initialize({'moltbook': {'account_id': uid(2)}})

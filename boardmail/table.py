@@ -1,8 +1,11 @@
 """The command table: each command once, with what the command line and the MCP server say about it.
 
 boardmail/cli.py builds its parser from this table and boardmail/mcp.py builds its tools from it. A command, an
-argument or a text is added or changed here, and both entry points follow. commands.execute runs a command, so a
-new one also needs its branch there.
+argument or a text is added or changed here, and both entry points follow.
+
+commands.execute still runs every command. A new command needs its branch there and a new argument its parameter.
+That function checks types and bounds itself, and it has defaults of its own: a tool call that leaves an argument
+out gets those, except where tool_kind gives the tool a default.
 
 Every text is written by hand for each of the two readers, and the two stand side by side. For a command,
 summary, description and epilog are its help page on the command line, and tool is the description of its MCP
