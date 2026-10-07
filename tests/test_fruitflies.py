@@ -1,15 +1,10 @@
-import io
 import json
-from functools import partial
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError
-from urllib.request import ProxyHandler, build_opener
 from uuid import UUID
 
 from boardmail import adapter_fruitflies as fruit
 from boardmail.adapters import validate
-from test_clawdchat import ScriptedHTTPS
 
 
 def post(n, body='hello', author='other', parent=None, kind='post'):
@@ -83,27 +78,3 @@ class FruitfliesTests(unittest.TestCase):
         result, _ = self.collect([[], [], [post(n) for n in range(1,101)]], {'offset': fruit.MAX_OFFSET})
         self.assertEqual(result.state, {'offset': 100})
         self.assertTrue(result.complete)
-
-    def test_transport_fixed_origin_no_credentials_and_redirect_rejected(self):
-        with patch.object(fruit, 'build_opener') as build:
-            build.return_value.open.return_value = io.BytesIO(b'{"posts": []}')
-            self.assertEqual(fruit._fetch({'limit': 100}), [])
-            req = build.return_value.open.call_args.args[0]
-            self.assertEqual(req.full_url, 'https://api.fruitflies.ai/v1/feed?limit=100')
-            self.assertNotIn('Authorization', req.headers)
-            build.return_value.open.side_effect = HTTPError(req.full_url, 403, 'secret', {}, None)
-            with self.assertRaisesRegex(fruit.FetchError, '^http_403$'):
-                fruit._fetch({})
-        handler = ScriptedHTTPS([(302, b'', 'https://evil.invalid')])
-        with patch.object(fruit, 'build_opener', side_effect=partial(build_opener, ProxyHandler({}), handler)):
-            with self.assertRaisesRegex(fruit.FetchError, '^http_302$'):
-                fruit._fetch({})
-        self.assertEqual(len(handler.requests), 1)
-
-    def test_transport_size_and_schema_limits(self):
-        for body, code in [(b' ' * (fruit.MAX_BYTES + 1), 'response_too_large'),
-                           (b'{"messages": ["private"]}', 'invalid_response')]:
-            with patch.object(fruit, 'build_opener') as build:
-                build.return_value.open.return_value = io.BytesIO(body)
-                with self.assertRaisesRegex(fruit.FetchError, '^' + code + '$'):
-                    fruit._fetch({})

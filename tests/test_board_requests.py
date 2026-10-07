@@ -9,7 +9,6 @@ from itertools import count
 import json
 from pathlib import Path
 import tempfile
-import time
 from typing import NamedTuple
 import unittest
 from urllib.error import HTTPError
@@ -124,8 +123,6 @@ BOARDS = {
                       pages('', {}, {'/t/' + PAGE: fourclaw_page()}, **{'Content-Type': 'text/html'}), 2_000_000, 10),
 }
 FILES = {'board.key': KEY + '\n', 'board.totp': 'INVENTEDINVENTED\n'}
-# Fruitflies took the real clock by name when it was loaded, so its time budget ends in real time only.
-REAL_CLOCK = ('fruitflies',)
 
 
 def parts(answer):
@@ -145,14 +142,9 @@ def first(change):
     def case(name, healthy, clock):
         turn = count()
 
-        def passes(seconds):
-            clock.advance(seconds)
-            if name in REAL_CLOCK:
-                time.sleep(seconds)
-
         def board(request):
             answer = parts(healthy(request))
-            return answer if next(turn) else change(passes, *answer)
+            return answer if next(turn) else change(clock.advance, *answer)
         return board
     return case
 
@@ -243,9 +235,14 @@ class BoardRequestTests(unittest.TestCase):
             return 200, {}
 
         clock.now = START
-        with kit.Network({BOARDS[name].host: board if isinstance(board, Exception) else watched, ELSEWHERE: elsewhere}):
+        network = kit.Network({BOARDS[name].host: board if isinstance(board, Exception) else watched,
+                               ELSEWHERE: elsewhere})
+        with network:
             pass_, = kit.told(lambda step: step('one pass', 'collect', 'collect'), home, 'cli')
         self.assertEqual(strayed, [], 'A request followed a redirect to another host')
+        self.assertEqual(len(network.answers), len(requests))
+        self.assertEqual([answer for answer in network.answers if not answer.isclosed()], [],
+                         'The client left an answer open')
         return requests, pass_.outcome, json.loads(pass_.text)
 
     def section(self, name, clock):

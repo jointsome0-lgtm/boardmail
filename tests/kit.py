@@ -100,9 +100,12 @@ class Network:
     is sent as JSON, and one that is Pieces is sent piece by piece. A board that returns bytes or Pieces alone
     sends them as they are, so its answer need not be HTTP. A board that is an exception is a host that cannot be
     reached: every connection to it fails with that exception. A host that has no board fails the test.
+
+    answers has every answer that a client began to read, as http.client made it. The network holds on to
+    them, so an answer that its client did not close is still open when the test looks.
     """
     def __init__(self, boards):
-        self.boards = boards
+        self.boards, self.answers = boards, []
 
     def answer(self, scheme, host, sent, timeout):
         head, _, body = sent.partition(b'\r\n\r\n')
@@ -134,7 +137,15 @@ class Network:
                 connection.sock = Wire(lambda sent: self.answer(scheme, host, sent, connection.timeout))
             return connect
 
+        answers = self.answers
+
+        class Kept(http.client.HTTPResponse):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                answers.append(self)
+
         self.stack = ExitStack()
+        self.stack.enter_context(patch.object(http.client.HTTPConnection, 'response_class', Kept))
         self.stack.enter_context(patch.object(http.client.HTTPSConnection, 'connect', offline('https')))
         self.stack.enter_context(patch.object(http.client.HTTPConnection, 'connect', offline('http')))
         # A proxy from the environment would turn every request into one to the proxy.
