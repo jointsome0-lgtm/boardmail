@@ -67,32 +67,31 @@ def run(args):
     name = args.command
     if name in table.GROUPS:
         name += '_' + getattr(args, name + '_action')
+    command = table.COMMANDS[name]
     # Local reads need no config when --db is supplied; an explicit config still
     # enables remote context lookups unless --local is given.
     # Explicit init config seeds source identities even with a --db override.
-    needed = name in ("collect", "check", "reply_verify") or args.db is None or (
-        args.config is not None and (name in ("init", "pause", "resume", "subscribe", "unsubscribe") or
-                                    name in ("context", "expand") and not args.local))
+    needed = args.db is None or command.sources == table.NEEDED or (
+        command.sources == table.GIVEN and args.config is not None and not getattr(args, "local", False))
     data = config.load(args.config or Path.home()/".config/boardmail/config.json") if needed else None
     store = Store(args.db or data["database"])
-    options = {}
-    for argument in table.COMMANDS[name].arguments:
+    given = {}
+    for argument in command.arguments:
         value = getattr(args, argument.name)
-        options[argument.parameter or argument.name] = replies.read_body(value) if argument.file else value
-    def invoke():
-        return commands.execute(store, name, sources=data["sources"] if data else None, **options)
-    if name == "wait":
-        cancelled = threading.Event()
-        options["cancelled"] = cancelled
-        previous = {}
-        try:
-            for sig in (signal.SIGINT,signal.SIGTERM):
-                previous[sig] = signal.signal(sig,lambda *_:cancelled.set())
-            return invoke()
-        finally:
-            for sig,handler in previous.items():
-                signal.signal(sig,handler)
-    return invoke()
+        given[argument.name] = replies.read_body(value) if argument.file else value
+    def invoke(cancelled=None):
+        return commands.execute(store, name, sources=data["sources"] if data else None, cancelled=cancelled, **given)
+    if not command.waits:
+        return invoke()
+    cancelled = threading.Event()
+    previous = {}
+    try:
+        for sig in (signal.SIGINT,signal.SIGTERM):
+            previous[sig] = signal.signal(sig,lambda *_:cancelled.set())
+        return invoke(cancelled)
+    finally:
+        for sig,handler in previous.items():
+            signal.signal(sig,handler)
 
 
 def main(argv=None):

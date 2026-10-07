@@ -1,0 +1,440 @@
+What a command answers to an argument that it must not get, through a tool call.
+Made by tests/test_argument_errors.py.
+
+A line is one call that works, changed in what the line names. The values are in the test. After it stand the
+answers of two calls: first on an inbox with mail, then where no inbox file is. An answer is the error code and
+whether the result is flagged as an error. Where a call is not refused, the event of its result stands in place
+of an error code. "nothing wrong" is the call as it works.
+
+== init
+nothing wrong                                      database_exists error             initialized ok
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== collect
+nothing wrong                                      collected ok                      database_missing error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== settings
+nothing wrong                                      settings ok                       database_missing error
+scope is a word that is no choice                  invalid_arguments error           invalid_arguments error
+context is a word that is no choice                invalid_arguments error           invalid_arguments error
+reset is a word                                    invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+reset together with scope                          invalid_arguments error           invalid_arguments error
+
+== subscribe
+nothing wrong                                      subscribed ok                     database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+thread is left out                                 invalid_arguments error           invalid_arguments error
+thread is empty                                    invalid_arguments error           invalid_arguments error
+thread has a line break                            invalid_thread_id error           invalid_thread_id error
+thread has 37 characters                           invalid_arguments error           invalid_arguments error
+thread has 1025 characters                         invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+thread is no UUID                                  invalid_thread_id error           invalid_thread_id error
+source has a line break and thread is no UUID      invalid_arguments error           invalid_arguments error
+
+== unsubscribe
+nothing wrong                                      unsubscribed ok                   database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+thread is left out                                 invalid_arguments error           invalid_arguments error
+thread is empty                                    invalid_arguments error           invalid_arguments error
+thread has a line break                            invalid_thread_id error           invalid_thread_id error
+thread has 37 characters                           invalid_arguments error           invalid_arguments error
+thread has 1025 characters                         invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+thread is no UUID                                  invalid_thread_id error           invalid_thread_id error
+source has a line break and thread is no UUID      invalid_arguments error           invalid_arguments error
+
+== subscriptions
+nothing wrong                                      subscriptions ok                  database_missing error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== tags
+nothing wrong                                      tags ok                           database_missing error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== tag_add
+nothing wrong                                      thread_tag ok                     database_missing error
+tag is left out                                    invalid_arguments error           invalid_arguments error
+tag is empty                                       invalid_arguments error           invalid_arguments error
+tag has a line break                               invalid_arguments error           invalid_arguments error
+tag has 65 characters                              invalid_arguments error           invalid_arguments error
+tag has 1025 characters                            invalid_arguments error           invalid_arguments error
+tag has a capital letter                           invalid_arguments error           invalid_arguments error
+tag ends with a line break                         invalid_tag_name error            invalid_tag_name error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+thread is empty                                    invalid_arguments error           invalid_arguments error
+thread has a line break                            invalid_arguments error           invalid_arguments error
+thread has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+thread and id are both given                       invalid_arguments error           invalid_arguments error
+neither thread nor id is given                     invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+tag is no name and source has a line break         invalid_tag_name error            invalid_tag_name error
+tag is no name and neither thread nor id is given  invalid_arguments error           invalid_arguments error
+
+== tag_remove
+nothing wrong                                      thread_tag ok                     database_missing error
+tag is left out                                    invalid_arguments error           invalid_arguments error
+tag is empty                                       invalid_arguments error           invalid_arguments error
+tag has a line break                               invalid_arguments error           invalid_arguments error
+tag has 65 characters                              invalid_arguments error           invalid_arguments error
+tag has 1025 characters                            invalid_arguments error           invalid_arguments error
+tag has a capital letter                           invalid_arguments error           invalid_arguments error
+tag ends with a line break                         invalid_tag_name error            invalid_tag_name error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+thread is empty                                    invalid_arguments error           invalid_arguments error
+thread has a line break                            invalid_arguments error           invalid_arguments error
+thread has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+thread and id are both given                       invalid_arguments error           invalid_arguments error
+neither thread nor id is given                     invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+tag is no name and source has a line break         invalid_tag_name error            invalid_tag_name error
+tag is no name and neither thread nor id is given  invalid_arguments error           invalid_arguments error
+
+== tag_show
+nothing wrong                                      tag ok                            database_missing error
+tag is left out                                    invalid_arguments error           invalid_arguments error
+tag is empty                                       invalid_arguments error           invalid_arguments error
+tag has a line break                               invalid_arguments error           invalid_arguments error
+tag has 65 characters                              invalid_arguments error           invalid_arguments error
+tag has 1025 characters                            invalid_arguments error           invalid_arguments error
+tag has a capital letter                           invalid_arguments error           invalid_arguments error
+tag ends with a line break                         invalid_tag_name error            invalid_tag_name error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== pause
+nothing wrong                                      paused ok                         database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            source_not_found error            database_missing error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== resume
+nothing wrong                                      resumed ok                        database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            source_not_found error            database_missing error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== status
+nothing wrong                                      status ok                         database_missing error
+require_fresh is a word                            invalid_arguments error           invalid_arguments error
+stale_after is -1                                  invalid_arguments error           invalid_arguments error
+stale_after is 2147483648                          invalid_arguments error           invalid_arguments error
+stale_after is a word                              invalid_arguments error           invalid_arguments error
+stale_after is 1.5                                 invalid_arguments error           invalid_arguments error
+stale_after is 2.0                                 invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== check
+nothing wrong                                      messages ok                       database_missing error
+after is -1                                        invalid_arguments error           invalid_arguments error
+after is 9223372036854775808                       invalid_arguments error           invalid_arguments error
+after is a word                                    invalid_arguments error           invalid_arguments error
+after is 1.5                                       invalid_arguments error           invalid_arguments error
+after is 2.0                                       invalid_arguments error           invalid_arguments error
+limit is 0                                         invalid_arguments error           invalid_arguments error
+limit is 501                                       invalid_arguments error           invalid_arguments error
+limit is a word                                    invalid_arguments error           invalid_arguments error
+limit is 1.5                                       invalid_arguments error           invalid_arguments error
+limit is 2.0                                       invalid_arguments error           invalid_arguments error
+scope is a word that is no choice                  invalid_arguments error           invalid_arguments error
+context is a word that is no choice                invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== list
+nothing wrong                                      messages ok                       database_missing error
+after is -1                                        invalid_arguments error           invalid_arguments error
+after is 9223372036854775808                       invalid_arguments error           invalid_arguments error
+after is a word                                    invalid_arguments error           invalid_arguments error
+after is 1.5                                       invalid_arguments error           invalid_arguments error
+after is 2.0                                       invalid_arguments error           invalid_arguments error
+limit is 0                                         invalid_arguments error           invalid_arguments error
+limit is 501                                       invalid_arguments error           invalid_arguments error
+limit is a word                                    invalid_arguments error           invalid_arguments error
+limit is 1.5                                       invalid_arguments error           invalid_arguments error
+limit is 2.0                                       invalid_arguments error           invalid_arguments error
+scope is a word that is no choice                  invalid_arguments error           invalid_arguments error
+context is a word that is no choice                invalid_arguments error           invalid_arguments error
+unread is a word                                   invalid_arguments error           invalid_arguments error
+through is -1                                      invalid_arguments error           invalid_arguments error
+through is 9223372036854775808                     invalid_arguments error           invalid_arguments error
+through is a word                                  invalid_arguments error           invalid_arguments error
+through is 1.5                                     invalid_arguments error           invalid_arguments error
+through is 2.0                                     invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+thread is empty                                    invalid_arguments error           invalid_arguments error
+thread has a line break                            invalid_arguments error           invalid_arguments error
+thread has 1025 characters                         invalid_arguments error           invalid_arguments error
+tag is empty                                       invalid_arguments error           invalid_arguments error
+tag has a line break                               invalid_arguments error           invalid_arguments error
+tag has 65 characters                              invalid_arguments error           invalid_arguments error
+tag has 1025 characters                            invalid_arguments error           invalid_arguments error
+tag has a capital letter                           invalid_arguments error           invalid_arguments error
+tag ends with a line break                         invalid_tag_name error            invalid_tag_name error
+untagged is a word                                 invalid_arguments error           invalid_arguments error
+thread is given without source                     invalid_arguments error           invalid_arguments error
+tag and untagged are both given                    invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+through is below after                             invalid_arguments error           invalid_arguments error
+tag is no name and source has a line break         invalid_tag_name error            invalid_tag_name error
+
+== wait
+nothing wrong                                      messages ok                       database_missing error
+after is -1                                        invalid_arguments error           invalid_arguments error
+after is 9223372036854775808                       invalid_arguments error           invalid_arguments error
+after is a word                                    invalid_arguments error           invalid_arguments error
+after is 1.5                                       invalid_arguments error           invalid_arguments error
+after is 2.0                                       invalid_arguments error           invalid_arguments error
+limit is 0                                         invalid_arguments error           invalid_arguments error
+limit is 501                                       invalid_arguments error           invalid_arguments error
+limit is a word                                    invalid_arguments error           invalid_arguments error
+limit is 1.5                                       invalid_arguments error           invalid_arguments error
+limit is 2.0                                       invalid_arguments error           invalid_arguments error
+scope is a word that is no choice                  invalid_arguments error           invalid_arguments error
+context is a word that is no choice                invalid_arguments error           invalid_arguments error
+timeout is -1                                      invalid_arguments error           invalid_arguments error
+timeout is a word                                  invalid_arguments error           invalid_arguments error
+timeout is 61, more than a tool takes              invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== show
+nothing wrong                                      message ok                        database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_message_id error          invalid_message_id error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+source and id each have a line break               invalid_message_id error          invalid_message_id error
+
+== mark
+nothing wrong                                      marked ok                         database_missing error
+action is left out                                 invalid_arguments error           invalid_arguments error
+action is a word that is no choice                 invalid_arguments error           invalid_arguments error
+ref is empty                                       reply_ref_required error          reply_ref_required error
+ref has a line break                               reply_ref_required error          reply_ref_required error
+ref has 1025 characters                            reply_ref_required error          reply_ref_required error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            message_not_found error           database_missing error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_message_id error          invalid_message_id error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+read with a ref                                    invalid_mark error                invalid_mark error
+read with a null ref                               marked ok                         database_missing error
+replied without a ref                              reply_ref_required error          reply_ref_required error
+replied with a null ref                            reply_ref_required error          reply_ref_required error
+replied with a ref that is no URL                  reply_ref_required error          reply_ref_required error
+replied without a ref and id has a line break      invalid_message_id error          invalid_message_id error
+
+== context
+nothing wrong                                      context ok                        database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            context error                     database_missing error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_message_id error          invalid_message_id error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+local is a word                                    invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+id is no UUID                                      invalid_message_id error          database_missing error
+id is no UUID and local                            context error                     database_missing error
+
+== expand
+nothing wrong                                      expanded ok                       database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+thread is left out                                 invalid_arguments error           invalid_arguments error
+thread is empty                                    invalid_arguments error           invalid_arguments error
+thread has a line break                            invalid_arguments error           invalid_arguments error
+thread has 1025 characters                         invalid_arguments error           invalid_arguments error
+through is left out                                invalid_arguments error           invalid_arguments error
+through is -1                                      invalid_arguments error           invalid_arguments error
+through is 9223372036854775808                     invalid_arguments error           invalid_arguments error
+through is a word                                  invalid_arguments error           invalid_arguments error
+through is 1.5                                     invalid_arguments error           invalid_arguments error
+through is 2.0                                     invalid_arguments error           invalid_arguments error
+after is -1                                        invalid_arguments error           invalid_arguments error
+after is 9223372036854775808                       invalid_arguments error           invalid_arguments error
+after is a word                                    invalid_arguments error           invalid_arguments error
+after is 1.5                                       invalid_arguments error           invalid_arguments error
+after is 2.0                                       invalid_arguments error           invalid_arguments error
+limit is 0                                         invalid_arguments error           invalid_arguments error
+limit is 101                                       invalid_arguments error           invalid_arguments error
+limit is a word                                    invalid_arguments error           invalid_arguments error
+limit is 1.5                                       invalid_arguments error           invalid_arguments error
+limit is 2.0                                       invalid_arguments error           invalid_arguments error
+local is a word                                    invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+through is below after                             invalid_arguments error           invalid_arguments error
+thread is no UUID                                  invalid_arguments error           database_missing error
+thread is no UUID and local                        expanded ok                       database_missing error
+
+== reply_list
+nothing wrong                                      reply_attempts ok                 database_missing error
+after is -1                                        invalid_arguments error           invalid_arguments error
+after is 9223372036854775808                       invalid_arguments error           invalid_arguments error
+after is a word                                    invalid_arguments error           invalid_arguments error
+after is 1.5                                       invalid_arguments error           invalid_arguments error
+after is 2.0                                       invalid_arguments error           database_missing error
+limit is 0                                         invalid_arguments error           invalid_arguments error
+limit is 101                                       invalid_arguments error           invalid_arguments error
+limit is a word                                    invalid_arguments error           invalid_arguments error
+limit is 1.5                                       invalid_arguments error           invalid_arguments error
+limit is 2.0                                       invalid_arguments error           database_missing error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== reply_prepare
+nothing wrong                                      reply_attempt ok                  database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+body is left out                                   invalid_arguments error           invalid_arguments error
+body is empty                                      invalid_arguments error           invalid_arguments error
+body has 65537 characters                          invalid_arguments error           invalid_arguments error
+replace_key is empty                               invalid_arguments error           invalid_arguments error
+replace_key has a line break                       invalid_arguments error           invalid_arguments error
+replace_key has 1025 characters                    invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+body of spaces                                     invalid_reply_body error          invalid_reply_body error
+body with a NUL                                    invalid_reply_body error          invalid_reply_body error
+body of 65536 characters that take two bytes each  invalid_reply_body error          invalid_reply_body error
+body of spaces and source has a line break         invalid_arguments error           invalid_arguments error
+
+== reply_begin
+nothing wrong                                      reply_attempt ok                  database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+key is left out                                    invalid_arguments error           invalid_arguments error
+key is empty                                       invalid_arguments error           invalid_arguments error
+key has a line break                               invalid_arguments error           invalid_arguments error
+key has 1025 characters                            invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== reply_show
+nothing wrong                                      reply_attempt ok                  database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+
+== reply_confirm
+nothing wrong                                      reply_attempt ok                  database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+key is left out                                    invalid_arguments error           invalid_arguments error
+key is empty                                       invalid_arguments error           invalid_arguments error
+key has a line break                               invalid_arguments error           invalid_arguments error
+key has 1025 characters                            invalid_arguments error           invalid_arguments error
+ref is left out                                    invalid_arguments error           invalid_arguments error
+ref is empty                                       invalid_arguments error           invalid_arguments error
+ref has a line break                               reply_ref_required error          reply_ref_required error
+ref has 1025 characters                            invalid_arguments error           invalid_arguments error
+readback_body is left out                          invalid_arguments error           invalid_arguments error
+readback_body is empty                             invalid_arguments error           invalid_arguments error
+readback_body has 65537 characters                 invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+ref is no URL                                      reply_ref_required error          reply_ref_required error
+ref is no URL and the readback is spaces           invalid_reply_body error          invalid_reply_body error
+the readback is spaces and key has a line break    invalid_arguments error           invalid_arguments error
+
+== reply_verify
+nothing wrong                                      reply_attempt ok                  database_missing error
+source is left out                                 invalid_arguments error           invalid_arguments error
+source is empty                                    invalid_arguments error           invalid_arguments error
+source has a line break                            invalid_arguments error           invalid_arguments error
+source has 65 characters                           invalid_arguments error           invalid_arguments error
+source has 1025 characters                         invalid_arguments error           invalid_arguments error
+id is left out                                     invalid_arguments error           invalid_arguments error
+id is empty                                        invalid_arguments error           invalid_arguments error
+id has a line break                                invalid_arguments error           invalid_arguments error
+id has 1025 characters                             invalid_arguments error           invalid_arguments error
+key is left out                                    invalid_arguments error           invalid_arguments error
+key is empty                                       invalid_arguments error           invalid_arguments error
+key has a line break                               reply_key_mismatch error          database_missing error
+key has 1025 characters                            invalid_arguments error           invalid_arguments error
+ref is left out                                    invalid_arguments error           invalid_arguments error
+ref is empty                                       invalid_arguments error           invalid_arguments error
+ref has a line break                               reply_reference_unsupported error database_missing error
+ref has 1025 characters                            invalid_arguments error           invalid_arguments error
+an argument that the command does not have         invalid_arguments error           invalid_arguments error
+ref is no URL                                      reply_reference_unsupported error database_missing error
+ref is no URL and source has a line break          invalid_arguments error           invalid_arguments error
+
+== nope
+a command that is not there                        invalid_arguments error           invalid_arguments error

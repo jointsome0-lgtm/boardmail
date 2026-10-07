@@ -52,7 +52,7 @@ class ReadingTests(unittest.TestCase):
     def test_invalid_preferences_fail_before_collection_and_can_be_reset(self):
         before = self.path.read_bytes()
         with patch('boardmail.providers.collect_all') as collect:
-            for args in ({'scope': 'guess'}, {'context_mode': 'full'}, {'through': 2}):
+            for args in ({'scope': 'guess'}, {'context': 'full'}, {'through': 2}):
                 result, code = commands.outcome(lambda: commands.execute(self.store, 'check', sources={}, **args))
                 self.assertEqual((result['error'], code), ('invalid_arguments', 2))
             collect.assert_not_called()
@@ -76,7 +76,7 @@ class ReadingTests(unittest.TestCase):
             'direct_reply_to_your_message', 'recipient_unconfirmed_shown_by_default',
             'mention_detected_may_be_quoted', 'direct_reply_and_mention_detected'])
         self.assertEqual(next_page['messages'][1]['kind'], 'mention')
-        all_page = self.run_command(scope='all', context_mode='none')
+        all_page = self.run_command(scope='all', context='none')
         self.assertEqual(len(all_page['messages']), 6)
         self.assertEqual(all_page['messages'][0]['shown_because'],
                          'thread_activity_without_confirmed_direct_reply_or_mention')
@@ -119,9 +119,7 @@ class ReadingTests(unittest.TestCase):
         self.store.mark('moltbook', uid(10), 'read')
         self.store.save('moltbook', uid(2), [dict(mail(99), addressing='thread')])
         self.store.save('the-colony', uid(1), [dict(mail(10), addressing='thread')])
-        args = dict(summary['replay']['arguments'])
-        args['context_mode'] = args.pop('context')
-        replay = self.run_command(**args)
+        replay = self.run_command(**summary['replay']['arguments'])
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10), uid(11)])
         self.assertFalse(replay['more'])
         self.assertFalse(replay['checkpoint_safe'])

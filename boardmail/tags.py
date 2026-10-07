@@ -12,6 +12,7 @@ NAME_PATTERN = r"[a-z0-9][a-z0-9_-]{0,63}"
 def validate_name(tag):
     if not isinstance(tag, str) or re.fullmatch(NAME_PATTERN, tag) is None:
         raise MailError('invalid_tag_name')
+    return tag
 
 
 def names(db, source, thread, writing=False):
