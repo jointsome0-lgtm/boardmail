@@ -5,7 +5,8 @@ import tempfile
 import unittest
 
 from boardmail import providers
-from boardmail.adapters import collect_all, validate
+from boardmail.adapters import validate
+from boardmail.boards import collect_all
 from examples.fixtures import FixtureBoard, original, settings, uid
 from kit import mark, new_inbox
 

@@ -86,7 +86,7 @@ class Store:
             schema.upgrade(db)
 
     @staticmethod
-    def _subscriptions(db, source=None):
+    def selections(db, source=None):
         return [dict(row) for row in db.execute(
             "SELECT source,thread_id AS thread,subscribed_at FROM subscriptions" +
             (" WHERE source=?" if source is not None else "") + " ORDER BY source,thread_id",
@@ -95,7 +95,7 @@ class Store:
     def subscriptions(self, source=None):
         """Read local selections, including on older databases, without migration."""
         with self.connect() as db:
-            return self._subscriptions(db, source)
+            return self.selections(db, source)
 
     def set_subscription(self, source, thread, subscribed, settings=None):
         """An explicit local write; no remote baseline or automatic read marks."""
@@ -239,7 +239,7 @@ class Store:
         return result
 
     @staticmethod
-    def _message(row, db, writing=False):
+    def record(row, db, writing=False):
         # A connection that writes has no stand-ins, so the row and the tags come by way of the schema module.
         item = schema.whole("messages", row) if writing else dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
@@ -280,7 +280,7 @@ class Store:
                 (" AND read_at IS NULL" if unread else "") + " ORDER BY arrival_seq LIMIT ?",
                 (*values,limit+1)).fetchall()
             selected = rows[:limit]
-            result = {"messages": [self._message(r, db) for r in selected],
+            result = {"messages": [self.record(r, db) for r in selected],
                     "next_after": selected[-1]["arrival_seq"] if selected else after,
                     "more": len(rows)>limit, "sources": self._health(db),
                     "checkpoint_safe": not (unread or through is not None or source is not None or thread is not None
@@ -297,7 +297,7 @@ class Store:
             # Freshness is only the last successful poll's age. Backlog is separate.
             return {"counts": dict(counts), "sources": sources, "stale_after": stale_after,
                     "reply_attempts": replies.pending(db),
-                    "subscriptions": self._subscriptions(db),
+                    "subscriptions": self.selections(db),
                     "fresh": bool(sources) and all(s["status"] in ("ok", "paused") for s in sources)}
 
     def adapter(self, source):
@@ -308,7 +308,7 @@ class Store:
     def find(self, source, message_id):
         with self.connect() as db:
             row = db.execute("SELECT * FROM messages WHERE source=? AND id=?", (source,message_id)).fetchone()
-            return None if row is None else self._message(row, db)
+            return None if row is None else self.record(row, db)
 
     def show(self, source, message_id):
         message = self.find(source, message_id)
@@ -319,7 +319,7 @@ class Store:
     def replied_with(self, source, reply_ref, *, exclude_id):
         """All local records linked to one exact published reply, within this source."""
         with self.connect() as db:
-            return [self._message(row, db) for row in db.execute(
+            return [self.record(row, db) for row in db.execute(
                 "SELECT * FROM messages WHERE source=? AND reply_ref=? AND id<>? ORDER BY arrival_seq",
                 (source, reply_ref, exclude_id))]
 

@@ -12,7 +12,7 @@ import threading
 import unittest
 
 from boardmail import commands, config, providers
-from boardmail.adapters import collect_all
+from boardmail.boards import collect_all
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, together, uid
 from kit import Clock, fixed, mark

@@ -44,6 +44,10 @@ A board that ships with the package says in its own module what the core needs t
 
 No module outside the board modules holds the name of a board as a constant, and `tests/test_board_names.py` fails when one does. A text for people or agents may still name a board.
 
+## Imports between modules
+
+A module of the package imports another at the top of the file and never inside a function. It uses no name of another module that starts with an underscore. The imports form no cycle: `boardmail/errors.py` imports nothing of the package, and nothing imports `boardmail/cli.py` or `boardmail/mcp.py` but what starts the command line. `tests/test_import_graph.py` fails when one of these does not hold. When two modules need each other, the shared part moves to the one that is lower.
+
 ## Board requests
 
 `boardmail/transport.py` does the HTTP work of every board client: it sends the request, follows no redirect, stops at the size cap and when the time is over, reads the answer, says what a failed request is called, and reads the key of an account from its file. Its table `BOARDS` has one entry for each of the seven boards, which the module of the board enters when it loads, with everything that a board or an agent can see to differ from one board to the next: the headers, what a key may be, the size cap, the time limits and each error code. Nothing in it is unified, and nothing outside that entry decides one of these. What a client does around a request stays in the module of its board: its sign-in, its pauses, its retries, the time that it gives a pass, and what it keeps of an answer. No other module imports what sends a request, and `tests/test_board_requests.py` fails when one does.

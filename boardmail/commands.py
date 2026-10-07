@@ -99,7 +99,7 @@ def run_init(store, *, sources):
 def run_collect(store, *, sources, fetch):
     if sources is None:
         raise MailError("config_missing")
-    result = providers.collect_all(store, sources, fetch=fetch)
+    result = boards.collect_all(store, sources, fetch=fetch)
     return result, 1 if result["failed"] else 0
 
 
@@ -189,7 +189,7 @@ def run_check(store, *, sources, fetch, after, limit, scope, context):
     shown = reading(store, scope, context)
     if sources is None:
         raise MailError("config_missing")
-    result = providers.collect_all(store, sources, fetch=fetch)
+    result = boards.collect_all(store, sources, fetch=fetch)
     return {"event": "messages", **store.page(after, limit, **shown), "collection_performed": True,
             "collection": {key: result[key] for key in ("added", "failed", "errors")}}, 1 if result["failed"] else 0
 

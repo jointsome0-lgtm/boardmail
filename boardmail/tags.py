@@ -97,7 +97,7 @@ def metadata(db, source, thread):
 
 
 def show(db, store, tag):
-    subscriptions = {(r['source'], r['thread']) for r in store._subscriptions(db)}
+    subscriptions = {(r['source'], r['thread']) for r in store.selections(db)}
     members = [dict(row) for row in db.execute("""SELECT t.source,t.thread_id AS thread,t.tagged_at,
         COUNT(m.id) AS messages,COALESCE(SUM(m.id IS NOT NULL AND m.read_at IS NULL),0) AS unread
         FROM thread_tags t LEFT JOIN messages m ON t.source=m.source AND t.thread_id=m.thread_id

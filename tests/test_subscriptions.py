@@ -14,8 +14,8 @@ import unittest
 from unittest.mock import patch
 
 from boardmail import commands, config
-from boardmail.adapters import Batch, collect_all
-from boardmail.boards import BOARDS
+from boardmail.adapters import Batch
+from boardmail.boards import BOARDS, collect_all
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, original, settings, together, uid
 from kit import Clock, fixed, mark

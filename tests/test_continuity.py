@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import cli, commands, config, providers
+from boardmail import boards, cli, commands, config, providers
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, settings, uid
@@ -42,7 +42,7 @@ class DiscoveryTests(unittest.TestCase):
     def collect(self, cfg=None):
         # Each call is a fresh process from the store's view: state comes only from SQLite.
         self.fixture.settings = cfg = cfg or self.cfg
-        return providers.collect_all(Store(self.path), {'postingboard': cfg}, fetch=self.fixture)
+        return boards.collect_all(Store(self.path), {'postingboard': cfg}, fetch=self.fixture)
 
     def state(self):
         _, state, _ = Store(self.path).collection_state('postingboard', self.cfg['account_id'], 'postingboard')

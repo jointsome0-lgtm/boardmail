@@ -27,29 +27,6 @@ def candidate(about, ref, thread):
         raise MailError('reply_reference_unsupported') from None
 
 
-def check_source(db, source, settings, writing=False):
-    """Used before fetching and again inside the confirmation transaction."""
-    row = db.execute('SELECT * FROM sources WHERE source=?', (source,)).fetchone()
-    if row is None:
-        raise MailError('source_not_found')
-    if row['account_id'] != settings['account_id']:
-        raise MailError('account_mismatch')
-    if writing:
-        # No stand-ins on a connection that writes: the file may have no pause column and no adapter_state.
-        row = schema.whole('sources', row)
-    if row['paused']:
-        raise MailError('source_paused')
-    previous = None
-    if not writing or schema.has(db, 'adapter_state'):
-        previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
-    # Schema v1 had three fixed source names and no adapter aliases or state table.
-    expected = previous['adapter'] if previous else source if boards.declared(source).since_v1 else None
-    if expected is None:
-        raise MailError('reply_adapter_identity_unknown')
-    if expected != boards.owner(source, settings):
-        raise MailError('adapter_mismatch')
-
-
 def available(original, about):
     """Availability is a provider observation, not a promise about future visibility."""
     if any(original.get(k) not in (None, False, 0) for k in ('is_deleted', 'is_spam', 'is_hidden', 'held')):
@@ -97,7 +74,7 @@ def save_failed_check(store, source, message_id, attempt, thread, settings, evid
             if (not current or current['state'] != 'unknown' or current['idempotency_key'] != key
                     or current['body_sha256'] != attempt['body_sha256']):
                 return False, False
-            check_source(db, source, settings, writing=True)
+            replies.check_source(db, source, settings, writing=True)
             message = db.execute('SELECT thread_id,reply_ref FROM messages WHERE source=? AND id=?',
                                  (source, message_id)).fetchone()
             if (not message or message['thread_id'] != thread
@@ -141,7 +118,7 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
     if about is None:
         raise MailError('reply_verification_unsupported')
     with store.connect() as db:
-        check_source(db, source, settings)
+        replies.check_source(db, source, settings)
     thread = uuid(shown['message']['thread_id'])
     mid = candidate(about, ref, thread)
     if any(value not in (None, ref) for value in (attempt['reply_ref'], shown['message']['reply_ref'])):
@@ -151,7 +128,7 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
         # Commit the pointer before I/O. Never use receipt storage for unverified data:
         # older clients treat that table as evidence of a successful provider check.
         with store.connect(write=True) as db:
-            check_source(db, source, settings, writing=True)
+            replies.check_source(db, source, settings, writing=True)
             current = replies.saved(db, source, message_id, writing=True)
             if current is None or current['idempotency_key'] != key:
                 raise MailError('reply_key_mismatch')

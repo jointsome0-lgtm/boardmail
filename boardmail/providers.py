@@ -14,7 +14,6 @@ from urllib.parse import urlencode
 
 from . import addressing, subscriptions, transport
 from .adapters import Batch, Board, Originals, Replies, public_comment
-from .adapters import collect_all  # Kept for existing Python callers of the 0.1 collector.
 from .errors import MailError, uuid
 
 HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai",

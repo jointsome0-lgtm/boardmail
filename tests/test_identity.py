@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from urllib.parse import urlsplit
 
-from boardmail import config, providers
+from boardmail import boards, config, providers
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, settings, uid
@@ -41,12 +41,12 @@ class IdentityTests(unittest.TestCase):
 
             board = FakeBoard(answer)
             with fixed(Clock(1_000_000)):  # The wait of the client between two requests only moves the clock.
-                self.assertEqual(providers.collect_all(store, {'account-a': cfg}, fetch=board)['added'], 1)
+                self.assertEqual(boards.collect_all(store, {'account-a': cfg}, fetch=board)['added'], 1)
                 mark(store, 'account-a', uid(10), 'needs_reply')
                 row = store.show('account-a', uid(10))
                 before = store.collection_state('account-a', uid(1), 'postingboard')
                 key.write_text('synthetic-B'); calls.clear()
-                result = providers.collect_all(store, {'account-a': cfg}, fetch=board)
+                result = boards.collect_all(store, {'account-a': cfg}, fetch=board)
                 self.assertEqual((result['added'], result['errors'][0]['error']), (0, 'account_mismatch'))
                 self.assertEqual(calls, ['/v1/me'])
                 self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard'), before)
@@ -55,14 +55,14 @@ class IdentityTests(unittest.TestCase):
                 key.write_text('synthetic-A')
                 def key_fails():
                     key.write_text('synthetic-B')
-                    failed.append(providers.collect_all(Store(store.path), {'account-a': cfg}, fetch=board))
+                    failed.append(boards.collect_all(Store(store.path), {'account-a': cfg}, fetch=board))
                     key.write_text('synthetic-A')
                 failed = []
                 meanwhile.append(key_fails)
-                self.assertFalse(providers.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
+                self.assertFalse(boards.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
                 self.assertEqual(failed[0]['errors'][0]['error'], 'account_mismatch')
                 self.assertEqual(store.collection_state('account-a', uid(1), 'postingboard')[2], before[2] + 1)
-                self.assertFalse(providers.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
+                self.assertFalse(boards.collect_all(store, {'account-a': cfg}, fetch=board)['failed'])
 
     def test_every_authenticated_legacy_adapter_fails_closed_and_other_sources_continue(self):
         for source, cfg in settings().items():
@@ -74,7 +74,7 @@ class IdentityTests(unittest.TestCase):
                     board = FixtureBoard(source, cfg)
                     board.key = 'the-key-of-the-alias'
                     with fixed(Clock(900_000)):  # A pass that went well leaves its position and its time.
-                        self.assertFalse(providers.collect_all(store, {'alias': cfg}, fetch=board)['failed'])
+                        self.assertFalse(boards.collect_all(store, {'alias': cfg}, fetch=board)['failed'])
                     state, revision = store.collection_state('alias', cfg['account_id'], source)[1:]
                     last_ok = store.status()['sources'][0]['last_ok']
                     board.calls.clear()
@@ -91,7 +91,7 @@ class IdentityTests(unittest.TestCase):
                         ours = name == source and (name != 'postingboard' or headers == {'Authorization': 'Bearer the-key-of-the-alias'})
                         return (board if ours else other)(name, url, headers=headers, **asks)
                     with fixed(Clock(1_000_000)):  # The wait of the client of Postingboard only moves the clock.
-                        result = providers.collect_all(store, {'alias': cfg, 'good': {**good, 'adapter': 'postingboard'}}, fetch=fetch)
+                        result = boards.collect_all(store, {'alias': cfg, 'good': {**good, 'adapter': 'postingboard'}}, fetch=fetch)
                     self.assertEqual(result['errors'], [{'source': 'alias', 'error': error,
                         'next_action': 'restore_source_identity_or_use_a_new_source' if error == 'account_mismatch' else 'retry_collect'}])
                     self.assertGreater(result['added'], 0)

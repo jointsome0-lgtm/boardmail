@@ -10,7 +10,7 @@ import time
 
 # Also works from an unpacked source tree, without installing anything.
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from boardmail.providers import collect_all
+from boardmail.boards import collect_all
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, settings, together
 
