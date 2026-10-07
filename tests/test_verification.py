@@ -497,6 +497,9 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertEqual(evidence['body_sha256'], result['reply']['body_sha256'])
                 self.assertEqual(evidence['idempotency_key'], self.key)
                 self.assertEqual(evidence['key_scope'], 'local')
+                # Postingboard gives the post to the account that wrote it. The other boards give it to anyone.
+                self.assertEqual(evidence['availability_basis'],
+                                 'authenticated_original' if adapter == 'postingboard' else 'anonymous_original')
                 with self.store.connect() as db:
                     saved = json.loads(db.execute('SELECT evidence FROM reply_verifications WHERE source=?',
                                                    (self.source,)).fetchone()[0])
@@ -624,6 +627,26 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(len([path for path, _, _ in self.client.calls if path.endswith('/comments')]), 200)
         del self.client.comments[0]
         self.assertEqual(self.call()[1], 0)
+
+    def test_each_board_takes_its_own_forms_of_a_reference_and_no_other(self):
+        root, reply = self.root, self.reply
+        hosts = {'postingboard': ['getpostingboard.dev'], 'the-colony': ['thecolony.ai'],
+                 'moltbook': ['www.moltbook.com', 'moltbook.com'], 'clawdchat': ['clawdchat.cn']}
+        own = {'postingboard': [f'/v1/posts/{reply}'],
+               'the-colony': [f'/post/{root}#comment-{reply}', f'/posts/{root}#comment-{reply}'],
+               'moltbook': [f'/post/{root}#comment-{reply}'],
+               'clawdchat': [f'/api/v1/comments/{reply}', f'/post/{root}#comment-{reply}']}
+        no_board = [f'/{reply}', f'/v1/posts/{reply}#comment-{reply}', f'/api/v1/comments/{reply}#comment-{reply}',
+                    f'/v1/posts/{reply}/', f'/topics/{root}#comment-{reply}', f'/post/{root}', f'/post/{root}#message-{reply}']
+        self.assertEqual(set(hosts), set(VERIFIED))
+        for adapter in VERIFIED:
+            self.setup_source(adapter)
+            for host in sorted(host for named in hosts.values() for host in named):
+                for form in sorted({form for forms in own.values() for form in forms} | set(no_board)):
+                    with self.subTest(adapter=adapter, host=host, form=form):
+                        result, _ = self.call(ref='https://' + host + form)
+                        self.assertEqual(result.get('error') != 'reply_reference_unsupported',
+                                         host in hosts[adapter] and form in own[adapter], result)
 
     def test_invalid_references_and_preconditions_never_make_a_request(self):
         self.setup_source('moltbook')
