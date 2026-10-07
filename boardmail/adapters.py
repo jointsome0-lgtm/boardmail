@@ -8,6 +8,7 @@ import re
 import runpy
 from urllib.parse import urlsplit
 
+from . import transport
 from .config import LEGACY_ADAPTERS, PACKAGED_ADAPTERS, MailError, identifier
 from .errors import next_action
 
@@ -66,7 +67,12 @@ def validate(batch):
         raise MailError("invalid_adapter_result") from None
 
 
-def collect_all(store, sources, *, client_factory=None):
+def collect_all(store, sources, *, client_factory=None, fetch=transport.fetch):
+    """One pass over every source that is not paused.
+
+    fetch asks a board: the transport, or an invented board in its place. The modules of ClawdChat, Botnet,
+    Fruitflies and 4claw are handed it. Postingboard, Colony and Moltbook still take their client from
+    client_factory, and an adapter file of an operator gets the three arguments of the interface."""
     # This is the only automatic migration point. Local readers never migrate.
     store.prepare_collection()
     added, errors = 0, []
@@ -93,7 +99,8 @@ def collect_all(store, sources, *, client_factory=None):
                     if type(module.get("API_VERSION")) is not int or module["API_VERSION"] != 1:
                         raise MailError("adapter_version_unsupported")
                     try:
-                        batch = module["collect"](settings, state, frozenset(known))
+                        asks = {"fetch": fetch} if adapter in PACKAGED_ADAPTERS else {}
+                        batch = module["collect"](settings, state, frozenset(known), **asks)
                     except (Exception, SystemExit):
                         raise MailError("adapter_failed") from None
             validate(batch)

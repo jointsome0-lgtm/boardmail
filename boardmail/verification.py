@@ -3,7 +3,7 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import adapter_clawdchat, providers, replies, schema
+from . import adapter_clawdchat, providers, replies, schema, transport
 from .config import LEGACY_ADAPTERS, MailError, uuid
 
 ADAPTERS = ('postingboard', 'the-colony', 'moltbook', 'clawdchat')
@@ -77,9 +77,13 @@ def available(original, *, adapter):
         raise MailError('reply_provider_status_unknown')
 
 
-def read(adapter, settings, mid, thread):
-    """Return the original and its observed status using fixed provider endpoints."""
-    client = adapter_clawdchat.Client(settings) if adapter == 'clawdchat' else providers.Client(adapter, settings)
+def read(adapter, settings, mid, thread, fetch=transport.fetch):
+    """Return the original and its observed status using fixed provider endpoints.
+
+    fetch asks the board: the transport, or an invented board in its place. The client of ClawdChat is handed
+    it. The other three boards do not take it yet."""
+    client = (adapter_clawdchat.Client(settings, fetch=fetch) if adapter == 'clawdchat'
+              else providers.Client(adapter, settings))
     if adapter == 'postingboard':
         original = client.get('/v1/posts/' + mid, authenticated=True)['post']
         root = uuid(original['root_id'])
@@ -160,7 +164,7 @@ def save_failed_check(store, source, message_id, attempt, thread, settings, evid
         return False, False
 
 
-def execute(store, sources, source, message_id, *, key, ref):
+def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fetch):
     shown, _ = replies.execute(store, 'show', source, message_id)
     attempt = shown['reply']
     if attempt is None:
@@ -208,7 +212,7 @@ def execute(store, sources, source, message_id, *, key, ref):
     evidence = {'adapter': adapter, 'reply_ref': ref, 'idempotency_key': key, 'key_scope': 'local',
                 'checked_at': int(time.time()), 'status': 'unverified', 'reason': None}
     try:
-        observed, body = read(adapter, settings, mid, thread)
+        observed, body = read(adapter, settings, mid, thread, fetch)
         evidence.update(observed)
         if observed['author_id'] != uuid(settings['account_id']):
             raise MailError('reply_author_mismatch')

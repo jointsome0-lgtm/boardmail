@@ -6,13 +6,14 @@ ancestry each provider actually shows. Empty subscriptions must not change a sin
 """
 from copy import deepcopy
 import io
+from itertools import groupby
 import json
 import re
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from uuid import UUID
 
 from boardmail import adapter_clawdchat as clawd
@@ -23,7 +24,8 @@ from boardmail.adapters import Batch, collect_all, validate
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
-from test_clawdchat import FixtureClient as ClawdChatClient, event as clawd_event, original as clawd_original
+from kit import Clock, fixed
+from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, thread as claw_thread, threads as claw_threads
 from test_fruitflies import feed as fly_feed, post as fly_post
 
@@ -444,38 +446,35 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         self.assertEqual(len(batch.state["subscriptions"]["roots"][uid(400)]["owners"]), 3)
 
 
-class ClawdThreadClient(ClawdChatClient):
-    """Adds the public comment listing with depth cut-offs and parent pages, plus the request cap."""
+class ClawdThreads(ClawdChat):
+    """Adds the public comment listing with depth cut-offs and parent pages.
+
+    page is the most comments that the board gives on one page, however many a request asks for. None: as many
+    as the request asks for."""
 
     def __init__(self):
         super().__init__()
-        self.threads, self.children, self.limit, self.requests, self.phases = {}, {}, clawd.MAX_REQUESTS, 0, []
+        self.threads, self.children, self.page = {}, {}, None
 
-    def phase(self, seconds):
-        self.phases.append(seconds)
+    def most(self, limit):
+        return min(limit, self.page or limit)
 
-    def get(self, path, params=None, *, authenticated=False):
-        if self.requests >= self.limit:
-            raise MailError("budget_exhausted")
-        self.requests += 1
+    def get(self, path, params, *, authenticated):
         match = re.fullmatch(r"/posts/([0-9a-f-]{36})/comments", path)
         if not match:
-            if path.startswith("/posts/") and path.rsplit("/", 1)[-1] not in self.originals:
-                raise MailError("http_404")
             return super().get(path, params, authenticated=authenticated)
-        self.calls.append((path, params, authenticated))
         assert not authenticated
-        root, params = match.group(1), dict(params or {})
+        root = match.group(1)
         if root not in self.threads:
-            raise MailError("http_404")
+            return 404
         nodes = self.children[params["parent_id"]] if params.get("parent_id") else self.threads[root]
-        skip, limit = params.get("skip", 0), params["limit"]
-        selected = deepcopy(nodes[skip:skip + limit])
+        skip = params.get("skip", 0)
+        selected = nodes[skip:skip + self.most(params["limit"])]
         return {"success": True, "comments": selected, "total": len(nodes), "comment_count": 0,
                 "returned_count": len(selected), "max_depth": params.get("max_depth", 2), "parent_id": params.get("parent_id")}
 
 
-class DepthLimitedClawdClient(ClawdThreadClient):
+class DepthLimitedClawd(ClawdThreads):
     """One finite tree; every response expands exactly the requested relative depth.
 
     Pagination selects only this page's roots. Counts use the entire underlying
@@ -515,16 +514,12 @@ class DepthLimitedClawdClient(ClawdThreadClient):
             chain(parent, 41)
         self.originals[uid(100)]["comment_count"] = len(self.nodes)
 
-    def get(self, path, params=None, *, authenticated=False):
+    def get(self, path, params, *, authenticated):
         if not path.endswith("/comments"):
             return super().get(path, params, authenticated=authenticated)
-        if self.requests >= self.limit:
-            raise MailError("budget_exhausted")
-        self.requests += 1
-        self.calls.append((path, dict(params), authenticated))
         assert not authenticated
         assert path == "/posts/" + uid(100) + "/comments"
-        depth, skip, limit = params["max_depth"], params["skip"], params["limit"]
+        depth, skip, limit = params["max_depth"], params["skip"], self.most(params["limit"])
         assert depth == 20 and skip >= 0 and limit > 0
         parent = params.get("parent_id")
         roots = self.edges[parent] if parent is not None else self.forest
@@ -545,16 +540,16 @@ class DepthLimitedClawdClient(ClawdThreadClient):
                 "max_depth": depth, "parent_id": parent}
 
 
-class DefensiveClawdClient(DepthLimitedClawdClient):
+class DefensiveClawd(DepthLimitedClawd):
     """Small finite trees with the same depth/count contract, plus explicit faults.
 
-    Keys select one head or direct-child page, not an entire root. Empty faults
-    deliberately contradict that page's remaining total; ordinary responses
-    still come from the complete edge map and expand all shallow replies.
+    Keys select one head or direct-child page, not an entire root. A fault that is a number is the HTTP status
+    that the board answers that page with. Empty faults deliberately contradict that page's remaining total;
+    ordinary responses still come from the complete edge map and expand all shallow replies.
     """
 
     def __init__(self):
-        ClawdThreadClient.__init__(self)
+        ClawdThreads.__init__(self)
         self.originals[uid(100)] = clawd_original(100, title="Defensive finite tree")
         self.forest, self.nodes, self.edges, self.faults = [], {}, {}, {}
 
@@ -571,16 +566,12 @@ class DefensiveClawdClient(DepthLimitedClawdClient):
         self.originals[uid(100)]["comment_count"] = len(self.nodes)
         return parent
 
-    def get(self, path, params=None, *, authenticated=False):
-        if not path.endswith("/comments"):
-            return super().get(path, params, authenticated=authenticated)
+    def get(self, path, params, *, authenticated):
         raw = super().get(path, params, authenticated=authenticated)
+        if not path.endswith("/comments"):
+            return raw
         fault = self.faults.get((params.get("parent_id"), params["skip"]))
-        if isinstance(fault, str):
-            raise MailError(fault)
-        if fault is not None:
-            raw.update(fault)
-        return raw
+        return fault if type(fault) is int else {**raw, **(fault or {})}
 
 
 def node(n, parent=None, author=2, replies=(), more=False, **changes):
@@ -588,89 +579,116 @@ def node(n, parent=None, author=2, replies=(), more=False, **changes):
             "replies": list(replies), "reply_count": len(replies) + (1 if more else 0), "has_more_replies": more}
 
 
+def seconds(board):
+    """The seconds that each phase of a pass had for a request, in the order of the phases. The clock of the pass
+    must stand still."""
+    return [left for left, _ in groupby(asked.left for asked in board.asked)]
+
+
+def listings(board):
+    """The query of each request for a page of comments."""
+    return [params for path, params, _ in board.calls if path.endswith("/comments")]
+
+
 class ClawdChatSubscriptionTests(unittest.TestCase):
-    def collect(self, client, subscribed, state=None, known=(), **extra):
-        cfg = {"account_id": uid(1), "subscriptions": [uid(n) for n in subscribed], "mention_aliases": ["sample"], **extra}
+    def setUp(self):
+        self.key = key_file(self)
+
+    def collect(self, board, subscribed, state=None, known=(), step=0):
+        """One pass over an invented board. With a step the clock moves by that many seconds each time the pass
+        looks at it, so the eleven seconds that the pass has for subscribed threads are over after a few requests:
+        after two of them at a step of 4, after three at a step of 3, and after ten at a step of 1."""
+        cfg = {"account_id": uid(1), "api_key_file": self.key, "subscriptions": [uid(n) for n in subscribed],
+               "mention_aliases": ["sample"]}
         before = json.dumps(state or {})
-        with patch.object(clawd, "Client", return_value=client):
-            batch = clawd.collect(cfg, state or {}, frozenset(known))
+        with fixed(Clock(1790000000, step)):
+            batch = clawd.collect(cfg, state or {}, frozenset(known), fetch=board)
         self.assertEqual(json.dumps(state or {}), before, "Input state is a snapshot")
         shape(self, batch)
         return batch
 
-    def thread(self, client):
-        client.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
+    def thread(self, board):
+        board.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
         deep = node(16, parent=15)
-        client.threads[uid(100)] = [node(11), node(12, author=1, replies=[node(13, parent=12)]),
-                                    node(14, parent=11), node(15, more=True), node(17, content="@sample look here")]
-        client.children[uid(15)] = [deep]
+        board.threads[uid(100)] = [node(11), node(12, author=1, replies=[node(13, parent=12)]),
+                                   node(14, parent=11), node(15, more=True), node(17, content="@sample look here")]
+        board.children[uid(15)] = [deep]
 
     def test_listed_tree_deep_children_and_shown_ownership(self):
-        client = ClawdThreadClient()
-        self.thread(client)
-        batch = self.collect(client, [100])
+        board = ClawdThreads()
+        self.thread(board)
+        batch = self.collect(board, [100])
         self.assertIsNone(batch.error)
         got = by_id(batch)
         self.assertEqual({int(UUID(k)): (m["kind"], m["addressing"]) for k, m in got.items()},
                          {11: ("thread_activity", "thread"), 13: ("thread_activity", "direct"), 14: ("thread_activity", "thread"),
                           15: ("thread_activity", "thread"), 16: ("thread_activity", "thread"), 17: ("thread_activity", "mention")})
         self.assertEqual({o["id"] for o in batch.originals}, {uid(100), uid(12)})
-        listing = [p for path, p, _ in client.calls if path.endswith("/comments")]
+        listing = listings(board)
         self.assertEqual(listing[0]["max_depth"], 20)
         self.assertEqual(listing[1]["parent_id"], uid(15), "Cut replies are fetched by parent page")
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
         self.assertTrue(batch.complete)
-        replay = self.collect(client, [100], batch.state, known=set(got))
+        replay = self.collect(board, [100], batch.state, known=set(got))
         self.assertEqual(replay.messages, [])
 
     def test_busy_notifications_leave_time_and_requests_for_subscriptions(self):
-        client = ClawdThreadClient()
-        self.thread(client)
-        client.events = [clawd_event(n) for n in range(200, 260)]
+        board = ClawdThreads()
+        self.thread(board)
+        board.events = [clawd_event(n) for n in range(200, 260)]
         for n in range(200, 260):
-            client.originals[uid(n)] = clawd_original(n)
+            board.originals[uid(n)] = clawd_original(n)
         state = {"offset": 0, "pending": [{"id": uid(n), "post": uid(100), "kind": "reply_to_post", "is_post": False, "types": ["comment"]} for n in range(300, 340)]}
         for n in range(300, 340):
-            client.originals[uid(n)] = clawd_original(n)
-        batch = self.collect(client, [100], state)
-        self.assertEqual(client.phases, [5, 12, 5, 12, 11], "Identity, shorter notification phases, then the reserve")
-        self.assertLessEqual(client.requests, clawd.MAX_REQUESTS)
-        self.assertTrue(any(path.endswith("/comments") for path, _, _ in client.calls), "Subscription still ran")
+            board.originals[uid(n)] = clawd_original(n)
+        batch = self.collect(board, [100], state)
+        self.assertEqual(seconds(board), [5, 12, 5, 12, 11], "Identity, shorter notification phases, then the reserve")
+        self.assertLessEqual(len(board.asked), clawd.MAX_REQUESTS)
+        self.assertTrue(listings(board), "Subscription still ran")
         self.assertIn(uid(11), by_id(batch))
         self.assertTrue(batch.state["pending"], "Notification backlog is retained for the next pass")
-        idle = ClawdThreadClient()
-        idle.events, idle.originals = list(client.events), dict(client.originals)
+        idle = ClawdThreads()
+        idle.events, idle.originals = list(board.events), dict(board.originals)
         without = self.collect(idle, [], deepcopy(state))
-        self.assertEqual(idle.phases, [5, 15, 5, 15], "Without subscriptions the pass is unchanged")
+        self.assertEqual(seconds(idle), [5, 15, 5, 15], "Without subscriptions the pass is unchanged")
         self.assertNotIn("subscriptions", without.state)
-        self.assertFalse(any(path.endswith("/comments") for path, _, _ in idle.calls))
+        self.assertEqual(listings(idle), [])
+        # Originals that the board does not give take all thirty requests that notification work has. The ten
+        # that are kept for subscribed threads are still there: the root, its head page and one parent page.
+        down = ClawdThreads()
+        self.thread(down)
+        down.events = list(board.events)
+        for n in (*range(200, 260), *range(300, 340)):
+            down.originals[uid(n)] = URLError("The board is not reached")
+        batch = self.collect(down, [100], state)
+        self.assertEqual(batch.error, "network_error")
+        root = "/posts/" + uid(100)
+        self.assertEqual([path for path, _, _ in down.calls[30:]], [root, root + "/comments", root + "/comments"])
+        self.assertTrue({uid(11), uid(16)} <= set(by_id(batch)))
 
     def test_cut_off_scan_resumes_with_parent_ownership(self):
-        client = ClawdThreadClient()
-        self.thread(client)
-        # Identity, notifications, root and one listing page fit; the parent page does not.
-        with patch.object(clawd, "MAX_REQUESTS", 4), patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
-            batch = self.collect(client, [100])
+        board = ClawdThreads()
+        self.thread(board)
+        # The root and one listing page fit in the time; the parent page does not.
+        batch = self.collect(board, [100], step=4)
         self.assertFalse(batch.complete)
         self.assertIsNone(batch.error, "A spent budget is incomplete progress, not a failed operation")
         self.assertIn(uid(11), by_id(batch))
         self.assertNotIn(uid(16), by_id(batch))
         progress = batch.state["subscriptions"]["roots"][uid(100)]
         self.assertEqual(progress["pending"], [[uid(15), 0, False]])
-        again = ClawdThreadClient()
+        again = ClawdThreads()
         self.thread(again)
         second = self.collect(again, [100], batch.state, known=set(by_id(batch)))
         self.assertEqual(set(by_id(second)), {uid(16)})
         self.assertEqual(by_id(second)[uid(16)]["addressing"], "thread")
         self.assertEqual(second.state["subscriptions"]["roots"][uid(100)]["pending"], [])
 
-    def passes(self, client, subscribed, count, requests, reserve):
+    def passes(self, board, subscribed, count, step):
         state, known, got, nexts = {}, set(), {}, []
         for _ in range(count):
-            client.requests = 0
-            client.calls.clear()
-            with patch.object(clawd, "MAX_REQUESTS", requests), patch.object(clawd, "SUBSCRIPTION_REQUESTS", reserve):
-                batch = self.collect(client, subscribed, state, known)
+            board.calls.clear()
+            batch = self.collect(board, subscribed, state, known, step=step)
             for message in batch.messages:
                 self.assertNotIn(message["id"], got, "No message is delivered twice")
                 got[message["id"]] = message
@@ -680,104 +698,104 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         return got, state, nexts
 
     def test_repeated_identical_budgets_reach_deep_children_and_another_root(self):
-        client = ClawdThreadClient()
-        self.thread(client)
-        client.originals[uid(101)] = clawd_original(101, title="Healthy", author={"id": uid(3), "name": "other"})
-        client.threads[uid(101)] = [node(21, author=3, post_id=uid(101))]
-        # Identity and notifications take two requests; the root and one listing fit per pass.
-        with patch.object(clawd, "COMMENT_PAGE", 3):
-            got, state, nexts = self.passes(client, [100, 101], count=5, requests=4, reserve=1)
+        board = ClawdThreads()
+        self.thread(board)
+        board.originals[uid(101)] = clawd_original(101, title="Healthy", author={"id": uid(3), "name": "other"})
+        board.threads[uid(101)] = [node(21, author=3, post_id=uid(101))]
+        board.page = 3
+        # The root and one listing fit in the time of each pass.
+        got, state, nexts = self.passes(board, [100, 101], count=5, step=4)
         self.assertEqual({int(UUID(k)): (m["kind"], m["addressing"]) for k, m in got.items()},
                          {11: ("thread_activity", "thread"), 13: ("thread_activity", "direct"), 14: ("thread_activity", "thread"),
                           15: ("thread_activity", "thread"), 16: ("thread_activity", "thread"), 17: ("thread_activity", "mention"),
                           21: ("thread_activity", "thread")})
         self.assertEqual(nexts[:3], [uid(101), uid(100), uid(101)], "The spent root waits a turn; the untouched one keeps it")
         self.assertEqual(state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
-        listing = [p for path, p, _ in client.calls if path.endswith("/comments")]
-        self.assertEqual(listing, [{"parent_id": uid(15), "max_depth": 20, "limit": 3, "skip": 0}],
+        self.assertEqual(listings(board), [{"parent_id": uid(15), "max_depth": 20, "limit": 20, "skip": 0}],
                          "The final pass drained the saved parent before any head page")
 
     def test_missing_parent_field_is_not_a_top_level_reply(self):
-        client = ClawdThreadClient()
-        client.originals[uid(100)] = clawd_original(100, title="Ours", author={"id": uid(1), "name": "me"})
+        board = ClawdThreads()
+        board.originals[uid(100)] = clawd_original(100, title="Ours", author={"id": uid(1), "name": "me"})
         bare = node(11)
         del bare["parent_id"]
-        client.threads[uid(100)] = [bare, node(12)]
-        got = by_id(self.collect(client, [100]))
+        board.threads[uid(100)] = [bare, node(12)]
+        got = by_id(self.collect(board, [100]))
         self.assertEqual((got[uid(11)]["addressing"], got[uid(12)]["addressing"]), (None, "direct"))
 
     def test_saved_parent_work_is_drained_before_the_head_is_rescanned(self):
-        client = ClawdThreadClient()
-        self.thread(client)
+        board = ClawdThreads()
+        self.thread(board)
         state = {"subscriptions": {"next": None, "roots": {uid(100): {"skip": 0, "done": True, "pending": [[uid(15), 0, False]]}}}}
-        batch = self.collect(client, [100], state)
+        batch = self.collect(board, [100], state)
         self.assertEqual(set(by_id(batch)), {uid(16)})
-        self.assertEqual([p.get("parent_id") for path, p, _ in client.calls if path.endswith("/comments")], [uid(15)])
+        self.assertEqual([p.get("parent_id") for p in listings(board)], [uid(15)])
         self.assertTrue(batch.complete)
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
 
     def test_nested_queue_overflow_retains_the_parent_page_between_passes(self):
-        state, known, batches, heads = {}, set(), [], 0
-        with patch.object(clawd, 'MAX_REQUESTS', 4), patch.object(clawd, 'SUBSCRIPTION_REQUESTS', 1), \
-                patch.object(clawd, 'MAX_PENDING_PARENTS', 1):
-            for _ in range(5):
-                client = ClawdThreadClient()
-                client.originals[uid(100)] = clawd_original(100, title='Thread', author={'id': uid(2), 'name': 'host'})
-                client.threads[uid(100)] = [node(11, more=True)]
-                client.children = {uid(11): [node(12, parent=11, more=True), node(13, parent=11, more=True)],
-                                   uid(12): [node(14, parent=12)], uid(13): [node(15, parent=13)]}
-                batch = self.collect(client, [100], state, known)
-                known.update(by_id(batch))
-                state = batch.state
-                batches.append(batch)
-                heads += sum(path.endswith('/comments') and not params.get('parent_id') for path, params, _ in client.calls)
-        self.assertFalse(batches[2].complete, 'The unserved branch still belongs to this scan')
-        self.assertEqual(known, {uid(n) for n in (11, 12, 13, 14, 15)})
-        self.assertTrue(batches[-1].complete)
-        self.assertEqual(heads, 1, 'Saved work completes before another head scan')
+        board = ClawdThreads()
+        board.originals[uid(100)] = clawd_original(100, title='Thread', author={'id': uid(2), 'name': 'host'})
+        # The page of comment 11 shows 21 replies that have more below them: one more than the queue of twenty takes.
+        cut = range(20, 41)
+        board.threads[uid(100)] = [node(11, more=True)]
+        board.children = {uid(11): [node(12, parent=11, replies=[node(n, parent=12, more=True) for n in cut])],
+                          **{uid(n): [node(n + 100, parent=n)] for n in cut}}
+        state, known, batches = {}, set(), []
+        for _ in range(3):
+            # A pass has the time for its root and nine pages.
+            batch = self.collect(board, [100], state, known, step=1)
+            known.update(by_id(batch))
+            state = batch.state
+            batches.append(batch)
+        self.assertEqual([batch.complete for batch in batches], [False, False, True],
+                         'The unserved branch still belongs to this scan')
+        self.assertEqual(batches[1].state['subscriptions']['roots'][uid(100)]['deferred'], [[uid(11), 0, False]],
+                         'The page waits for the replies that it queued')
+        self.assertEqual(known, {uid(n) for n in (11, 12, *cut, *(n + 100 for n in cut))})
+        parents = [params.get('parent_id') for params in listings(board)]
+        self.assertEqual((parents.count(None), parents.count(uid(11))), (1, 2),
+                         'Saved work completes before another head scan')
 
     def test_depth_limited_finite_tree_drains_from_empty_state_at_default_bounds(self):
-        self.assert_finite_tree_drains(DepthLimitedClawdClient())
+        self.assert_finite_tree_drains(DepthLimitedClawd())
 
     def test_depth_limited_tree_preserves_parent_pagination_between_passes(self):
-        with patch.object(clawd, "COMMENT_PAGE", 1):
-            client = DepthLimitedClawdClient()
-            self.assert_finite_tree_drains(client)
-        self.assertTrue(any(params.get("parent_id") and params["skip"] == 1
-                            for path, params, _ in client.calls if path.endswith("/comments")))
+        board = DepthLimitedClawd()
+        board.page = 1
+        self.assert_finite_tree_drains(board)
+        self.assertTrue(any(params.get("parent_id") and params["skip"] == 1 for params in listings(board)))
 
     def test_deferred_parent_keeps_ownership_and_next_offset_across_restart(self):
-        client = DepthLimitedClawdClient()
-        parent = client.forest[0]
+        board = DepthLimitedClawd()
+        parent = board.forest[0]
         for _ in range(19):
-            parent = client.edges[parent][0]
-        client.nodes[parent]["author"] = {"id": uid(1), "name": "reader"}
-        second_child = client.edges[parent][1]
+            parent = board.edges[parent][0]
+        board.nodes[parent]["author"] = {"id": uid(1), "name": "reader"}
+        second_child = board.edges[parent][1]
         state, known, retained = {}, set(), False
-        with patch.object(clawd, "COMMENT_PAGE", 1), patch.object(clawd, "MAX_REQUESTS", 4), \
-                patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
-            for _ in range(8):
-                client.requests = 0
-                batch = self.collect(client, [100], state, known)
-                self.assertIsNone(batch.error)
-                known.update(by_id(batch))
-                state = json.loads(json.dumps(batch.state))
-                pages = state["subscriptions"]["roots"][uid(100)].get("deferred", [])
-                retained = retained or [parent, 1, True] in pages
-                if second_child in by_id(batch):
-                    self.assertEqual(by_id(batch)[second_child]["addressing"], "direct")
-                    break
+        board.page = 1
+        for _ in range(8):
+            batch = self.collect(board, [100], state, known, step=4)
+            self.assertIsNone(batch.error)
+            known.update(by_id(batch))
+            state = json.loads(json.dumps(batch.state))
+            pages = state["subscriptions"]["roots"][uid(100)].get("deferred", [])
+            retained = retained or [parent, 1, True] in pages
+            if second_child in by_id(batch):
+                self.assertEqual(by_id(batch)[second_child]["addressing"], "direct")
+                break
         self.assertTrue(retained, "The next direct-child page retains its parent's ownership")
         self.assertIn(second_child, known)
 
-    def assert_finite_tree_drains(self, client):
-        self.assertEqual(len(client.nodes), 2040)
+    def assert_finite_tree_drains(self, board):
+        self.assertEqual(len(board.nodes), 2040)
         state, known, completed = {}, set(), False
         for _ in range(12):
-            client.requests = 0
-            batch = self.collect(client, [100], state, known)
+            board.asked.clear()
+            batch = self.collect(board, [100], state, known)
             self.assertIsNone(batch.error)
-            self.assertLessEqual(client.requests, clawd.MAX_REQUESTS)
+            self.assertLessEqual(len(board.asked), clawd.MAX_REQUESTS)
             delivered = set(by_id(batch))
             self.assertFalse(delivered & known, "Saved arrivals are not delivered twice")
             known.update(delivered)
@@ -791,192 +809,202 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
                 completed = True
                 break
         self.assertTrue(completed, "The finite depth-respecting tree must finish under identical budgets")
-        self.assertEqual(known, set(client.nodes), "Every finite branch must be collected")
+        self.assertEqual(known, set(board.nodes), "Every finite branch must be collected")
         self.assertEqual(state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
 
+    def wide(self, cut, ours=None):
+        """A board whose thread 100 shows comment 11 with these replies on its head page. Below each reply is one
+        more comment, on a page of its own. Its number is that of the reply plus 1000."""
+        board = ClawdThreads()
+        board.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
+        board.threads[uid(100)] = [node(11, replies=[node(n, parent=11, author=1 if n == ours else 2, more=True) for n in cut])]
+        for n in cut:
+            board.children[uid(n)] = [node(n + 1000, parent=n)]
+        return board
+
     def test_full_parent_queue_retains_the_page_until_its_children_are_serviced(self):
-        client = ClawdThreadClient()
-        client.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
-        client.threads[uid(100)] = [node(11, more=True), node(12, author=1, more=True), node(13, more=True)]
-        for parent in (11, 12, 13):
-            client.children[uid(parent)] = [node(parent + 20, parent=parent)]
-        with patch.object(clawd, "MAX_PENDING_PARENTS", 1):
-            batch = self.collect(client, [100])
+        # One reply more than the queue of twenty takes. Reply 30 is ours.
+        cut = range(20, 41)
+        board = self.wide(cut, ours=30)
+        batch = self.collect(board, [100])
         self.assertIsNone(batch.error)
         self.assertTrue(batch.complete)
         got = by_id(batch)
         self.assertEqual({int(UUID(k)): m["addressing"] for k, m in got.items()},
-                         {11: "thread", 13: "thread", 31: "thread", 32: "direct", 33: "thread"})
-        listing = [(p.get("parent_id"), p["skip"]) for path, p, _ in client.calls if path.endswith("/comments")]
-        self.assertEqual(listing, [(None, 0), (uid(13), 0), (None, 0), (uid(12), 0), (None, 0), (uid(11), 0)],
+                         {11: "thread", **{n: "thread" for n in cut if n != 30},
+                          **{n + 1000: "direct" if n == 30 else "thread" for n in cut}})
+        listing = [(p.get("parent_id"), p["skip"]) for p in listings(board)]
+        self.assertEqual(listing, [(None, 0), *[(uid(n), 0) for n in reversed(cut[1:])], (None, 0), (uid(20), 0)],
                          "The head page is reread at the same offset until every cut parent was queued")
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
-        with patch.object(clawd, "MAX_PENDING_PARENTS", 1), patch.object(clawd, "MAX_SERVED", 1):
-            bounded = self.collect(client, [100])
-        self.assertEqual(bounded.error, "pending_overflow", "Beyond the bound the page is consumed with an explicit error")
-        self.assertEqual(set(by_id(bounded)), {uid(11), uid(13), uid(33), uid(32)}, "Only the branch beyond the bound is missing, and the error says so")
+        # A page may queue 200 parents and is then read once more. With 221 it is over that bound.
+        cut = range(200, 421)
+        board = self.wide(cut)
+        state, known, errors = {}, set(), []
+        for _ in range(7):
+            bounded = self.collect(board, [100], state, known)
+            known.update(by_id(bounded))
+            state = bounded.state
+            errors.append(bounded.error)
+        self.assertEqual(errors, [None] * 5 + ["pending_overflow", None],
+                         "Beyond the bound the page is consumed with an explicit error")
+        self.assertEqual(known, {uid(n) for n in (11, *cut, *(n + 1000 for n in cut[1:]))},
+                         "Only the branch beyond the bound is missing, and the error says so")
+        self.assertTrue(bounded.complete)
 
     def test_interrupted_overflow_state_is_resumed_without_duplicate_parents(self):
-        client = ClawdThreadClient()
-        client.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
-        client.threads[uid(100)] = [node(11, more=True), node(12, more=True)]
-        client.children[uid(11)], client.children[uid(12)] = [node(31, parent=11)], [node(32, parent=12)]
+        board = ClawdThreads()
+        board.originals[uid(100)] = clawd_original(100, title="Thread", author={"id": uid(2), "name": "host"})
+        board.threads[uid(100)] = [node(11, more=True), node(12, more=True)]
+        board.children[uid(11)], board.children[uid(12)] = [node(31, parent=11)], [node(32, parent=12)]
         # The head page was read and parent 11 queued when the pass ended.
         state = {"subscriptions": {"next": None, "roots": {uid(100): {"skip": 0, "pending": [[uid(11), 0, False]], "served": {"head": [uid(11)]}}}}}
-        with patch.object(clawd, "MAX_PENDING_PARENTS", 1):
-            batch = self.collect(client, [100], state)
+        batch = self.collect(board, [100], state)
         self.assertEqual(set(by_id(batch)), {uid(11), uid(12), uid(31), uid(32)})
-        self.assertEqual([p.get("parent_id") for path, p, _ in client.calls if path.endswith("/comments")], [uid(11), None, uid(12)])
+        self.assertEqual([p.get("parent_id") for p in listings(board)], [uid(11), None, uid(12)])
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
 
     def test_missing_root_and_rotation_over_several_roots(self):
-        client = ClawdThreadClient()
-        self.thread(client)
-        batch = self.collect(client, [100, 101])
+        board = ClawdThreads()
+        self.thread(board)
+        batch = self.collect(board, [100, 101])
         self.assertEqual(batch.unavailable, 1)
         self.assertIn(uid(11), by_id(batch))
         self.assertEqual(batch.state["subscriptions"]["next"], uid(100))
 
     def test_unavailable_child_retires_only_its_unit_and_retries_next_cycle(self):
-        for code in ("http_403", "http_404", "http_410"):
-            with self.subTest(code=code):
-                client = DefensiveClawdClient()
-                client.chain(101, 21)
-                client.chain(201, 21)
-                client.chain(301, 1)
-                client.faults[(uid(220), 0)] = code
-                with patch.object(clawd, "COMMENT_PAGE", 2):
-                    batch = self.collect(client, [100])
-                self.assertEqual(set(by_id(batch)), set(client.nodes) - {uid(221)},
+        for status in (403, 404, 410):
+            with self.subTest(status=status):
+                board = DefensiveClawd()
+                board.chain(101, 21)
+                board.chain(201, 21)
+                board.chain(301, 1)
+                board.faults[(uid(220), 0)] = status
+                board.page = 2
+                batch = self.collect(board, [100])
+                self.assertEqual(set(by_id(batch)), set(board.nodes) - {uid(221)},
                                  "The independent parent and later head page still drain")
-                self.assertEqual((batch.error, batch.complete, batch.unavailable), (code, False, 1))
+                self.assertEqual((batch.error, batch.complete, batch.unavailable), ("http_" + str(status), False, 1))
                 self.assertIn(uid(100), {item["id"] for item in batch.originals})
                 self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 0, "pending": []})
-                client.requests = 0
-                client.faults.clear()
-                with patch.object(clawd, "COMMENT_PAGE", 2):
-                    retry = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+                board.faults.clear()
+                retry = self.collect(board, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
                 self.assertEqual(set(by_id(retry)), {uid(221)})
                 self.assertEqual((retry.error, retry.complete, retry.unavailable), (None, True, 0))
 
     def test_child_unavailability_keeps_healthy_root_offset_and_sibling_checkpoint(self):
-        client = DefensiveClawdClient()
-        client.chain(101, 21)
-        client.chain(201, 21)
-        client.chain(301, 1)
-        client.faults[(uid(220), 0)] = "http_404"
-        with patch.object(clawd, "COMMENT_PAGE", 2), patch.object(clawd, "MAX_REQUESTS", 5), \
-                patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
-            batch = self.collect(client, [100])
+        board = DefensiveClawd()
+        board.chain(101, 21)
+        board.chain(201, 21)
+        board.chain(301, 1)
+        board.faults[(uid(220), 0)] = 404
+        board.page = 2
+        # The time is over after the root, the first head page and the page that is not there.
+        batch = self.collect(board, [100], step=3)
         progress = batch.state["subscriptions"]["roots"][uid(100)]
         self.assertEqual(progress, {"skip": 2, "pending": [[uid(120), 0, False]]})
         self.assertEqual((batch.error, batch.complete, batch.unavailable), ("http_404", False, 1))
-        client.requests = 0
-        client.calls.clear()
-        resumed = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+        board.calls.clear()
+        resumed = self.collect(board, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
         self.assertEqual(set(by_id(resumed)), {uid(121), uid(301)})
-        self.assertEqual([p.get("parent_id") for path, p, _ in client.calls if path.endswith("/comments")],
+        self.assertEqual([p.get("parent_id") for p in listings(board)],
                          [uid(120), None], "The failed parent is not retried ahead of healthy saved work")
         self.assertTrue(resumed.complete)
 
     def test_unavailable_deferred_child_page_does_not_block_later_head(self):
-        client = DefensiveClawdClient()
-        parent = client.chain(101, 20)
-        client.chain(121, 1, parent)
-        client.chain(122, 1, parent)
-        client.chain(301, 1)
-        client.faults[(parent, 1)] = "http_410"
-        with patch.object(clawd, "COMMENT_PAGE", 1):
-            batch = self.collect(client, [100])
-        self.assertEqual(set(by_id(batch)), set(client.nodes) - {uid(122)})
+        board = DefensiveClawd()
+        parent = board.chain(101, 20)
+        board.chain(121, 1, parent)
+        board.chain(122, 1, parent)
+        board.chain(301, 1)
+        board.faults[(parent, 1)] = 410
+        board.page = 1
+        batch = self.collect(board, [100])
+        self.assertEqual(set(by_id(batch)), set(board.nodes) - {uid(122)})
         self.assertEqual((batch.error, batch.complete, batch.unavailable), ("http_410", False, 1))
-        listing = [(p.get("parent_id"), p["skip"]) for path, p, _ in client.calls if path.endswith("/comments")]
+        listing = [(p.get("parent_id"), p["skip"]) for p in listings(board)]
         self.assertEqual(listing, [(None, 0), (parent, 0), (parent, 1), (None, 1)])
 
     def test_unavailable_root_still_resets_only_that_root(self):
-        for code in ("http_403", "http_404", "http_410"):
-            with self.subTest(code=code):
-                client = DefensiveClawdClient()
-                client.chain(11, 1)
-                client.originals[uid(101)] = MailError(code)
+        for status in (403, 404, 410):
+            with self.subTest(status=status):
+                board = DefensiveClawd()
+                board.chain(11, 1)
+                board.originals[uid(101)] = status
                 state = {"subscriptions": {"next": uid(101), "roots": {
                     uid(101): {"skip": 7, "pending": [[uid(12), 0, False]]}}}}
-                batch = self.collect(client, [101, 100], state)
+                batch = self.collect(board, [101, 100], state)
                 self.assertEqual(set(by_id(batch)), {uid(11)})
                 self.assertEqual(batch.state["subscriptions"]["roots"][uid(101)], {})
                 self.assertEqual((batch.error, batch.complete, batch.unavailable), (None, True, 1))
 
     def test_empty_nonterminal_head_retains_offset_and_resumes_without_duplicates(self):
-        client = DefensiveClawdClient()
+        board = DefensiveClawd()
         for number in (11, 12, 13):
-            client.chain(number, 1)
-        client.faults[(None, 1)] = {"comments": [], "returned_count": 0}
-        with patch.object(clawd, "COMMENT_PAGE", 1):
-            batch = self.collect(client, [100])
+            board.chain(number, 1)
+        board.faults[(None, 1)] = {"comments": [], "returned_count": 0}
+        board.page = 1
+        batch = self.collect(board, [100])
         self.assertEqual(set(by_id(batch)), {uid(11)})
         self.assertEqual((batch.error, batch.complete), ("pagination_no_progress", False))
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(100)], {"skip": 1, "pending": []})
-        client.requests = 0
-        client.faults.clear()
-        retry = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+        board.faults.clear()
+        retry = self.collect(board, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
         self.assertEqual(set(by_id(retry)), {uid(12), uid(13)})
         self.assertEqual((retry.error, retry.complete), (None, True))
 
     def test_empty_nonterminal_parent_retains_active_or_deferred_position_and_ownership(self):
         for offset in (0, 1):
             with self.subTest(offset=offset):
-                client = DefensiveClawdClient()
-                parent = client.chain(101, 20)
-                client.nodes[parent]["author"] = {"id": uid(1), "name": "me"}
-                client.chain(121, 1, parent)
-                client.chain(122, 1, parent)
-                client.chain(301, 1)
-                client.faults[(parent, offset)] = {"comments": [], "returned_count": 0}
-                with patch.object(clawd, "COMMENT_PAGE", 1):
-                    batch = self.collect(client, [100])
+                board = DefensiveClawd()
+                parent = board.chain(101, 20)
+                board.nodes[parent]["author"] = {"id": uid(1), "name": "me"}
+                board.chain(121, 1, parent)
+                board.chain(122, 1, parent)
+                board.chain(301, 1)
+                board.faults[(parent, offset)] = {"comments": [], "returned_count": 0}
+                board.page = 1
+                batch = self.collect(board, [100])
                 self.assertEqual((batch.error, batch.complete), ("pagination_no_progress", False))
                 progress = batch.state["subscriptions"]["roots"][uid(100)]
                 self.assertEqual(progress["skip"], 1)
                 self.assertEqual(progress["pending"] + progress.get("deferred", []), [[parent, offset, True]])
                 self.assertEqual(bool(progress.get("deferred")), offset == 1)
-                client.requests = 0
-                client.faults.clear()
-                retry = self.collect(client, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
+                board.faults.clear()
+                retry = self.collect(board, [100], json.loads(json.dumps(batch.state)), set(by_id(batch)))
                 self.assertEqual(set(by_id(retry)), {uid(121), uid(122), uid(301)} - set(by_id(batch)))
                 self.assertEqual(by_id(retry)[uid(122)]["addressing"], "direct")
                 self.assertEqual((retry.error, retry.complete), (None, True))
 
     def test_empty_terminal_pages_finish_when_counts_shrink(self):
-        client = DefensiveClawdClient()
-        empty = self.collect(client, [100])
+        board = DefensiveClawd()
+        empty = self.collect(board, [100])
         self.assertEqual((empty.error, empty.complete, empty.messages), (None, True, []))
         for parent_page in (False, True):
             with self.subTest(parent_page=parent_page):
-                client = DefensiveClawdClient()
+                board = DefensiveClawd()
                 if parent_page:
-                    parent = client.chain(101, 20)
-                    client.chain(121, 1, parent)
-                    client.chain(122, 1, parent)
+                    parent = board.chain(101, 20)
+                    board.chain(121, 1, parent)
+                    board.chain(122, 1, parent)
                 else:
-                    client.chain(121, 1)
-                    client.chain(122, 1)
-                cap = 5 if parent_page else 4
-                with patch.object(clawd, "COMMENT_PAGE", 1), patch.object(clawd, "MAX_REQUESTS", cap), \
-                        patch.object(clawd, "SUBSCRIPTION_REQUESTS", 1):
-                    first = self.collect(client, [100])
+                    board.chain(121, 1)
+                    board.chain(122, 1)
+                board.page = 1
+                # The time is over before the page that would show comment 122.
+                first = self.collect(board, [100], step=3 if parent_page else 4)
                 self.assertFalse(first.complete)
                 self.assertIsNone(first.error)
                 if parent_page:
-                    client.edges[parent].remove(uid(122))
+                    board.edges[parent].remove(uid(122))
                 else:
-                    client.forest.remove(uid(122))
-                del client.nodes[uid(122)], client.edges[uid(122)]
-                client.originals[uid(100)]["comment_count"] = len(client.nodes)
-                client.requests = 0
-                client.calls.clear()
-                final = self.collect(client, [100], json.loads(json.dumps(first.state)), set(by_id(first)))
+                    board.forest.remove(uid(122))
+                del board.nodes[uid(122)], board.edges[uid(122)]
+                board.originals[uid(100)]["comment_count"] = len(board.nodes)
+                board.calls.clear()
+                final = self.collect(board, [100], json.loads(json.dumps(first.state)), set(by_id(first)))
                 self.assertEqual((final.error, final.complete, final.messages), (None, True, []))
-                listing = [p for path, p, _ in client.calls if path.endswith("/comments")]
+                listing = listings(board)
                 self.assertEqual(listing[0]["skip"], 1, "The checkpoint is tested against a now-terminal empty page")
                 self.assertEqual(listing[0].get("parent_id"), parent if parent_page else None)
 
@@ -984,11 +1012,11 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         for parent_page in (False, True):
             for total in (-1, True, 2**63, "1"):
                 with self.subTest(parent_page=parent_page, total=total):
-                    client = DefensiveClawdClient()
-                    parent = client.chain(101, 21)
+                    board = DefensiveClawd()
+                    parent = board.chain(101, 21)
                     key = (uid(120), 0) if parent_page else (None, 0)
-                    client.faults[key] = {"total": total}
-                    batch = self.collect(client, [100])
+                    board.faults[key] = {"total": total}
+                    batch = self.collect(board, [100])
                     self.assertEqual((batch.error, batch.complete), ("invalid_response", False))
                     progress = batch.state["subscriptions"]["roots"][uid(100)]
                     if parent_page:

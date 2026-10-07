@@ -399,7 +399,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             client = FixtureClient(name, config)
             client.fail = name == 'moltbook'
             return client
-        def collect(store, sources):
+        def collect(store, sources, **asks):
             return actual(store, sources, client_factory=factory)
         with patch.object(providers, 'collect_all', collect):
             async with Client(create_server(self.store,cfg), mode='2026-07-28', raise_exceptions=True) as c:
@@ -466,7 +466,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         self.store.initialize(cfg)
         actual = providers.collect_all
         with patch('boardmail.providers.Client', side_effect=AssertionError('unexpected network client')):
-            with patch.object(providers, 'collect_all', side_effect=lambda store, sources:
+            with patch.object(providers, 'collect_all', side_effect=lambda store, sources, **asks:
                               actual(store, sources, client_factory=FixtureClient)):
                 async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
                     process = await asyncio.create_subprocess_exec(
@@ -529,7 +529,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         self.store.initialize()
         started, release, second = threading.Event(), threading.Event(), threading.Event()
         calls = []
-        def collect(*args):
+        def collect(*args, **asks):
             calls.append(1)
             if len(calls) == 1:
                 started.set()

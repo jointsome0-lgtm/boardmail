@@ -4,7 +4,7 @@ import errno
 from functools import wraps
 import sqlite3
 
-from . import config, providers, replies, table, tags, verification
+from . import config, providers, replies, table, tags, transport, verification
 from .config import MailError
 from .errors import exit_code, next_action
 
@@ -63,8 +63,10 @@ def outcome(operation):
     return result, code
 
 
-def execute(store, name, /, *, sources=None, cancelled=None, **given):
-    """Run a command of the command table with what an entry point was given for its arguments."""
+def execute(store, name, /, *, sources=None, cancelled=None, fetch=transport.fetch, **given):
+    """Run a command of the command table with what an entry point was given for its arguments.
+
+    fetch asks a board for a command that can ask one: the transport, or an invented board in its place."""
     command = table.COMMANDS.get(name)
     if command is None:
         raise MailError("invalid_arguments")
@@ -73,13 +75,15 @@ def execute(store, name, /, *, sources=None, cancelled=None, **given):
         arguments["sources"] = sources
     if command.waits:
         arguments["cancelled"] = cancelled
+    if table.OPEN_WORLD in command.hints:
+        arguments["fetch"] = fetch
     return HANDLERS[name](store, **arguments)
 
 
 def handles(name):
     """Mark the function that runs a command. It is called with the store and with every argument of the command
     by name, as table.checked() leaves them. It gets sources or cancelled as well where the entry of the command
-    says so. It returns the result and the exit code."""
+    says so, and fetch where the command can ask a board. It returns the result and the exit code."""
     def keep(function):
         HANDLERS[name] = function
         return function
@@ -93,10 +97,10 @@ def run_init(store, *, sources):
 
 
 @handles("collect")
-def run_collect(store, *, sources):
+def run_collect(store, *, sources, fetch):
     if sources is None:
         raise MailError("config_missing")
-    result = providers.collect_all(store, sources)
+    result = providers.collect_all(store, sources, fetch=fetch)
     return result, 1 if result["failed"] else 0
 
 
@@ -182,11 +186,11 @@ def reading(store, scope, context):
 
 
 @handles("check")
-def run_check(store, *, sources, after, limit, scope, context):
+def run_check(store, *, sources, fetch, after, limit, scope, context):
     shown = reading(store, scope, context)
     if sources is None:
         raise MailError("config_missing")
-    result = providers.collect_all(store, sources)
+    result = providers.collect_all(store, sources, fetch=fetch)
     return {"event": "messages", **store.page(after, limit, **shown), "collection_performed": True,
             "collection": {key: result[key] for key in ("added", "failed", "errors")}}, 1 if result["failed"] else 0
 
@@ -226,13 +230,14 @@ def run_mark(store, *, action, ref, source, id):
 
 
 @handles("context")
-def run_context(store, *, sources, source, id, local):
-    return context(store, source, id, remote_settings(store, source, sources, local))
+def run_context(store, *, sources, fetch, source, id, local):
+    return context(store, source, id, remote_settings(store, source, sources, local), fetch=fetch)
 
 
 @handles("expand")
-def run_expand(store, *, sources, source, thread, through, after, limit, local):
-    return expand(store, source, thread, after, through, limit, remote_settings(store, source, sources, local))
+def run_expand(store, *, sources, fetch, source, thread, through, after, limit, local):
+    return expand(store, source, thread, after, through, limit, remote_settings(store, source, sources, local),
+                  fetch=fetch)
 
 
 @handles("reply_list")
@@ -279,8 +284,8 @@ def run_reply_confirm(store, *, source, id, key, ref, readback_body):
 
 @handles("reply_verify")
 @journal
-def run_reply_verify(store, *, sources, source, id, key, ref):
-    return verification.execute(store, sources, source, id, key=key, ref=ref)
+def run_reply_verify(store, *, sources, fetch, source, id, key, ref):
+    return verification.execute(store, sources, source, id, key=key, ref=ref, fetch=fetch)
 
 
 def remote_settings(store, source, sources, local):
@@ -326,29 +331,32 @@ class CachedClient:
 
 
 class Lookup:
-    """Original lookups for one command through a single client and budget."""
+    """Original lookups for one command through a single client and budget.
 
-    def __init__(self, adapter, settings, client_factory=None):
+    fetch asks the board: the transport, or an invented board in its place. The clients of ClawdChat and Botnet
+    are handed it. Postingboard, Colony and Moltbook still take their client from client_factory."""
+
+    def __init__(self, adapter, settings, client_factory=None, fetch=transport.fetch):
         self.adapter = adapter
         if adapter == "clawdchat":
             from . import adapter_clawdchat
-            client = client_factory(adapter, settings) if client_factory else adapter_clawdchat.Client(settings)
-            self.fetch = adapter_clawdchat.lookup
+            client = client_factory(adapter, settings) if client_factory else adapter_clawdchat.Client(settings, fetch=fetch)
+            self.lookup = adapter_clawdchat.lookup
         elif adapter == "botnet":
             from . import adapter_botnet
-            client = client_factory(adapter, settings) if client_factory else adapter_botnet.Client(settings)
-            self.fetch = adapter_botnet.lookup
+            client = client_factory(adapter, settings) if client_factory else adapter_botnet.Client(settings, fetch=fetch)
+            self.lookup = adapter_botnet.lookup
         else:
             client = (client_factory or providers.Client)(adapter, settings)
-            self.fetch = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
-                          "moltbook": providers.moltbook_lookup}[adapter]
+            self.lookup = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
+                           "moltbook": providers.moltbook_lookup}[adapter]
         self.client = CachedClient(client)
         self.originals = {}
 
     def __call__(self, mid, root=None):
         if self.adapter == "moltbook":
-            return self.fetch(self.client, mid, root, originals=self.originals)
-        return self.fetch(self.client, mid, root)
+            return self.lookup(self.client, mid, root, originals=self.originals)
+        return self.lookup(self.client, mid, root)
 
 
 def resolve(store, source, adapter, lookup, mid, root=None):
@@ -412,7 +420,7 @@ def parent_of(resolver, adapter, relations, root, authoritative):
     return parent
 
 
-def context(store, source, message_id, settings, *, client_factory=None):
+def context(store, source, message_id, settings, *, client_factory=None, fetch=transport.fetch):
     """Thread root, immediate parent and target. Reads local rows first, then
     supported originals when configured. Nothing is marked, locally or remotely."""
     lookup = None
@@ -422,7 +430,7 @@ def context(store, source, message_id, settings, *, client_factory=None):
         if adapter == "botnet":
             from .adapter_botnet import message_id as kind
         config.converted(kind, message_id, error="invalid_message_id")
-        lookup = Lookup(adapter, settings, client_factory)
+        lookup = Lookup(adapter, settings, client_factory, fetch)
     resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
     target, relations, authoritative = resolver(message_id)
     if relations is None:
@@ -443,7 +451,7 @@ def current(item):
     return item["status"] == "available" and item.get("remote_status", "available") == "available"
 
 
-def expand(store, source, thread, after, through, limit, settings, *, client_factory=None):
+def expand(store, source, thread, after, through, limit, settings, *, client_factory=None, fetch=transport.fetch):
     """Every saved message of one thread within (after, through], each with the
     context a singular lookup would give, through one client and one budget.
 
@@ -455,7 +463,7 @@ def expand(store, source, thread, after, through, limit, settings, *, client_fac
         config.converted(config.uuid, thread, error="invalid_arguments")
     page = store.page(after, limit, through=through, source=source, thread=thread, scope="all", context="none")
     rows = page["messages"]
-    lookup = Lookup(adapter, settings, client_factory) if settings is not None and rows else None
+    lookup = Lookup(adapter, settings, client_factory, fetch) if settings is not None and rows else None
     resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
     root = resolver(thread, thread) if rows else (element("unknown", id=thread), None, True)
     items, complete, exhausted = [], current(root[0]) if rows else True, False

@@ -1,21 +1,21 @@
 """Botnet delivery, recovery and credential boundaries, without a real account."""
+from contextlib import nullcontext
 from copy import deepcopy
-from email.message import Message
-import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from urllib.error import URLError
-from urllib.parse import parse_qs, unquote, urlsplit
-from urllib.request import BaseHandler, ProxyHandler, build_opener
-from urllib.response import addinfourl
+from urllib.parse import unquote, urlsplit
 
 from boardmail import adapter_botnet as adapter, commands
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError, load
 from boardmail.store import Store
+from examples.fixtures import FakeBoard, status
+from kit import Clock, fixed
+
+KEY = "synthetic-key-only"
 
 
 def uid(n):
@@ -38,9 +38,36 @@ def original(n, **changes):
             "author": {"id": "participant-" + uid(2), "name": "Other"}, **changes}
 
 
-class FixtureClient:
+def key_file(test):
+    """The file of an invented key, in a folder that is gone when the test ends."""
+    folder = tempfile.TemporaryDirectory()
+    test.addCleanup(folder.cleanup)
+    path = Path(folder.name) / "key"
+    path.write_text(KEY + "\n")
+    return path
+
+
+def slow(clock, seconds, answer=None):
+    """What a board has when its answer takes this many seconds to come. The clock moves by them, and where the
+    request had no more time than that, the transport calls the answer late."""
+    def given(asked):
+        clock.advance(seconds)
+        return MailError("budget_exhausted") if seconds >= asked.left else answer
+    return given
+
+
+class Board(FakeBoard):
+    """An invented Botnet at the transport seam: the profile of the account, its inbox, one topic and the public
+    messages by id. A message that it does not have is a 404.
+
+    What the board has for a request can also be a number, which is the HTTP status that it answers with, an
+    exception, which is how the request fails, or a function of the request that gives one of these. page_errors
+    has such a thing for the page of the inbox at a cursor, and topic_error for the topic.
+
+    calls has each request in short: its path below the API, its query with numbers as numbers, and whether it
+    carried the key. A request that carries the key where it must not, or none where it must, fails the test."""
     def __init__(self):
-        self.owner = OWNER
+        super().__init__(self.answer)
         self.profile = {"actor": {"id": OWNER}}
         self.events, self.calls = [], []
         self.page_errors = {}
@@ -54,11 +81,20 @@ class FixtureClient:
                             "reason": reason, "preview": "PRIVATE PREVIEW", "readAt": 1})
         self.originals[mid(n)] = original(n, **changes)
 
-    def phase(self, seconds):
-        pass
+    def answer(self, asked):
+        assert asked.board == "botnet" and asked.body is None, asked
+        assert asked.url.startswith(adapter.ORIGIN + "/api/forum/"), asked.url
+        private = "Authorization" in asked.headers
+        assert asked.headers == ({"Authorization": "Bearer " + KEY} if private else {}), asked.headers
+        path = urlsplit(asked.url).path.removeprefix("/api/forum")
+        params = {name: int(value) if value.isdigit() else value for name, value in asked.params.items()}
+        self.calls.append((path, params, private))
+        answer = self.get(path, params, authenticated=private)
+        if callable(answer):
+            answer = answer(asked)
+        return status(answer) if type(answer) is int else answer
 
-    def get(self, path, params=None, *, authenticated=False):
-        self.calls.append((path, params, authenticated))
+    def get(self, path, params, *, authenticated):
         if path == "/me":
             assert authenticated
             return self.profile
@@ -66,7 +102,7 @@ class FixtureClient:
             assert authenticated
             cursor = params.get("cursor")
             if cursor in self.page_errors:
-                raise MailError(self.page_errors[cursor])
+                return self.page_errors[cursor]
             ceiling = int(cursor.split(":")[1]) if cursor else 10000
             items = sorted((e for e in self.events if e["id"] < ceiling), key=lambda e: -e["id"])
             page = items[:params["limit"]]
@@ -75,13 +111,10 @@ class FixtureClient:
         assert not authenticated, "Public-original requests carried credentials"
         if path == "/topics/" + TOPIC:
             if self.topic_error:
-                raise MailError(self.topic_error)
+                return self.topic_error
             return {"id": TOPIC, "title": "Topic, not legacy thread", "description": "Public topic",
                     "createdAt": 1790593200000}
-        value = self.originals.get(unquote(path.rsplit("/", 1)[-1]), MailError("http_404"))
-        if isinstance(value, Exception):
-            raise value
-        return deepcopy(value)
+        return self.originals.get(unquote(path.rsplit("/", 1)[-1]), 404)
 
 
 class BotnetTests(unittest.TestCase):
@@ -91,18 +124,19 @@ class BotnetTests(unittest.TestCase):
         self.path = Path(temp.name)
         cfg = self.path / "config.json"
         cfg.write_text(json.dumps({"database": "mail.sqlite3", "sources": {
-            "botnet": {"account_id": OWNER, "api_key_file": "missing.key"}}}))
+            "botnet": {"account_id": OWNER, "api_key_file": "example.key"}}}))
+        self.key = self.path / "example.key"
+        self.key.write_text(KEY + "\n")
         self.settings = load(cfg)["sources"]["botnet"]
         self.store = Store(self.path / "mail.sqlite3")
         self.store.initialize()
-        self.client = FixtureClient()
+        self.board = Board()
 
     def collect(self):
         self.store.prepare_collection()
         known, state, revision = self.store.collection_state("botnet", OWNER, "botnet")
         before = deepcopy(state)
-        with patch.object(adapter, "Client", return_value=self.client):
-            batch = adapter.collect(self.settings, state, frozenset(known))
+        batch = adapter.collect(self.settings, state, frozenset(known), fetch=self.board)
         self.assertEqual(state, before)
         validate(batch)
         added, stale = self.store.save_collection("botnet", OWNER, "botnet", revision, batch)
@@ -111,10 +145,10 @@ class BotnetTests(unittest.TestCase):
         return batch, added
 
     def test_native_and_legacy_notifications_deliver_once_with_original_relationships(self):
-        self.client.add(10)
-        self.client.add(11, reason="mention", parentMessageId=mid(10))
-        self.client.events[-1]["messageId"] = mid(11)
-        self.client.add(12, author={"id": OWNER, "name": "Owner"})
+        self.board.add(10)
+        self.board.add(11, reason="mention", parentMessageId=mid(10))
+        self.board.events[-1]["messageId"] = mid(11)
+        self.board.add(12, author={"id": OWNER, "name": "Owner"})
         batch, added = self.collect()
         self.assertEqual(added, 2)
         self.assertTrue(batch.complete)
@@ -130,10 +164,10 @@ class BotnetTests(unittest.TestCase):
         self.assertEqual(self.store.status()["counts"]["latest_arrival"], 2)
         # A topic outage must not hide a readable parent or collapse two native
         # reasons. A null reason is a legacy mention, like an absent reason.
-        self.client.add(13, reason=None)
-        self.client.add(14, reason="reply", parentMessageId=mid(999))
-        self.client.events.append({**self.client.events[-1], "reason": "mention"})
-        self.client.topic_error = "http_503"
+        self.board.add(13, reason=None)
+        self.board.add(14, reason="reply", parentMessageId=mid(999))
+        self.board.events.append({**self.board.events[-1], "reason": "mention"})
+        self.board.topic_error = 503
         batch, added = self.collect()
         self.assertEqual((added, batch.error), (2, "http_503"))
         for n in (13, 14):
@@ -142,139 +176,80 @@ class BotnetTests(unittest.TestCase):
             self.store.set_subscription("botnet", TOPIC, True, self.settings)
 
     def test_new_head_backfill_and_failed_reference_survive_reopen_and_upstream_expiry(self):
-        for n in range(10, 16):
-            self.client.add(n)
-        self.client.originals[mid(14)] = MailError("network_error")
-        with patch.object(adapter, "PAGE_SIZE", 2):
+        for n in range(10, 30):
+            self.board.add(n)
+        self.board.originals[mid(14)] = URLError("The board is not reached")
+        self.collect()
+        self.store = Store(self.store.path)
+        self.board.add(30)  # Arrived ahead of the saved backwards cursor.
+        for _ in range(3):
             self.collect()
-            self.store = Store(self.store.path)
-            self.client.add(16)  # Arrived ahead of the saved backwards cursor.
-            for _ in range(3):
-                self.collect()
-        self.assertEqual(self.store.known("botnet", OWNER), {mid(n) for n in range(10, 17) if n != 14})
-        self.client.events.clear()  # The failed reference must outlive notifications.
-        self.client.originals[mid(14)] = original(14)
+        self.assertEqual(self.store.known("botnet", OWNER), {mid(n) for n in range(10, 31) if n != 14})
+        cursors = [params.get("cursor") for path, params, _ in self.board.calls if path == "/inbox"]
+        self.assertEqual(cursors, [None, None, "older:22", None, "older:14", None],
+                         "Each pass reads the head, and one older page until the sweep is at its end")
+        self.board.events.clear()  # The failed reference must outlive notifications.
+        self.board.originals[mid(14)] = original(14)
         batch, added = self.collect()
         self.assertEqual(added, 1)
         self.assertTrue(batch.complete)
         self.assertEqual(batch.state["pending"], [])
 
-    def test_overflow_and_bad_cursor_are_explicit_and_recover_without_dropping_pending(self):
-        for n in range(10, 14):
-            self.client.add(n)
-        self.client.originals[mid(13)] = MailError("http_404")
-        with patch.object(adapter, "MAX_PENDING", 2):
-            batch, added = self.collect()
-            self.assertEqual((batch.error, added, batch.unavailable), ("pending_overflow", 1, 1))
-            self.assertIn(mid(13), {x["id"] for x in batch.state["pending"]})
-            self.assertIsNone(batch.state.get("cursor"))
-            self.collect()
-            self.collect()
-        self.assertEqual(self.store.known("botnet", OWNER), {mid(10), mid(11), mid(12)})
-        for n in range(20, 24):
-            self.client.add(n)
-        with patch.object(adapter, "PAGE_SIZE", 2):
-            self.collect()
-            cursor = self.store.collection_state("botnet", OWNER, "botnet")[1]["cursor"]
-            self.client.page_errors[cursor] = "http_422"
-            batch, _ = self.collect()
-            self.assertEqual(batch.error, "http_422")
-            self.assertIsNone(batch.state["cursor"])
-            self.assertIn(mid(13), {x["id"] for x in batch.state["pending"]})
-
-        # A malformed item on an older page reports failure but cannot pin the
-        # scan there forever. Valid refs survive even a malformed page cursor.
-        self.client.page_errors.clear()
-        self.client.events.append({"id": 15, "reason": "mention", "threadId": None})
-        with patch.object(adapter, "PAGE_SIZE", 2):
-            self.collect()  # Head: 23, 22.
-            self.collect()  # Older page: 21, 20.
-            self.client.calls.clear()
-            batch, _ = self.collect()  # Older page: malformed 15, valid 13.
-            self.assertIn(("/inbox", {"limit": 2, "cursor": "older:20"}, True), self.client.calls)
-            self.assertEqual((batch.error, batch.state["cursor"]), ("invalid_response", "older:13"))
-            self.collect()
-            batch, _ = self.collect()
-        self.assertIsNone(batch.state["cursor"])
-        self.client.add(30)
-        self.client.bad_cursor = True
-        batch, added = self.collect()
-        self.assertEqual((batch.error, added), ("invalid_response", 1))
-        self.assertIn(mid(30), self.store.known("botnet", OWNER))
-
     def test_identity_and_public_original_failures_never_save_unconfirmed_text(self):
-        self.client.add(10)
-        self.client.profile = {"actor": {"id": "other-account"}}
+        self.board.add(10)
+        self.board.profile = {"actor": {"id": "other-account"}}
         batch, added = self.collect()
         self.assertEqual((batch.error, added, batch.state), ("account_mismatch", 0, {}))
-        self.assertEqual([p for p, _, _ in self.client.calls], ["/me"])
-        self.client.profile = {"actor": {"id": OWNER}}
-        self.client.originals[mid(10)] = original(999, body="WRONG BODY")
+        self.assertEqual([p for p, _, _ in self.board.calls], ["/me"])
+        self.board.profile = {"actor": {"id": OWNER}}
+        self.board.originals[mid(10)] = original(999, body="WRONG BODY")
         batch, added = self.collect()
         self.assertEqual((batch.error, added), ("invalid_response", 0))
         self.assertEqual(batch.state["pending"], [{"id": mid(10), "reasons": ["reply"]}])
-        self.client.page_errors[None] = "http_429"
-        self.client.calls.clear()
+        self.board.page_errors[None] = 429
+        self.board.calls.clear()
         batch, _ = self.collect()
         self.assertEqual(batch.error, "http_429")
-        self.assertEqual([p for p, _, _ in self.client.calls], ["/me", "/inbox"])
+        self.assertEqual([p for p, _, _ in self.board.calls], ["/me", "/inbox"])
 
     def test_context_keeps_topic_separate_from_parent_and_rejects_cross_topic_parent(self):
-        self.client.add(10)
+        self.board.add(10)
         self.collect()
-        self.client.calls.clear()
+        self.board.calls.clear()
+        self.key.unlink()  # What is public is read without the key of the account.
         before = self.store.path.read_bytes()
-        with patch.object(adapter, "Client", return_value=self.client):
-            result, code = commands.execute(self.store, "context", source="botnet", id=mid(10),
-                                            sources={"botnet": self.settings})
-            self.assertEqual((code, result["root"]["id"], result["parent"]["id"]), (0, TOPIC, OPENER))
-            opener, code = commands.execute(self.store, "context", source="botnet", id=OPENER,
-                                            sources={"botnet": self.settings})
-            self.assertEqual((code, opener["parent"]["status"]), (0, "none"))
-            self.client.originals[OPENER]["topicId"] = uid(999)
-            result, code = commands.execute(self.store, "context", source="botnet", id=mid(10),
-                                            sources={"botnet": self.settings})
-            self.assertEqual((code, result["parent"]["status"]), (1, "unavailable"))
-        self.assertTrue(all(not auth for _, _, auth in self.client.calls))
+        asks = {"sources": {"botnet": self.settings}, "fetch": self.board}
+        result, code = commands.execute(self.store, "context", source="botnet", id=mid(10), **asks)
+        self.assertEqual((code, result["root"]["id"], result["parent"]["id"]), (0, TOPIC, OPENER))
+        opener, code = commands.execute(self.store, "context", source="botnet", id=OPENER, **asks)
+        self.assertEqual((code, opener["parent"]["status"]), (0, "none"))
+        self.board.originals[OPENER]["topicId"] = uid(999)
+        result, code = commands.execute(self.store, "context", source="botnet", id=mid(10), **asks)
+        self.assertEqual((code, result["parent"]["status"]), (1, "unavailable"))
+        self.assertEqual(len(self.board.calls), 8)
+        self.assertTrue(all(not auth for _, _, auth in self.board.calls))
         self.assertEqual(self.store.path.read_bytes(), before)
 
     def pending_backlog(self):
         for number in range(10, 70):
-            self.client.add(number)
+            self.board.add(number)
         return {"pending": [{"id": mid(number), "reasons": ["reply"]} for number in range(10, 70)]}
 
-    def collect_with_real_client(self, state, *, monotonic=lambda: 0, before_response=None):
+    def collect_command(self, state, clock=None):
+        """One pass of the collect command over a saved state: what it gave and its exit code. With a clock the
+        time stands still for the pass unless the board moves it."""
         self.store.prepare_collection()
         self.store.save_collection("botnet", OWNER, "botnet", 0, Batch(state=state))
         self.store.save("botnet", OWNER, [], now=1)
-        with patch.object(adapter.time, "monotonic", side_effect=monotonic):
-            client = adapter.Client(self.settings)
-            client.key = "synthetic-key-only"
-
-            def response(request, timeout):
-                url = urlsplit(request.full_url)
-                self.assertEqual((url.scheme, url.netloc), ("https", "botnet.com"))
-                self.assertTrue(url.path.startswith("/api/forum/"))
-                path = url.path.removeprefix("/api/forum")
-                params = {key: values[0] for key, values in parse_qs(url.query).items()}
-                if "limit" in params:
-                    params["limit"] = int(params["limit"])
-                value = self.client.get(path, params, authenticated=request.get_header("Authorization") is not None)
-                if before_response is not None:
-                    before_response(path)
-                return io.BytesIO(json.dumps(value).encode())
-
-            # Exercise production cache and budgets with a controlled clock and offline transport.
-            with patch.object(client.opener, "open", side_effect=response), patch.object(adapter, "Client", return_value=client):
-                result, code = commands.execute(self.store, "collect", sources={"botnet": self.settings})
-        return client, result, code
+        with fixed(clock) if clock else nullcontext():
+            return commands.execute(self.store, "collect", sources={"botnet": self.settings}, fetch=self.board)
 
     def test_real_request_cap_saves_healthy_partial_progress(self):
         state = self.pending_backlog()
-        client, result, code = self.collect_with_real_client(state)
+        result, code = self.collect_command(state)
         known, saved, _ = self.store.collection_state("botnet", OWNER, "botnet")
         pending = {entry["id"] for entry in saved["pending"]}
-        self.assertEqual((client.requests, result["added"], len(pending)), (40, 36, 24))
+        self.assertEqual((len(self.board.asked), result["added"], len(pending)), (40, 36, 24))
         self.assertEqual(known | pending, {entry["id"] for entry in state["pending"]})
         self.assertFalse(known & pending)
         self.assertEqual((code, result["failed"], result["errors"]), (0, False, []))
@@ -285,9 +260,9 @@ class BotnetTests(unittest.TestCase):
 
     def test_real_cap_does_not_hide_an_earlier_network_failure(self):
         state = self.pending_backlog()
-        self.client.originals[mid(10)] = URLError("Synthetic transport failure")
-        client, result, code = self.collect_with_real_client(state)
-        self.assertEqual((client.requests, code), (40, 1))
+        self.board.originals[mid(10)] = URLError("Synthetic transport failure")
+        result, code = self.collect_command(state)
+        self.assertEqual((len(self.board.asked), code), (40, 1))
         self.assertGreater(result["added"], 0)
         self.assertEqual(result["errors"][0]["error"], "network_error")
         health = result["sources"][0]
@@ -295,57 +270,114 @@ class BotnetTests(unittest.TestCase):
         self.assertIn(mid(10), {entry["id"] for entry in self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"]})
 
     def test_real_time_budget_after_identity_is_healthy_partial_progress(self):
-        state, clock = self.pending_backlog(), [0]
-        def expire(path):
-            if path == "/inbox":
-                clock[0] = 46
-        client, result, code = self.collect_with_real_client(state, monotonic=lambda: clock[0], before_response=expire)
-        self.assertEqual((client.requests, result["added"], code, result["errors"]), (2, 0, 0, []))
+        state, clock = self.pending_backlog(), Clock(1790000000)
+        # The inbox takes longer than the 45 seconds of the pass.
+        self.board.page_errors[None] = slow(clock, 46)
+        result, code = self.collect_command(state, clock)
+        self.assertEqual((len(self.board.asked), result["added"], code, result["errors"]), (2, 0, 0, []))
         self.assertCountEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"], state["pending"])
         health = result["sources"][0]
         self.assertEqual((health["status"], health["backlog_pending"]), ("ok", True))
         self.assertGreater(health["last_ok"], 1)
 
     def test_identity_preflight_budget_failure_remains_an_error(self):
-        state, clock = self.pending_backlog(), [0]
-        def expire(path):
-            self.assertEqual(path, "/me")
-            clock[0] = 11
-        client, result, code = self.collect_with_real_client(state, monotonic=lambda: clock[0], before_response=expire)
-        self.assertEqual((client.requests, result["added"], code), (1, 0, 1))
+        state, clock = self.pending_backlog(), Clock(1790000000)
+        # The profile takes longer than the ten seconds that it has.
+        self.board.profile = slow(clock, 11, self.board.profile)
+        result, code = self.collect_command(state, clock)
+        self.assertEqual((len(self.board.asked), result["added"], code), (1, 0, 1))
         self.assertEqual(result["errors"][0]["error"], "budget_exhausted")
         self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1], state)
         health = result["sources"][0]
         self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", 1, True))
 
-    def test_http_keeps_credentials_on_fixed_private_endpoints_and_stops_redirects(self):
-        class HTTPS(BaseHandler):
-            handler_order = 100
-            requests = []
-            def https_open(inner, request):
-                inner.requests.append(request)
-                headers = Message()
-                redirect = len(inner.requests) == 3
-                if redirect:
-                    headers["Location"] = "https://evil.invalid/token"
-                response = addinfourl(io.BytesIO(b'{}'), headers, request.full_url, 302 if redirect else 200)
-                response.msg = "Synthetic response"
-                return response
-        key = self.path / "test.key"
-        key.write_text("synthetic-key-only\n")
-        client = adapter.Client({**self.settings, "api_key_file": key})
-        handler = HTTPS()
-        client.opener = build_opener(ProxyHandler({}), handler, adapter.NoRedirect())
-        client.get("/me", authenticated=True)
-        key.unlink()
-        client.get("/topic-messages/" + mid(10))
-        with self.assertRaisesRegex(MailError, "^redirect_refused$"):
-            client.get("/inbox", authenticated=True)
-        self.assertEqual(len(handler.requests), 3)
-        self.assertEqual(handler.requests[0].get_header("Authorization"), "Bearer synthetic-key-only")
-        self.assertIsNone(handler.requests[1].get_header("Authorization"))
-        self.assertTrue(all(r.full_url.startswith("https://botnet.com/api/forum/") for r in handler.requests))
-        client.deadline = 0
-        with self.assertRaisesRegex(MailError, "^budget_exhausted$"):
-            client.get("/inbox", authenticated=True)
-        self.assertEqual(len(handler.requests), 3)
+
+class PassTests(unittest.TestCase):
+    """Passes that have no inbox file. A pass gets the state that the pass before it gave, and it knows what the
+    passes before it found."""
+    def setUp(self):
+        self.board = Board()
+        self.settings = {"account_id": OWNER, "api_key_file": key_file(self)}
+        self.state, self.known = {}, set()
+
+    def collect(self):
+        before = deepcopy(self.state)
+        batch = adapter.collect(self.settings, self.state, frozenset(self.known), fetch=self.board)
+        self.assertEqual(self.state, before)
+        validate(batch)
+        self.assertNotIn("PRIVATE PREVIEW", json.dumps(batch.__dict__))
+        self.state = batch.state
+        self.known |= {message["id"] for message in batch.messages}
+        return batch
+
+    def test_the_key_goes_with_the_profile_and_the_inbox_and_with_no_other_request(self):
+        self.board.add(10)
+        self.assertEqual(len(self.collect().messages), 1)
+        private, forum = {"Authorization": "Bearer " + KEY}, "https://botnet.com/api/forum"
+        self.assertEqual([(asked.board, asked.url, asked.headers) for asked in self.board.asked], [
+            ("botnet", forum + "/me", private),
+            ("botnet", forum + "/inbox?limit=8", private),
+            ("botnet", forum + "/topic-messages/post%3A" + uid(10), {}),
+            ("botnet", forum + "/topics/" + TOPIC, {}),
+            ("botnet", forum + "/topic-messages/thread%3A" + uid(100), {})])
+
+    def test_a_key_that_the_board_does_not_take_is_no_credentials(self):
+        self.board.add(10)
+        for text in ("", "two words", "synthetic-k\u00e9y", "k" * 4097):
+            with self.subTest(text=text[:20]):
+                self.settings["api_key_file"].write_text(text + "\n", encoding="utf-8")
+                batch = self.collect()
+                self.assertEqual((batch.error, batch.messages, batch.complete), ("credentials_unavailable", [], False))
+                self.assertEqual(self.board.asked, [])
+
+    def test_overflow_is_explicit_and_recovers_without_dropping_pending(self):
+        # 255 references wait for messages that the board does not show. The queue has room for one more.
+        waiting = [{"id": mid(n), "reasons": ["reply"]} for n in range(1000, 1255)]
+        self.state = {"pending": waiting}
+        for n in range(10, 13):
+            self.board.add(n)
+        batch = self.collect()
+        # The newest notification got the last place. Its message, the topic and the opener are three requests,
+        # so 35 of the forty are left for the references that waited.
+        self.assertEqual((batch.error, self.known, batch.unavailable), ("pending_overflow", {mid(12)}, 35))
+        self.assertIsNone(batch.state.get("cursor"), "The page at which a reference found no place is read again")
+        self.assertEqual(len(self.board.asked), 40)
+        batch = self.collect()
+        self.assertEqual((batch.error, len(batch.messages)), ("pending_overflow", 1))
+        batch = self.collect()
+        self.assertEqual((batch.error, len(batch.messages)), ("http_404", 1))
+        self.assertEqual(self.known, {mid(10), mid(11), mid(12)})
+        self.assertEqual({entry["id"] for entry in batch.state["pending"]}, {entry["id"] for entry in waiting})
+
+    def test_a_rejected_or_broken_cursor_is_explicit_and_keeps_what_was_found(self):
+        for n in (*range(10, 17), *range(18, 30)):
+            self.board.add(n)
+        self.board.originals[mid(25)] = 404
+        self.assertEqual(self.collect().state["cursor"], "older:22")
+        self.board.page_errors["older:22"] = 422
+        batch = self.collect()
+        self.assertEqual(batch.error, "http_422")
+        self.assertIsNone(batch.state["cursor"])
+        self.assertIn(mid(25), {x["id"] for x in batch.state["pending"]})
+
+        # A malformed item on an older page reports failure but cannot pin the
+        # scan there forever. Valid refs survive even a malformed page cursor.
+        self.board.page_errors.clear()
+        self.board.events.append({"id": 17, "reason": "mention", "threadId": None})
+        self.collect()  # Head: 29 to 22.
+        self.board.calls.clear()
+        batch = self.collect()  # Older page: 21 to 18, the malformed 17, 16 to 14.
+        self.assertIn(("/inbox", {"limit": 8, "cursor": "older:22"}, True), self.board.calls)
+        self.assertEqual((batch.error, batch.state["cursor"]), ("invalid_response", "older:14"))
+        batch = self.collect()  # Older page: 13 to 10, the end.
+        self.assertIsNone(batch.state["cursor"])
+        self.assertEqual(self.known, {mid(n) for n in (*range(10, 17), *range(18, 30)) if n != 25})
+        self.board.add(30)
+        self.board.bad_cursor = True
+        batch = self.collect()
+        self.assertEqual((batch.error, len(batch.messages)), ("invalid_response", 1))
+        self.assertIn(mid(30), self.known)
+
+
+if __name__ == "__main__":
+    unittest.main()

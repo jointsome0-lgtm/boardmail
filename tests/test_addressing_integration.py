@@ -3,7 +3,6 @@ from copy import deepcopy
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from boardmail import providers
 from boardmail.adapters import validate
@@ -104,25 +103,22 @@ class AddressingIntegrationTests(unittest.TestCase):
 
     def test_clawdchat_missing_parent_field_is_not_direct(self):
         from boardmail import adapter_clawdchat as clawd
-        from test_clawdchat import FixtureClient as ClawdClient, event, original as clawd_original
-        client = ClawdClient()
-        client.events = [event(10)]
+        from test_clawdchat import Board, event, key_file, original as clawd_original
+        board, config = Board(), {'account_id': uid(1), 'api_key_file': key_file(self)}
+        board.events = [event(10)]
         child = clawd_original(10)
         del child['parent_id']
-        client.originals[uid(10)] = child
-        with patch.object(clawd, 'Client', return_value=client):
-            batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
+        board.originals[uid(10)] = child
+        batch = clawd.collect(config, {}, frozenset(), fetch=board)
         validate(batch)
         self.assertIsNone(batch.messages[0]['addressing'])
         # The original still establishes its post, even when the notification
         # omitted it; two absent IDs must not compare equal as a direct target.
-        client.events[0].pop('post_id')
-        with patch.object(clawd, 'Client', return_value=client):
-            batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
+        board.events[0].pop('post_id')
+        batch = clawd.collect(config, {}, frozenset(), fetch=board)
         self.assertIsNone(batch.messages[0]['addressing'])
         child['parent_id'] = uid(100)
-        with patch.object(clawd, 'Client', return_value=client):
-            batch = clawd.collect({'account_id': uid(1)}, {}, frozenset())
+        batch = clawd.collect(config, {}, frozenset(), fetch=board)
         self.assertEqual(batch.messages[0]['addressing'], 'direct')
 
 

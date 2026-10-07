@@ -6,12 +6,12 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from boardmail import adapter_clawdchat, commands, providers
+from boardmail import commands, providers
 from boardmail.adapters import Batch
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, original, uid
-from test_clawdchat import FixtureClient as ClawdClient, original as clawd_original
+from examples.fixtures import FakeBoard, FixtureClient, original, uid
+from test_clawdchat import Board as ClawdChat, original as clawd_original
 from test_mail import mail
 
 
@@ -32,7 +32,7 @@ class PublicContextTests(unittest.TestCase):
             self.parent_raw['replies'] = [self.target_raw]
             self.client.comments = [original(209, 201), self.parent_raw]
         else:
-            self.client = ClawdClient()
+            self.client = ClawdChat()
             self.root, self.parent, self.target = uid(100), uid(11), uid(12)
             self.parent_raw = clawd_original(11, content='Our published answer.', author={'id': uid(1), 'name': 'owner'})
             self.target_raw = clawd_original(12, content='Current reply.', parent_id=self.parent)
@@ -48,9 +48,19 @@ class PublicContextTests(unittest.TestCase):
         self.store.mark(self.source, uid(900), 'replied', ref=self.ref)
         self.store.mark(self.source, self.target, 'needs_reply')
 
+    def clawdchat_context(self, *, local=False):
+        """The context command with the invented ClawdChat in the place of the transport. There is no key file
+        for its client to read."""
+        before = len(self.client.asked)
+        result = commands.execute(self.store, 'context', source=self.source, id=self.target,
+                                  sources={self.source: self.cfg}, local=local, fetch=self.client)
+        if local or self.store.is_paused(self.source): self.assertEqual(len(self.client.asked), before)
+        return result
+
     def context(self, *, local=False):
-        module = adapter_clawdchat if self.adapter == 'clawdchat' else providers
-        with patch.object(module, 'Client', return_value=self.client) as factory:
+        if self.adapter == 'clawdchat':
+            return self.clawdchat_context(local=local)
+        with patch.object(providers, 'Client', return_value=self.client) as factory:
             result = commands.execute(self.store, 'context', source=self.source, id=self.target,
                                       sources={self.source: self.cfg}, local=local)
             if local or self.store.is_paused(self.source): factory.assert_not_called()
@@ -146,25 +156,26 @@ class PublicContextTests(unittest.TestCase):
 
     def test_clawdchat_lookup_preserves_unavailable_and_malformed_parent_status(self):
         self.setup_source('clawdchat')
-        for error, status in (('http_404', 'missing'), ('http_410', 'deleted'), ('http_503', 'unavailable')):
-            self.client.originals[self.parent] = MailError(error)
-            result, code = self.context()
-            self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, status, error))
+        for answer, status in ((404, 'missing'), (410, 'deleted'), (503, 'unavailable')):
+            self.client.originals[self.parent] = answer
+            result, code = self.clawdchat_context()
+            self.assertEqual((code, result['parent']['status'], result['parent']['error']),
+                             (1, status, 'http_' + str(answer)))
             self.assertEqual(result['previous_exchange']['status'], 'linked')
         self.parent_raw['is_deleted'] = True
         self.client.originals[self.parent] = self.parent_raw
-        result, code = self.context()
+        result, code = self.clawdchat_context()
         self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, 'deleted', None))
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         del self.parent_raw['is_deleted']
         self.parent_raw['post']['is_deleted'] = True
-        result, code = self.context()
+        result, code = self.clawdchat_context()
         self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, 'unavailable', 'thread_deleted'))
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         del self.parent_raw['post']['is_deleted']
         self.parent_raw['post_id'] = uid(999)
         self.client.originals[self.parent] = self.parent_raw
-        result, code = self.context()
+        result, code = self.clawdchat_context()
         self.assertEqual((code, result['parent']['error']), (1, 'invalid_response'))
         self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
 
@@ -180,22 +191,22 @@ class PublicContextTests(unittest.TestCase):
         brief = self.store.page(context='brief')['messages'][0]['brief']
         self.assertEqual(brief['root']['reason'], 'thread_mismatch')
         before = self.path.read_bytes()
-        client = ClawdClient()
-        with patch.object(client, 'get', side_effect=MailError('http_503')):
-            for local in (True, False):
-                with self.subTest(local=local), patch.object(adapter_clawdchat, 'Client', return_value=client) as factory:
-                    result, code = commands.execute(self.store, 'context', source=source, id=uid(10),
-                                                    sources={source: cfg}, local=local)
-                    if local: factory.assert_not_called()
-                    self.assertEqual((code, result['complete']), (1, False))
-                    for role in ('root', 'parent'):
-                        self.assertEqual((result[role]['status'], result[role]['error'], result[role]['id']),
-                                         ('unavailable', 'invalid_response', uid(100)))
-                        self.assertIsNone(result[role]['message'])
-                    self.assertEqual(result['target']['message'], saved)
-                    self.assertEqual(result['target']['status'], 'available')
-                    self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
-                    self.assertEqual(self.path.read_bytes(), before)
+        board = ClawdChat()
+        board.down = 503
+        for local in (True, False):
+            with self.subTest(local=local):
+                result, code = commands.execute(self.store, 'context', source=source, id=uid(10),
+                                                sources={source: cfg}, local=local, fetch=board)
+                self.assertEqual(bool(board.asked), not local)
+                self.assertEqual((code, result['complete']), (1, False))
+                for role in ('root', 'parent'):
+                    self.assertEqual((result[role]['status'], result[role]['error'], result[role]['id']),
+                                     ('unavailable', 'invalid_response', uid(100)))
+                    self.assertIsNone(result[role]['message'])
+                self.assertEqual(result['target']['message'], saved)
+                self.assertEqual(result['target']['status'], 'available')
+                self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
+                self.assertEqual(self.path.read_bytes(), before)
 
     def test_current_originals_replace_conflicting_stored_relatives(self):
         self.setup_source('clawdchat')
@@ -203,7 +214,7 @@ class PublicContextTests(unittest.TestCase):
             dict(mail(100), thread_id=uid(999)), dict(mail(11), thread_id=uid(999))])
         saved = self.store.show(self.source, self.target)
         before = self.path.read_bytes()
-        result, code = self.context()
+        result, code = self.clawdchat_context()
         self.assertEqual((code, result['complete']), (0, True))
         for role, expected in (('root', self.root), ('parent', self.parent)):
             self.assertEqual((result[role]['status'], result[role]['origin'], result[role]['id']),
@@ -219,12 +230,14 @@ class PublicContextTests(unittest.TestCase):
                         dict(mail(10), parent_id=uid(100)), mail(11)])
         self.store.save('botnet', 'reader', [mail(100), dict(mail(20), id='opaque:message-20')])
         before = self.path.read_bytes()
-        with patch.object(providers, 'Client', side_effect=AssertionError('remote client')):
-            for mid in (uid(10), uid(11)):
-                result, code = commands.execute(self.store, 'context', source='fourclaw', id=mid, local=True)
-                self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, uid(100)))
-            result, code = commands.execute(self.store, 'context', source='botnet', id='opaque:message-20', local=True)
-            self.assertEqual((code, result['complete'], result['parent']['status']), (0, True, 'none'))
+        board = FakeBoard([])  # It has no answer, and it is asked nothing.
+        for mid in (uid(10), uid(11)):
+            result, code = commands.execute(self.store, 'context', source='fourclaw', id=mid, local=True, fetch=board)
+            self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, uid(100)))
+        result, code = commands.execute(self.store, 'context', source='botnet', id='opaque:message-20', local=True,
+                                        fetch=board)
+        self.assertEqual((code, result['complete'], result['parent']['status']), (0, True, 'none'))
+        self.assertEqual(board.asked, [])
         self.assertEqual(self.path.read_bytes(), before)
 
 
