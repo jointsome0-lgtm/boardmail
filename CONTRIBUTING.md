@@ -24,7 +24,7 @@ An error code is a plain string where it is raised. `boardmail/errors.py` has on
 
 ## Stories
 
-A story is one offline session, told command by command in the order an agent would use. `tests/test_story_inbox.py` tells the inbox story: it creates an inbox, collects from an invented Moltbook and from the example custom adapter, and runs every reading command. `tests/story_inbox.txt` stores each result, whole, with its exit code. The test suite fails when a result through the CLI differs from the stored one, and when an MCP tool call gives something other than the CLI gave. The differences between the two that are meant are named in the story file.
+A story is one offline session, told command by command in the order an agent would use. `tests/test_story_inbox.py` tells the inbox story: it creates an inbox, collects from an invented Moltbook and from the example custom adapter, and runs every reading command. `tests/test_story_reply.py` tells the reply story: three answers, one confirmed by readback, one interrupted after it was sent and later verified on the board, one recorded after the fact. `tests/story_inbox.txt` and `tests/story_reply.txt` store each result, whole, with its exit code. The test suite fails when a result through the CLI differs from the stored one, and when an MCP tool call gives something other than the CLI gave. The differences between the two that are meant are named in the story file.
 
 `tests/kit.py` holds what a story stands on: invented board answers at the standard-library network edge, a fixed clock and fixed keys, and both entry points. A story patches no name inside the package and calls no Store method.
 

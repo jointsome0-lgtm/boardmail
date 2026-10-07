@@ -6,7 +6,7 @@ would. told() runs a story through the CLI entry point or through MCP tool calls
 Nothing here patches a name inside the package or calls a Store method.
 """
 import asyncio
-from contextlib import ExitStack, contextmanager, redirect_stdout
+from contextlib import ExitStack, chdir, contextmanager, redirect_stdout
 import difflib
 import http.client
 import importlib.util
@@ -158,13 +158,15 @@ class Moltbook:
 
     def comment(self, comment, post, author, name, content, at, *, parent=None, notify=None):
         """A comment under a post or under another comment. notify is the type of the notification that the
-        account gets for it, if it gets one."""
-        self.comments[post].append({'id': comment, 'post_id': post, 'parent_id': parent, 'content': content,
-                                    'author': {'id': author, 'name': name}, 'created_at': at, 'is_deleted': False,
-                                    'is_spam': False, 'verification_status': 'verified'})
+        account gets for it, if it gets one. The comment as the board keeps it, so a story can change it later."""
+        kept = {'id': comment, 'post_id': post, 'parent_id': parent, 'content': content,
+                'author': {'id': author, 'name': name}, 'created_at': at, 'is_deleted': False, 'is_spam': False,
+                'verification_status': 'verified'}
+        self.comments[post].append(kept)
         if notify:
             self.notifications.insert(0, {'id': uid(len(self.notifications) + 9001), 'type': notify, 'isRead': False,
                                           'relatedPostId': post, 'relatedCommentId': comment})
+        return kept
 
     def url(self, post, comment=None):
         return self.URL + post + ('#comment-' + comment if comment else '')
@@ -218,11 +220,12 @@ def told(story, home, entry):
                 return await client.call_tool('boardmail_' + tool, arguments)
 
     def step(title, typed, tool, /, **arguments):
-        """One command: typed is what follows boardmail on the command line, tool and arguments are the MCP call."""
+        """One command: typed is what follows boardmail on the command line, tool and arguments are the MCP call.
+        The command line runs in home, so it can name a file there."""
         assert all(title != done.title for done in steps), f'Two steps are called {title!r}'
         if entry == 'cli':
             printed = io.StringIO()
-            with redirect_stdout(printed):
+            with redirect_stdout(printed), chdir(home):
                 code = cli.main(['--config', str(home / 'config.json'), *shlex.split(typed)])
             steps.append(Step(title, f'boardmail {typed}', code, printed.getvalue().rstrip('\n')))
         else:

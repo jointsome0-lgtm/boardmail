@@ -1,0 +1,1066 @@
+== 1. Create the inbox
+$ boardmail init
+exit code 0
+{
+  "event": "initialized",
+  "counts": {
+    "total": 0,
+    "latest_arrival": 0,
+    "unread": 0,
+    "needs_reply": 0,
+    "replied": 0
+  },
+  "sources": [
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "unknown",
+      "last_checked": null,
+      "last_ok": null,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": null,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": false,
+  "history_complete": false
+}
+
+== 2. Collect three questions under our post
+$ boardmail collect
+exit code 0
+{
+  "event": "collected",
+  "added": 3,
+  "failed": false,
+  "errors": [],
+  "history_complete": false,
+  "counts": {
+    "total": 3,
+    "latest_arrival": 3,
+    "unread": 3,
+    "needs_reply": 0,
+    "replied": 0
+  },
+  "sources": [
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "ok",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 0,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 0,
+      "confirmed": 0
+    },
+    "items": [],
+    "has_more": false,
+    "next_after": 0,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": true
+}
+
+== 3. No reply has been saved yet
+$ boardmail reply list
+exit code 0
+{
+  "event": "reply_attempts",
+  "counts": {
+    "prepared": 0,
+    "unknown": 0,
+    "confirmed": 0
+  },
+  "items": [],
+  "has_more": false,
+  "next_after": 0,
+  "next": null,
+  "collection_performed": false,
+  "publication_performed": false,
+  "history_complete": false
+}
+
+== 4. Save the answer before sending it
+$ boardmail reply prepare moltbook 00000000-0000-0000-0000-0000000000d3 --body-file draft.txt
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 1.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767268860,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d3",
+    "idempotency_key": "00000000-0000-4000-8000-000000000001",
+    "body": "An invented answer.",
+    "body_sha256": "8ef8cf14fb49cba679fa3cf51757ac04169cf1402deed52cf71c40d9df77b578",
+    "state": "prepared",
+    "prepared_at": 1800000000,
+    "attempted_at": null,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": true,
+  "send_allowed": false,
+  "next_action": "begin_before_publishing",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 5. Other text does not replace it by accident
+$ boardmail reply prepare moltbook 00000000-0000-0000-0000-0000000000d3 --body-file answer.txt
+exit code 2
+{
+  "event": "error",
+  "error": "reply_body_conflict",
+  "next_action": "show_saved_reply_before_changing_a_draft",
+  "history_complete": false
+}
+
+== 6. Replace the draft on purpose
+$ boardmail reply prepare moltbook 00000000-0000-0000-0000-0000000000d3 --body-file answer.txt --replace-key 00000000-0000-4000-8000-000000000001
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 1.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767268860,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d3",
+    "idempotency_key": "00000000-0000-4000-8000-000000000002",
+    "body": "An invented answer, said better.\n",
+    "body_sha256": "97a814dd1ea952f813eec1982c38c14bc6c1fae3dc36efd8c9c805c44a3a450c",
+    "state": "prepared",
+    "prepared_at": 1800000000,
+    "attempted_at": null,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": true,
+  "send_allowed": false,
+  "next_action": "begin_before_publishing",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 7. The key of the old draft is refused
+$ boardmail reply begin moltbook 00000000-0000-0000-0000-0000000000d3 --key 00000000-0000-4000-8000-000000000001
+exit code 2
+{
+  "event": "error",
+  "error": "reply_key_mismatch",
+  "next_action": "show_saved_reply_before_changing_a_draft",
+  "history_complete": false
+}
+
+== 8. Begin, just before sending
+$ boardmail reply begin moltbook 00000000-0000-0000-0000-0000000000d3 --key 00000000-0000-4000-8000-000000000002
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 1.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767268860,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d3",
+    "idempotency_key": "00000000-0000-4000-8000-000000000002",
+    "body": "An invented answer, said better.\n",
+    "body_sha256": "97a814dd1ea952f813eec1982c38c14bc6c1fae3dc36efd8c9c805c44a3a450c",
+    "state": "unknown",
+    "prepared_at": 1800000000,
+    "attempted_at": 1800000060,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": true,
+  "send_allowed": true,
+  "next_action": "publish_saved_body_with_saved_key_then_read_back",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 9. Confirm with the text read back from the board
+$ boardmail reply confirm moltbook 00000000-0000-0000-0000-0000000000d3 --key 00000000-0000-4000-8000-000000000002 --ref https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd --readback-file readback.txt
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 1,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d3",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 1.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
+    "created_at": 1767268860,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": 1800000120,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d3",
+    "idempotency_key": "00000000-0000-4000-8000-000000000002",
+    "body": "An invented answer, said better.\n",
+    "body_sha256": "97a814dd1ea952f813eec1982c38c14bc6c1fae3dc36efd8c9c805c44a3a450c",
+    "state": "confirmed",
+    "prepared_at": 1800000000,
+    "attempted_at": 1800000060,
+    "confirmed_at": 1800000120,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
+    "readback_sha256": "97a814dd1ea952f813eec1982c38c14bc6c1fae3dc36efd8c9c805c44a3a450c"
+  },
+  "changed": true,
+  "send_allowed": false,
+  "next_action": "do_not_publish_again",
+  "confirmation_basis": "caller_supplied_readback",
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 10. Save the second answer
+$ boardmail reply prepare moltbook 00000000-0000-0000-0000-0000000000d4 --body-file second.txt
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "prepared",
+    "prepared_at": 1800000120,
+    "attempted_at": null,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": true,
+  "send_allowed": false,
+  "next_action": "begin_before_publishing",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 11. Begin the second one
+$ boardmail reply begin moltbook 00000000-0000-0000-0000-0000000000d4 --key 00000000-0000-4000-8000-000000000003
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "unknown",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": true,
+  "send_allowed": true,
+  "next_action": "publish_saved_body_with_saved_key_then_read_back",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 12. Was anything left unfinished?
+$ boardmail status
+exit code 0
+{
+  "event": "status",
+  "counts": {
+    "total": 3,
+    "latest_arrival": 3,
+    "unread": 3,
+    "needs_reply": 0,
+    "replied": 1
+  },
+  "sources": [
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "stale",
+      "last_checked": 1800000000,
+      "last_ok": 1800000000,
+      "error": null,
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 3780,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": false,
+      "next_action": "collect_periodically"
+    }
+  ],
+  "stale_after": 540,
+  "reply_attempts": {
+    "counts": {
+      "prepared": 0,
+      "unknown": 1,
+      "confirmed": 1
+    },
+    "items": [
+      {
+        "arrival_seq": 2,
+        "source": "moltbook",
+        "id": "00000000-0000-0000-0000-0000000000d4",
+        "state": "unknown",
+        "next_action": "read_back_before_retry",
+        "show": {
+          "command": "reply show",
+          "tool": "boardmail_reply_show",
+          "arguments": {
+            "source": "moltbook",
+            "id": "00000000-0000-0000-0000-0000000000d4"
+          }
+        }
+      }
+    ],
+    "has_more": false,
+    "next_after": 2,
+    "next": null
+  },
+  "subscriptions": [],
+  "fresh": false,
+  "freshness_required": false,
+  "history_complete": false
+}
+
+== 13. The attempts that are not settled
+$ boardmail reply list
+exit code 0
+{
+  "event": "reply_attempts",
+  "counts": {
+    "prepared": 0,
+    "unknown": 1,
+    "confirmed": 1
+  },
+  "items": [
+    {
+      "arrival_seq": 2,
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d4",
+      "state": "unknown",
+      "next_action": "read_back_before_retry",
+      "show": {
+        "command": "reply show",
+        "tool": "boardmail_reply_show",
+        "arguments": {
+          "source": "moltbook",
+          "id": "00000000-0000-0000-0000-0000000000d4"
+        }
+      }
+    }
+  ],
+  "has_more": false,
+  "next_after": 2,
+  "next": null,
+  "collection_performed": false,
+  "publication_performed": false,
+  "history_complete": false
+}
+
+== 14. The message says so too
+$ boardmail show moltbook 00000000-0000-0000-0000-0000000000d4
+exit code 0
+{
+  "event": "message",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": {
+    "state": "unknown",
+    "next_action": "read_back_before_retry",
+    "show": {
+      "command": "reply show",
+      "tool": "boardmail_reply_show",
+      "arguments": {
+        "source": "moltbook",
+        "id": "00000000-0000-0000-0000-0000000000d4"
+      }
+    }
+  },
+  "history_complete": false
+}
+
+== 15. The journal of that attempt
+$ boardmail reply show moltbook 00000000-0000-0000-0000-0000000000d4
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "unknown",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": false,
+  "send_allowed": false,
+  "next_action": "read_back_before_retry",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": "This attempt's external outcome remains unresolved. A replied mark or matching publication does not identify which provider request created it; the saved key identifies this local journal entry. A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. A failed verification leaves the attempt unknown. Accepting the published reply's target does not resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the handoff before deciding whether retry or confirmation is justified.",
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 16. A second begin does not allow a second send
+$ boardmail reply begin moltbook 00000000-0000-0000-0000-0000000000d4 --key 00000000-0000-4000-8000-000000000003
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "unknown",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": false,
+  "send_allowed": false,
+  "next_action": "read_back_before_retry",
+  "confirmation_basis": null,
+  "reply_candidates": [],
+  "recovery_guidance": "This attempt's external outcome remains unresolved. A replied mark or matching publication does not identify which provider request created it; the saved key identifies this local journal entry. A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. A failed verification leaves the attempt unknown. Accepting the published reply's target does not resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the handoff before deciding whether retry or confirmation is justified.",
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 17. The board has not verified that reply yet
+$ boardmail reply verify moltbook 00000000-0000-0000-0000-0000000000d4 --key 00000000-0000-4000-8000-000000000003 --ref https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de
+exit code 1
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "unknown",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": true,
+  "send_allowed": false,
+  "next_action": "reconcile_publication_before_retry",
+  "confirmation_basis": null,
+  "reply_candidates": [
+    {
+      "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+      "adapter": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "recorded_at": 1800003780,
+      "status": "unverified",
+      "identity_basis": "parsed_reference",
+      "last_check": {
+        "checked_at": 1800003780,
+        "reason": "reply_provider_not_verified",
+        "status": "unverified"
+      }
+    }
+  ],
+  "recovery_guidance": "This attempt's external outcome remains unresolved. A replied mark or matching publication does not identify which provider request created it; the saved key identifies this local journal entry. A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. A failed verification leaves the attempt unknown. Accepting the published reply's target does not resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the handoff before deciding whether retry or confirmation is justified.",
+  "remote_verified": false,
+  "verification": {
+    "adapter": "moltbook",
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "key_scope": "local",
+    "checked_at": 1800003780,
+    "status": "unverified",
+    "reason": "reply_provider_not_verified"
+  },
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "last_check_saved": true,
+  "history_complete": false
+}
+
+== 18. The journal keeps where it may be
+$ boardmail reply show moltbook 00000000-0000-0000-0000-0000000000d4
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": null,
+    "reply_ref": null,
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "unknown",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": null,
+    "reply_ref": null,
+    "readback_sha256": null
+  },
+  "changed": false,
+  "send_allowed": false,
+  "next_action": "read_back_before_retry",
+  "confirmation_basis": null,
+  "reply_candidates": [
+    {
+      "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+      "adapter": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "recorded_at": 1800003780,
+      "status": "unverified",
+      "identity_basis": "parsed_reference",
+      "last_check": {
+        "checked_at": 1800003780,
+        "reason": "reply_provider_not_verified",
+        "status": "unverified"
+      }
+    }
+  ],
+  "recovery_guidance": "This attempt's external outcome remains unresolved. A replied mark or matching publication does not identify which provider request created it; the saved key identifies this local journal entry. A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. A failed verification leaves the attempt unknown. Accepting the published reply's target does not resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the handoff before deciding whether retry or confirmation is justified.",
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": null,
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 19. The board has verified it now
+$ boardmail reply verify moltbook 00000000-0000-0000-0000-0000000000d4 --key 00000000-0000-4000-8000-000000000003 --ref https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": 1800004380,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "confirmed",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": 1800004380,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "readback_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3"
+  },
+  "changed": true,
+  "send_allowed": false,
+  "next_action": "do_not_publish_again",
+  "confirmation_basis": "provider_readback",
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": true,
+  "verification": {
+    "adapter": "moltbook",
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "key_scope": "local",
+    "checked_at": 1800004380,
+    "status": "verified",
+    "reason": null,
+    "reply_id": "00000000-0000-0000-0000-0000000000de",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "author_id": "00000000-0000-0000-0000-000000000002",
+    "target_id": "00000000-0000-0000-0000-0000000000d4",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "availability_basis": "anonymous_original",
+    "provider_status": "verified"
+  },
+  "verification_receipt": {
+    "adapter": "moltbook",
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "key_scope": "local",
+    "checked_at": 1800004380,
+    "status": "verified",
+    "reason": null,
+    "reply_id": "00000000-0000-0000-0000-0000000000de",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "author_id": "00000000-0000-0000-0000-000000000002",
+    "target_id": "00000000-0000-0000-0000-0000000000d4",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "availability_basis": "anonymous_original",
+    "provider_status": "verified"
+  },
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 20. The journal with its receipt
+$ boardmail reply show moltbook 00000000-0000-0000-0000-0000000000d4
+exit code 0
+{
+  "event": "reply_attempt",
+  "message": {
+    "arrival_seq": 2,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d4",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 2.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
+    "created_at": 1767268920,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": 1800004380,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply": {
+    "source": "moltbook",
+    "message_id": "00000000-0000-0000-0000-0000000000d4",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "body": "Another invented answer.",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "state": "confirmed",
+    "prepared_at": 1800000120,
+    "attempted_at": 1800000180,
+    "confirmed_at": 1800004380,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "readback_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3"
+  },
+  "changed": false,
+  "send_allowed": false,
+  "next_action": "do_not_publish_again",
+  "confirmation_basis": "provider_readback",
+  "reply_candidates": [],
+  "recovery_guidance": null,
+  "remote_verified": false,
+  "verification": null,
+  "verification_receipt": {
+    "adapter": "moltbook",
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
+    "idempotency_key": "00000000-0000-4000-8000-000000000003",
+    "key_scope": "local",
+    "checked_at": 1800004380,
+    "status": "verified",
+    "reason": null,
+    "reply_id": "00000000-0000-0000-0000-0000000000de",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "author_id": "00000000-0000-0000-0000-000000000002",
+    "target_id": "00000000-0000-0000-0000-0000000000d4",
+    "body_sha256": "fae6d7fd7c71bf834dd0a6e2dcdb84580947171bd0afcf531d33f7c5bf4daec3",
+    "availability_basis": "anonymous_original",
+    "provider_status": "verified"
+  },
+  "publication_performed": false,
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 21. Record a reply that is already there
+$ boardmail mark replied --ref https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000df moltbook 00000000-0000-0000-0000-0000000000d5
+exit code 0
+{
+  "event": "marked",
+  "message": {
+    "arrival_seq": 3,
+    "source": "moltbook",
+    "id": "00000000-0000-0000-0000-0000000000d5",
+    "thread_id": "00000000-0000-0000-0000-0000000000c9",
+    "parent_id": null,
+    "provider_seq": null,
+    "kind": "reply_to_post",
+    "author": "sample-writer",
+    "title": "Example discussion",
+    "body": "Invented question 3.",
+    "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d5",
+    "created_at": 1767268980,
+    "arrived_at": 1800000000,
+    "read_at": null,
+    "needs_reply": false,
+    "replied_at": 1800004380,
+    "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000df",
+    "discovery": null,
+    "addressing": "direct",
+    "tags": []
+  },
+  "reply_attempt": null,
+  "history_complete": false
+}
+
+== 22. It cannot get a second reply by mistake
+$ boardmail reply prepare moltbook 00000000-0000-0000-0000-0000000000d5 --body-file third.txt
+exit code 2
+{
+  "event": "error",
+  "error": "reply_already_recorded",
+  "next_action": "inspect_saved_reply_do_not_publish_again",
+  "history_complete": false
+}
+
+== 23. Nothing is left unfinished
+$ boardmail reply list
+exit code 0
+{
+  "event": "reply_attempts",
+  "counts": {
+    "prepared": 0,
+    "unknown": 0,
+    "confirmed": 2
+  },
+  "items": [],
+  "has_more": false,
+  "next_after": 0,
+  "next": null,
+  "collection_performed": false,
+  "publication_performed": false,
+  "history_complete": false
+}
