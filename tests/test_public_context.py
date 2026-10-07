@@ -8,6 +8,7 @@ from urllib.error import HTTPError
 from boardmail import commands, providers
 from boardmail.boards import BOARDS
 from boardmail.store import Store
+from boardmail import adapter_common
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
 from kit import Clock, fixed, mark
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
@@ -121,7 +122,7 @@ class PublicContextTests(unittest.TestCase):
         def last_in_time(path, params=None, **kwargs):
             # One root and two comment pages fit. The third answer comes as the 45 seconds of the command end.
             answer = get(path, params, **kwargs)
-            if len(self.client.calls) == 3: clock.advance(providers.SOURCE_SECONDS)
+            if len(self.client.calls) == 3: clock.advance(adapter_common.SOURCE_SECONDS)
             return answer
         self.client.get = last_in_time
         with fixed(clock):
@@ -154,7 +155,7 @@ class PublicContextTests(unittest.TestCase):
         def absent(path, params=None, **kwargs):
             raise HTTPError('https://example.invalid', 404, '', {}, io.BytesIO())
         self.client.get = absent
-        client = providers.Client('moltbook', self.cfg, fetch=self.client)
+        client = BOARDS['moltbook'].originals.client(self.cfg, fetch=self.client)
         self.assertEqual(providers.moltbook_lookup(client, uid(999)), ('unknown', 'thread_unknown', None))
         self.assertEqual(providers.moltbook_lookup(client, self.target, self.root), ('unavailable', 'thread_missing', None))
 

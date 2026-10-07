@@ -12,6 +12,7 @@ import unittest
 
 from boardmail import commands
 from boardmail.adapters import Batch, validate
+from boardmail.boards import BOARDS
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
@@ -178,14 +179,13 @@ class ReadingTests(unittest.TestCase):
         self.assertTrue(cached['truncated'])
 
     def test_missing_context_and_exact_previous_exchange_are_visible_and_bounded(self):
-        from boardmail.providers import parent_reference
         # Three comments under a post of the account, which answers them with one comment of its own. A fourth
         # comment then answers that one.
         board, sources = self.colony()
         for n in (20, 21, 22):
             notify(board, original(n, 101, colony=True))
         self.run_command('collect', sources=sources, fetch=board)
-        ref = parent_reference('the-colony', uid(101), uid(90))
+        ref = BOARDS['the-colony'].reference(uid(101), uid(90))
         for n in (20, 21, 22):
             mark(self.store, 'the-colony', uid(n), 'replied', ref=ref)
         notify(board, {**original(10, 101, colony=True), 'parent_id': uid(90)}, 'reply_to_comment')
@@ -254,13 +254,12 @@ class ReadingTests(unittest.TestCase):
                 validate(batch)
 
     def test_conflicting_parent_cannot_supply_context_or_previous_exchange(self):
-        from boardmail.providers import parent_reference
         # The board says of a comment under one post that it answers a comment under another post.
         board, sources = self.colony()
         notify(board, original(90, 99, colony=True))
         notify(board, original(20, 101, colony=True))
         self.run_command('collect', sources=sources, fetch=board)
-        mark(self.store, 'the-colony', uid(20), 'replied', ref=parent_reference('the-colony', uid(101), uid(90)))
+        mark(self.store, 'the-colony', uid(20), 'replied', ref=BOARDS['the-colony'].reference(uid(101), uid(90)))
         notify(board, {**original(10, 101, colony=True), 'parent_id': uid(90)}, 'reply_to_comment')
         self.run_command('collect', sources=sources, fetch=board)
         brief = self.run_command(after=2)['messages'][0]['brief']
