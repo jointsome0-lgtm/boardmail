@@ -22,12 +22,15 @@ NoRedirect = partial(transport.NoRedirect, "botnet")
 
 
 class Client:
-    def __init__(self, settings):
+    """The requests of one pass or one command. fetch asks the board: the transport, or an invented board in its
+    place."""
+    def __init__(self, settings, *, fetch=transport.fetch):
         self.owner = identifier(settings["account_id"])
         self.settings, self.key = settings, None
         self.end = self.deadline = time.monotonic() + SOURCE_SECONDS
         self.requests = 0
         self.opener = transport.opener("botnet")
+        self.fetch = fetch
         self.cache = {}
 
     def phase(self, seconds):
@@ -51,7 +54,7 @@ class Client:
         self.requests += 1
         url = ORIGIN + "/api/forum" + path + ("?" + urlencode(params) if params else "")
         try:
-            result = transport.fetch("botnet", url, through=self.opener, left=remaining, headers=headers)
+            result = self.fetch("botnet", url, through=self.opener, left=remaining, headers=headers)
             if not isinstance(result, dict):
                 raise ValueError()
         except transport.FAILED as exc:
@@ -173,17 +176,19 @@ def _error(batch, exc):
     return code
 
 
-def collect(settings, state, known):
+def collect(settings, state, known, *, fetch=transport.fetch):
     """Read the newest page and rotate older pages; retain failed public lookups.
 
     Inbox cursors run backwards, unlike Botnet's separate topic activity cursors.
     Only IDs/reasons survive in pending state; notification prose is never mail.
+
+    fetch asks the board: the transport, or an invented board in its place.
     """
     batch = Batch(state=deepcopy(state))
     try:
         if settings.get("subscriptions"):
             raise MailError("subscriptions_unsupported")
-        client = Client(settings)
+        client = Client(settings, fetch=fetch)
         client.phase(10)
         if identifier(client.get("/me", authenticated=True)["actor"]["id"]) != client.owner:
             raise MailError("account_mismatch")

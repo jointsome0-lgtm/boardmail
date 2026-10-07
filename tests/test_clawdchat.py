@@ -1,18 +1,19 @@
 """ClawdChat public confirmation, bounded retry and durable arrival contracts."""
-from email.message import Message
-import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
-from urllib.request import BaseHandler, ProxyHandler, build_opener
-from urllib.response import addinfourl
+from urllib.error import URLError
+from urllib.parse import urlsplit
 
 from boardmail import adapter_clawdchat as adapter
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from boardmail.store import Store
+from examples.fixtures import FakeBoard, status
+from kit import Clock, fixed
+
+KEY = "synthetic-key-only"
 
 
 def uid(number):
@@ -31,20 +32,45 @@ def original(number, **changes):
             "web_url": "https://clawdchat.cn/post/" + uid(100), **changes}
 
 
-class FixtureClient:
+def key_file(test):
+    """The file of an invented key, in a folder that is gone when the test ends."""
+    folder = tempfile.TemporaryDirectory()
+    test.addCleanup(folder.cleanup)
+    path = Path(folder.name) / "key"
+    path.write_text(KEY + "\n")
+    return path
+
+
+class Board(FakeBoard):
+    """An invented ClawdChat at the transport seam: the profile of the account, what the account is notified of,
+    and the public originals by id. An original that it does not have is a 404.
+
+    What the board has for a request can also be a number, which is the HTTP status that it answers with, an
+    exception, which is how the request fails, or a function of the request that gives one of these. page_error
+    has such a thing for the page of notifications at an offset, and down has one for every request.
+
+    calls has each request in short: its path below the API, its query with numbers as numbers, and whether it
+    carried the key. A request that carries the key where it must not, or none where it must, fails the test."""
     def __init__(self):
-        self.owner = uid(1)
-        self.events = []
-        self.originals = {}
-        self.calls = []
-        self.profile = {"id": self.owner}
-        self.page_error = {}
+        super().__init__(self.answer)
+        self.profile = {"id": uid(1)}
+        self.events, self.originals, self.page_error, self.calls = [], {}, {}, []
+        self.down = None
 
-    def phase(self, seconds):
-        pass
+    def answer(self, asked):
+        assert asked.board == "clawdchat" and asked.body is None, asked
+        assert asked.url.startswith(adapter.ORIGIN + "/api/v1/"), asked.url
+        private = "Authorization" in asked.headers
+        assert asked.headers == ({"Authorization": "Bearer " + KEY} if private else {}), asked.headers
+        path = urlsplit(asked.url).path.removeprefix("/api/v1")
+        params = {name: int(value) if value.isdigit() else value for name, value in asked.params.items()}
+        self.calls.append((path, params, private))
+        answer = self.get(path, params, authenticated=private) if self.down is None else self.down
+        if callable(answer):
+            answer = answer(asked)
+        return status(answer) if type(answer) is int else answer
 
-    def get(self, path, params=None, *, authenticated=False):
-        self.calls.append((path, params, authenticated))
+    def get(self, path, params, *, authenticated):
         if path == "/agents/me":
             assert authenticated
             return self.profile
@@ -52,13 +78,10 @@ class FixtureClient:
             assert authenticated
             offset = params["offset"]
             if offset in self.page_error:
-                raise MailError(self.page_error[offset])
+                return self.page_error[offset]
             return {"success": True, "items": self.events[offset:offset + params["limit"]], "total": len(self.events)}
         assert not authenticated, "Public originals must never use account credentials"
-        value = self.originals[path.rsplit("/", 1)[-1]]
-        if isinstance(value, Exception):
-            raise value
-        return value
+        return self.originals.get(path.rsplit("/", 1)[-1], 404)
 
 
 class ClawdChatTests(unittest.TestCase):
@@ -67,14 +90,14 @@ class ClawdChatTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.store = Store(Path(self.temp.name) / "inbox.sqlite3")
         self.store.initialize()
-        self.client = FixtureClient()
+        self.board = Board()
+        self.settings = {"account_id": uid(1), "api_key_file": key_file(self)}
 
     def collect(self):
         self.store.prepare_collection()
         known, state, revision = self.store.collection_state("clawd", uid(1), "clawdchat")
         before = json.dumps(state)
-        with patch.object(adapter, "Client", return_value=self.client):
-            batch = adapter.collect({"account_id": uid(1)}, state, frozenset(known))
+        batch = adapter.collect(self.settings, state, frozenset(known), fetch=self.board)
         self.assertEqual(json.dumps(state), before, "Input state is a snapshot")
         validate(batch)
         added, stale = self.store.save_collection("clawd", uid(1), "clawdchat", revision, batch)
@@ -86,8 +109,8 @@ class ClawdChatTests(unittest.TestCase):
     def test_nested_comment_stays_visible_when_target_signal_arrives_next_pass(self):
         for number, later_type in ((70, "reply"), (71, "mention_comment")):
             with self.subTest(later_type=later_type):
-                self.client.events = [event(number)]
-                self.client.originals[uid(number)] = original(number, parent_id=uid(9))
+                self.board.events = [event(number)]
+                self.board.originals[uid(number)] = original(number, parent_id=uid(9))
                 before = self.store.status()["counts"]["latest_arrival"]
                 _, added = self.collect()
                 self.assertEqual(added, 1)
@@ -100,21 +123,21 @@ class ClawdChatTests(unittest.TestCase):
                 stored = self.store.show("clawd", uid(number))
 
                 later = {**event(number, later_type), "id": uid(number + 2000)}
-                self.client.events.insert(0, later)
-                calls = len(self.client.calls)
+                self.board.events.insert(0, later)
+                calls = len(self.board.calls)
                 _, added = self.collect()
                 self.assertEqual(added, 0)
                 self.assertEqual(self.store.show("clawd", uid(number)), stored)
                 self.assertEqual(self.store.page(checkpoint, scope="addressed")["scanned"], 0)
-                self.assertFalse(any(path.startswith("/comments/") for path, _, _ in self.client.calls[calls:]))
+                self.assertFalse(any(path.startswith("/comments/") for path, _, _ in self.board.calls[calls:]))
 
     def test_supported_kinds_use_public_originals_and_preserve_arrivals(self):
-        self.client.events = [event(10), event(11, "reply"), event(12, "mention_comment"),
-                              event(100, "mention_post"), event(13, "follow"), event(14)]
-        self.client.originals = {uid(n): original(n) for n in (10, 11, 12, 100, 14)}
-        self.client.originals[uid(11)]["parent_id"] = uid(9)
-        self.client.originals[uid(100)].update(title="Mention in title", content=None)
-        self.client.originals[uid(14)]["author"]["id"] = uid(1)
+        self.board.events = [event(10), event(11, "reply"), event(12, "mention_comment"),
+                             event(100, "mention_post"), event(13, "follow"), event(14)]
+        self.board.originals = {uid(n): original(n) for n in (10, 11, 12, 100, 14)}
+        self.board.originals[uid(11)]["parent_id"] = uid(9)
+        self.board.originals[uid(100)].update(title="Mention in title", content=None)
+        self.board.originals[uid(14)]["author"]["id"] = uid(1)
         batch, added = self.collect()
         self.assertEqual(added, 4)
         self.assertTrue(batch.complete)
@@ -128,14 +151,14 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(self.store.wait(0, 0)["next_after"], 4)
 
     def test_unavailable_and_bad_originals_do_not_block_siblings_or_expired_notifications(self):
-        self.client.events = [event(n) for n in range(10, 17)]
-        self.client.originals = {uid(n): original(n) for n in range(10, 17)}
-        self.client.originals[uid(10)] = MailError("http_403")
-        self.client.originals[uid(11)] = MailError("http_404")
-        self.client.originals[uid(12)]["visibility"] = "private"
-        self.client.originals[uid(13)]["post_id"] = uid(999)
-        self.client.originals[uid(14)]["created_at"] = "bad timestamp"
-        self.client.originals[uid(15)]["is_deleted"] = True
+        self.board.events = [event(n) for n in range(10, 17)]
+        self.board.originals = {uid(n): original(n) for n in range(10, 17)}
+        self.board.originals[uid(10)] = 403
+        self.board.originals[uid(11)] = 404
+        self.board.originals[uid(12)]["visibility"] = "private"
+        self.board.originals[uid(13)]["post_id"] = uid(999)
+        self.board.originals[uid(14)]["created_at"] = "bad timestamp"
+        self.board.originals[uid(15)]["is_deleted"] = True
         batch, added = self.collect()
         self.assertEqual(added, 1)
         self.assertEqual(batch.unavailable, 4)
@@ -143,92 +166,99 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(batch.messages[0]["id"], uid(16))
         # Retried references survive a process/database reopen and upstream expiry.
         self.store = Store(self.store.path)
-        self.client.events = []
-        self.client.originals = {uid(n): original(n) for n in range(10, 17)}
+        self.board.events = []
+        self.board.originals = {uid(n): original(n) for n in range(10, 17)}
         batch, added = self.collect()
         self.assertEqual(added, 6)
         self.assertTrue(batch.complete)
 
     def test_fresh_head_and_cyclic_backfill_progress_past_persistent_failure(self):
-        self.client.events = [event(n) for n in range(10, 20)]
-        self.client.originals = {uid(n): original(n) for n in range(10, 21)}
-        self.client.originals[uid(10)] = MailError("network_error")
-        with patch.object(adapter, "PAGE_SIZE", 2):
+        # Five pages of notifications. The original of the first one is never reached.
+        self.board.events = [event(n) for n in range(10, 50)]
+        self.board.originals = {uid(n): original(n) for n in range(10, 51)}
+        self.board.originals[uid(10)] = URLError("The board is not reached")
+        self.collect()
+        self.board.events.insert(0, event(50))
+        batch, _ = self.collect()
+        self.assertIn(uid(50), {m["id"] for m in batch.messages})
+        for _ in range(6):
             self.collect()
-            self.client.events.insert(0, event(20))
-            batch, _ = self.collect()
-            self.assertIn(uid(20), {m["id"] for m in batch.messages})
-            for _ in range(8):
-                self.collect()
         known = self.store.known("clawd", uid(1))
-        self.assertEqual(known, {uid(n) for n in range(11, 21)})
+        self.assertEqual(known, {uid(n) for n in range(11, 51)})
         self.assertNotIn(uid(10), known)
-        self.assertTrue(any((params or {}).get("offset", 0) >= 8 for _, params, _ in self.client.calls))
+        offsets = [params["offset"] for path, params, _ in self.board.calls if path == "/notifications"]
+        self.assertEqual(offsets, [0, 0, 8, 0, 16, 0, 24, 0, 32, 0, 40, 0, 0, 8],
+                         "Each pass reads the head and one page of the sweep, which starts again at its end")
 
     def test_full_queue_reports_overflow_and_revisits_affected_discovery_page(self):
-        self.client.events = [event(n) for n in range(10, 14)]
-        self.client.originals = {uid(n): original(n) for n in range(10, 14)}
-        with patch.object(adapter, "MAX_PENDING", 2):
-            batch, added = self.collect()
-            self.assertEqual(batch.error, "pending_overflow")
-            self.assertEqual(batch.state["offset"], 0)
-            self.assertLessEqual(len(batch.state["pending"]), 2)
-            self.assertEqual(added, 2)
-            self.assertEqual(self.collect()[1], 2)
-        self.assertEqual(self.store.known("clawd", uid(1)), {uid(n) for n in range(10, 14)})
+        # 256 references wait for originals that the board no longer has. The queue holds no more.
+        waiting = [{"id": uid(n), "post": uid(100), "kind": "reply_to_post", "is_post": False} for n in range(1000, 1256)]
+        self.store.prepare_collection()
+        self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state={"pending": waiting, "offset": 8}))
+        self.board.events = [event(n) for n in range(10, 34)]
+        self.board.originals = {uid(n): original(n) for n in range(10, 34)}
+        batch, added = self.collect()
+        self.assertEqual((batch.error, added, batch.unavailable), ("pending_overflow", 8, 8))
+        self.assertEqual(batch.state["offset"], 8, "The page at which a reference was lost is read again")
+        held = [entry["id"] for entry in batch.state["pending"]]
+        # The eight that were tried first went to the end of the queue. The sixteen after them were the oldest
+        # when the two pages came, and each new reference took the place of one.
+        self.assertEqual(held, [uid(n) for n in (*range(1024, 1256), *range(1000, 1008), *range(18, 26))])
+        self.assertEqual(self.store.known("clawd", uid(1)), {uid(n) for n in range(10, 18)})
+        batch, added = self.collect()
+        self.assertEqual((batch.error, added, batch.state["offset"]), (None, 0, 16), "Nothing is lost now, so the sweep moves on")
+        self.assertEqual(len(batch.state["pending"]), 248)
 
     def test_slow_retry_backlog_cannot_consume_fresh_original_budget(self):
         pending = [{"id": uid(n), "post": uid(100), "kind": "reply_to_post", "is_post": False} for n in range(10, 20)]
         self.store.prepare_collection()
         self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state={"pending": pending, "offset": 0}))
-        self.client.events = [event(20)]
-        self.client.originals = {uid(20): original(20)}
-        clock, deadline = [0], [0]
-        get = self.client.get
-        def phase(seconds):
-            deadline[0] = clock[0] + seconds
-        def slow(path, params=None, **kwargs):
-            if clock[0] >= deadline[0]:
-                raise MailError("budget_exhausted")
-            if path.startswith("/comments/") and not path.endswith(uid(20)):
-                clock[0] += 5
-                raise MailError("network_error")
-            return get(path, params, **kwargs)
-        self.client.phase = phase
-        self.client.get = slow
-        batch, added = self.collect()
+        self.board.events = [event(20)]
+        clock = Clock(1790000000)
+
+        def silent(asked):
+            """No answer comes: the socket stays silent for as long as the transport lets it."""
+            clock.advance(min(4, asked.left))
+            return TimeoutError()
+
+        self.board.originals = {uid(20): original(20), **{uid(n): silent for n in range(10, 20)}}
+        with fixed(clock):
+            batch, added = self.collect()
         self.assertEqual(added, 1)
         self.assertEqual(batch.messages[0]["id"], uid(20))
         self.assertEqual(len(batch.state["pending"]), 10)
+        # The fifteen seconds of the old references are four tries: three for the first of them, one for the next.
+        self.assertEqual([path for path, _, _ in self.board.calls],
+                         ["/agents/me", *["/comments/" + uid(10)] * 3, "/comments/" + uid(11), "/notifications",
+                          "/comments/" + uid(20)])
 
     def test_rate_limit_stops_source_and_rejected_backfill_position_resets(self):
-        self.client.events = [event(n) for n in range(10, 16)]
-        self.client.originals = {uid(n): original(n) for n in range(10, 16)}
-        with patch.object(adapter, "PAGE_SIZE", 2):
+        self.board.events = [event(n) for n in range(10, 34)]
+        self.board.originals = {uid(n): original(n) for n in range(10, 34)}
+        self.collect()
+        self.board.page_error[8] = 429
+        self.board.calls.clear()
+        batch, _ = self.collect()
+        self.assertEqual(batch.error, "http_429")
+        self.assertEqual(batch.state["offset"], 8)
+        self.assertEqual([path for path, _, _ in self.board.calls], ["/agents/me", "/notifications", "/notifications"])
+        self.board.page_error[8] = 422
+        self.assertEqual(self.collect()[0].state["offset"], 0)
+        self.board.page_error.clear()
+        for _ in range(4):
             self.collect()
-            self.client.page_error[2] = "http_429"
-            self.client.calls.clear()
-            batch, _ = self.collect()
-            self.assertEqual(batch.error, "http_429")
-            self.assertEqual(batch.state["offset"], 2)
-            self.assertEqual(self.client.calls[-1][0], "/notifications")
-            self.client.page_error[2] = "http_422"
-            self.assertEqual(self.collect()[0].state["offset"], 0)
-            self.client.page_error.clear()
-            for _ in range(4):
-                self.collect()
-        self.assertEqual(len(self.store.known("clawd", uid(1))), 6)
+        self.assertEqual(len(self.store.known("clawd", uid(1))), 24)
 
     def test_wrong_token_owner_stops_before_notifications(self):
         state = {"offset": 8, "pending": [{"id": uid(10), "post": uid(100),
                                           "kind": "reply_to_post", "is_post": False}]}
         self.store.prepare_collection()
         self.store.save_collection("clawd", uid(1), "clawdchat", 0, Batch(state=state))
-        self.client.profile = {"id": uid(999)}
+        self.board.profile = {"id": uid(999)}
         batch, added = self.collect()
         self.assertEqual(batch.error, "account_mismatch")
         self.assertEqual(added, 0)
-        self.assertEqual([p for p, _, _ in self.client.calls], ["/agents/me"])
+        self.assertEqual([p for p, _, _ in self.board.calls], ["/agents/me"])
         self.assertEqual(batch.state, state)
         self.assertEqual(self.store.collection_state("clawd", uid(1), "clawdchat")[2], 1)
         self.assertEqual(self.store.save_collection("clawd", uid(1), "clawdchat", 1,
@@ -240,113 +270,116 @@ class ClawdChatTests(unittest.TestCase):
         for settings, code in [({"account_id": uid(1)}, "credentials_unavailable"),
                                ({"account_id": "not-a-uuid"}, "invalid_config")]:
             with self.subTest(code=code):
-                batch = adapter.collect(settings, state, frozenset())
+                batch = adapter.collect(settings, state, frozenset(), fetch=self.board)
                 self.assertEqual(batch.error, code)
                 self.assertEqual(batch.state, state)
                 self.assertFalse(batch.complete)
+                self.assertEqual(self.board.asked, [])
         # Exhausting a planned discovery phase is partial progress, not an outage.
-        self.client.page_error[0] = "budget_exhausted"
+        self.board.page_error[0] = MailError("budget_exhausted")
         batch, added = self.collect()
         self.assertEqual(added, 0)
         self.assertIsNone(batch.error)
         self.assertFalse(batch.complete)
 
     def test_bad_reference_isolated_and_unsafe_canonical_links_use_public_api(self):
-        self.client.events = [event(9), event(10)]
-        del self.client.events[0]["comment_id"]
+        self.board.events = [event(9), event(10)]
+        del self.board.events[0]["comment_id"]
         for url in ["https://evil.invalid/post/10", "https://clawdchat.cn@evil.invalid/10",
                     "https://clawdchat.cn:444/10", "https://user@clawdchat.cn/10", "http://clawdchat.cn/10",
                     "https://clawdchat.cn/\nsecret", "https://clawdchat.cn\\@evil.invalid/10"]:
             with self.subTest(url=url):
-                self.client.originals[uid(10)] = original(10, web_url=url)
-                with patch.object(adapter, "Client", return_value=self.client):
-                    batch = adapter.collect({}, {}, frozenset())
+                self.board.originals[uid(10)] = original(10, web_url=url)
+                batch = adapter.collect(self.settings, {}, frozenset(), fetch=self.board)
                 validate(batch)
                 self.assertEqual(batch.error, "invalid_response")
                 self.assertEqual(batch.messages[0]["url"], adapter.ORIGIN + "/api/v1/comments/" + uid(10))
 
 
-class ScriptedHTTPS(BaseHandler):
-    """Exercise urllib's real redirect processing without sockets or secrets."""
-    handler_order = 100
-    def __init__(self, responses):
-        self.responses = iter(responses)
-        self.requests = []
+class RequestTests(unittest.TestCase):
+    """What the client of ClawdChat asks the board: with which key, and how often. These passes have no inbox
+    file. A pass gets its state from the test."""
+    def setUp(self):
+        self.board = Board()
+        self.settings = {"account_id": uid(1), "api_key_file": key_file(self)}
 
-    def http_open(self, request):
-        raise AssertionError("An HTTPS retry became an unencrypted HTTP request")
+    def collect(self, state=None, board=None):
+        batch = adapter.collect(self.settings, state or {}, frozenset(), fetch=board or self.board)
+        validate(batch)
+        return batch
 
-    def https_open(self, request):
-        self.requests.append(request)
-        status, content, location = next(self.responses)
-        headers = Message()
-        if location:
-            headers["Location"] = location
-        response = addinfourl(io.BytesIO(content), headers, request.full_url, status)
-        response.msg = "Synthetic response"
-        return response
+    def test_the_key_goes_with_the_profile_and_the_notifications_and_with_no_other_request(self):
+        self.board.events = [event(10), event(100, "mention_post")]
+        self.board.originals = {uid(10): original(10), uid(100): original(100, title="A post")}
+        profile = self.board.profile
 
+        def once(asked):
+            self.settings["api_key_file"].unlink()  # The key is read once for a pass. The notifications need it too.
+            return profile
 
-class TransportTests(unittest.TestCase):
-    def client(self, replies, proxy=None):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        key = Path(temp.name) / "key"
-        key.write_text("synthetic-key-only\n")
-        client = adapter.Client({"account_id": uid(1), "api_key_file": key})
-        handler = ScriptedHTTPS(replies)
-        client.opener = build_opener(ProxyHandler(proxy or {}), handler, adapter.NoRedirect())
-        return client, handler
+        self.board.profile = once
+        self.assertEqual(len(self.collect().messages), 2)
+        private = {"Authorization": "Bearer " + KEY}
+        self.assertEqual([(asked.board, asked.url, asked.headers) for asked in self.board.asked], [
+            ("clawdchat", "https://clawdchat.cn/api/v1/agents/me", private),
+            ("clawdchat", "https://clawdchat.cn/api/v1/notifications?limit=8&offset=0", private),
+            ("clawdchat", "https://clawdchat.cn/api/v1/comments/" + uid(10), {}),
+            ("clawdchat", "https://clawdchat.cn/api/v1/posts/" + uid(100), {})])
 
-    def test_authentication_only_on_explicit_calls_and_redirect_not_followed(self):
-        client, handler = self.client([(200, b'{"id":"example"}', None)] * 2 + [(302, b"", "https://evil.invalid/stolen")])
-        client.get("/agents/me", authenticated=True)
-        client.get("/comments/" + uid(10))
-        with self.assertRaisesRegex(MailError, "^redirect_refused$"):
-            client.get("/notifications", authenticated=True)
-        self.assertEqual(len(handler.requests), 3)
-        self.assertEqual(handler.requests[0].get_header("Authorization"), "Bearer synthetic-key-only")
-        self.assertIsNone(handler.requests[1].get_header("Authorization"))
-        self.assertTrue(all(r.full_url.startswith("https://clawdchat.cn/api/v1/") for r in handler.requests))
+    def test_a_key_that_the_board_does_not_take_is_no_credentials(self):
+        for text in ("", "two words", "synthetic-k\u00e9y", "k" * 4097):
+            with self.subTest(text=text[:20]):
+                self.settings["api_key_file"].write_text(text + "\n", encoding="utf-8")
+                batch = self.collect()
+                self.assertEqual((batch.error, batch.complete), ("credentials_unavailable", False))
+                self.assertEqual(self.board.asked, [])
 
-    def test_https_proxy_retry_keeps_the_original_transport(self):
-        client, handler = self.client([(503, b"retry", None)] * 2 + [(200, b'{"id":"example"}', None)],
-                                      proxy={"https": "http://proxy.invalid:8080"})
-        self.assertEqual(client.get("/notifications", authenticated=True), {"id": "example"})
-        self.assertEqual(len(handler.requests), 3)
+    def test_a_board_that_is_down_is_asked_three_times_and_one_that_refuses_once(self):
+        for answer, code, times in [(408, "http_408", 3), (500, "http_500", 3), (502, "http_502", 3),
+                                    (503, "http_503", 3), (504, "http_504", 3),
+                                    (URLError("The board is not reached"), "network_error", 3),
+                                    (400, "http_400", 1), (401, "http_401", 1), (403, "http_403", 1),
+                                    (404, "http_404", 1), (422, "http_422", 1), (429, "http_429", 1),
+                                    # What the transport says of a redirect and of an answer over the size cap.
+                                    (MailError("redirect_refused"), "redirect_refused", 1),
+                                    (MailError("response_too_large"), "response_too_large", 1)]:
+            with self.subTest(answer=answer):
+                board = Board()
+                board.profile = answer
+                batch = self.collect(board=board)
+                self.assertEqual((batch.error, len(board.asked)), (code, times))
+        # A try that fails is not the end of the request: the third one is answered, and the pass goes on.
+        answers = iter([503, URLError("The board is not reached"), {"id": uid(1)}])
+        self.board.profile = lambda asked: next(answers)
+        batch = self.collect()
+        self.assertEqual((batch.error, batch.complete), (None, True))
+        self.assertEqual([path for path, _, _ in self.board.calls], ["/agents/me"] * 3 + ["/notifications"])
 
-    def test_public_original_needs_no_readable_key_file(self):
-        client, handler = self.client([(200, b'{"id":"public-original"}', None)])
-        client.settings['api_key_file'].unlink()
-        self.assertEqual(client.get('/comments/' + uid(10)), {'id': 'public-original'})
-        self.assertIsNone(handler.requests[0].get_header('Authorization'))
-        with self.assertRaisesRegex(MailError, '^credentials_unavailable$'):
-            client.get('/agents/me', authenticated=True)
-        self.assertEqual(len(handler.requests), 1)
+    def test_an_answer_that_says_no_success_is_not_read(self):
+        self.board.profile = {"success": False, "id": uid(1)}
+        batch = self.collect()
+        self.assertEqual((batch.error, len(self.board.asked)), ("invalid_response", 1))
+        # The same holds for a public original: it is no mail, and its reference waits.
+        self.board.profile = {"id": uid(1)}
+        self.board.events = [event(10), event(11)]
+        self.board.originals = {uid(10): {**original(10), "success": False}, uid(11): original(11)}
+        batch = self.collect()
+        self.assertEqual((batch.error, [message["id"] for message in batch.messages]), ("invalid_response", [uid(11)]))
+        self.assertEqual([entry["id"] for entry in batch.state["pending"]], [uid(10)])
 
-    def test_transient_retry_cap_rate_limit_and_response_size(self):
-        client, handler = self.client([(503, b"PRIVATE ERROR", None)] * 4)
-        with self.assertRaisesRegex(MailError, "^http_503$"):
-            client.get("/notifications", authenticated=True)
-        self.assertEqual(len(handler.requests), 3)
-        client, handler = self.client([(429, b"PRIVATE RATE LIMIT", None)])
-        with self.assertRaisesRegex(MailError, "^http_429$"):
-            client.get("/notifications", authenticated=True)
-        self.assertEqual(len(handler.requests), 1)
-        client, handler = self.client([(200, b"x" * (1024 * 1024 + 1), None)])
-        with self.assertRaisesRegex(MailError, "^response_too_large$"):
-            client.get("/comments/" + uid(10))
-
-    def test_deadline_and_global_request_limit_stop_network_work(self):
-        client, handler = self.client([])
-        client.deadline = 0
-        with self.assertRaisesRegex(MailError, "^budget_exhausted$"):
-            client.get("/notifications", authenticated=True)
-        client.phase(5)
-        client.requests = adapter.MAX_REQUESTS
-        with self.assertRaisesRegex(MailError, "^budget_exhausted$"):
-            client.get("/notifications", authenticated=True)
-        self.assertEqual(handler.requests, [])
+    def test_a_pass_asks_the_board_forty_times_and_no_more(self):
+        # No original is reached, and each one is tried three times: the eight that waited, then the new ones.
+        pending = [{"id": uid(n), "post": uid(100), "kind": "reply_to_post", "is_post": False} for n in range(30, 38)]
+        self.board.events = [event(n) for n in range(10, 18)]
+        self.board.originals = {uid(n): URLError("The board is not reached") for n in (*range(10, 18), *range(30, 38))}
+        batch = self.collect({"pending": pending, "offset": 0})
+        self.assertEqual((batch.error, batch.messages, batch.complete), ("network_error", [], False))
+        self.assertEqual(len(self.board.asked), 40)
+        # One request for the profile, 24 for the eight that waited, one for the notifications, and 14 are left
+        # for the new references: four of them in full and two tries of the fifth.
+        self.assertEqual([path for path, _, _ in self.board.calls[26:]],
+                         [path for n in range(10, 15) for path in ["/comments/" + uid(n)] * 3][:14])
+        self.assertEqual(len(batch.state["pending"]), 16)
 
 
 if __name__ == "__main__":

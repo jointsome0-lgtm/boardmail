@@ -11,11 +11,11 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-from boardmail import adapter_clawdchat, cli, commands, providers
+from boardmail import cli, commands, providers
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
-from test_clawdchat import FixtureClient as ClawdClient, original as clawd_original
+from test_clawdchat import Board as ClawdChat, original as clawd_original
 from test_mail import mail
 
 NO_CLIENT = AssertionError('remote client constructed')
@@ -148,7 +148,7 @@ class ExpandTests(unittest.TestCase):
 
     def test_local_paused_unconfigured_and_unsupported_reads_never_build_a_client(self):
         self.store.save('fourclaw', 'demo', [{**mail(800), 'thread_id': uid(800)}])
-        with patch.object(providers, 'Client', side_effect=NO_CLIENT), patch.object(adapter_clawdchat, 'Client', side_effect=NO_CLIENT):
+        with patch.object(providers, 'Client', side_effect=NO_CLIENT):
             cases = [('local', dict(local=True)), ('unconfigured', dict(sources=None)), ('other source', dict(sources={'moltbook': settings()['moltbook']}))]
             for name, args in cases:
                 with self.subTest(case=name):
@@ -248,21 +248,18 @@ class ExpandReuseTests(unittest.TestCase):
         self.store.mark('clawdchat', uid(13), 'needs_reply')
         saved = {mid: self.store.show('clawdchat', mid) for mid in (uid(12), uid(13))}
         before = self.path.read_bytes()
-        client = ClawdClient()
-        client.originals = {uid(100): clawd_original(100, title='Current thread'),
-                            uid(11): clawd_original(11, content='Current parent.'),
-                            uid(12): clawd_original(12, parent_id=uid(100)),
-                            uid(13): clawd_original(13, parent_id=uid(11))}
-        get = client.get
-        def unavailable(*args, **kwargs):
-            raise MailError('http_503')
+        board = ClawdChat()
+        board.originals = {uid(100): clawd_original(100, title='Current thread'),
+                           uid(11): clawd_original(11, content='Current parent.'),
+                           uid(12): clawd_original(12, parent_id=uid(100)),
+                           uid(13): clawd_original(13, parent_id=uid(11))}
         for mode in ('local', 'unavailable', 'current'):
             with self.subTest(mode=mode):
-                client.get = get if mode == 'current' else unavailable
-                with patch.object(adapter_clawdchat, 'Client', return_value=client) as factory:
-                    result, code = commands.execute(self.store, 'expand', source='clawdchat', thread=uid(100),
-                                                    through=4, sources={'clawdchat': cfg}, local=mode == 'local')
-                    if mode == 'local': factory.assert_not_called()
+                board.down = None if mode == 'current' else 503
+                board.asked.clear()
+                result, code = commands.execute(self.store, 'expand', source='clawdchat', thread=uid(100), through=4,
+                                                sources={'clawdchat': cfg}, local=mode == 'local', fetch=board)
+                self.assertEqual(bool(board.asked), mode != 'local')
                 self.assertEqual([item['id'] for item in result['items']], [uid(12), uid(13)])
                 self.assertEqual((code, result['complete']), (0, True) if mode == 'current' else (1, False))
                 for item in result['items']:
@@ -327,25 +324,25 @@ class ExpandReuseTests(unittest.TestCase):
 
     def test_clawdchat_shares_root_and_parents_and_rejects_relocated_originals(self):
         cfg = {'account_id': uid(1), 'adapter': 'clawdchat', 'api_key_file': Path('absent.key')}
-        client = ClawdClient()
-        client.originals = {uid(100): clawd_original(100, title='Thread'),
-                            uid(11): clawd_original(11, content='Our answer.', author={'id': uid(1), 'name': 'owner'}),
-                            uid(12): clawd_original(12, parent_id=uid(11)), uid(13): clawd_original(13, parent_id=uid(11)),
-                            uid(14): clawd_original(14, post_id=uid(999), post={'id': uid(999), 'title': 'Elsewhere'}),
-                            uid(15): MailError('http_404')}
+        board = ClawdChat()
+        board.originals = {uid(100): clawd_original(100, title='Thread'),
+                           uid(11): clawd_original(11, content='Our answer.', author={'id': uid(1), 'name': 'owner'}),
+                           uid(12): clawd_original(12, parent_id=uid(11)), uid(13): clawd_original(13, parent_id=uid(11)),
+                           uid(14): clawd_original(14, post_id=uid(999), post={'id': uid(999), 'title': 'Elsewhere'}),
+                           uid(15): 404}
         self.store.save('clawd', uid(1), [
             {**mail(12), 'thread_id': uid(100), 'parent_id': uid(11)}, {**mail(13), 'thread_id': uid(100), 'parent_id': uid(11)},
             {**mail(14), 'thread_id': uid(100), 'parent_id': uid(11)}, {**mail(15), 'thread_id': uid(100)}])
         before = self.path.read_bytes()
-        with patch.object(adapter_clawdchat, 'Client', return_value=client):
-            result, code = commands.execute(self.store, 'expand', source='clawd', thread=uid(100), through=4, sources={'clawd': cfg})
+        result, code = commands.execute(self.store, 'expand', source='clawd', thread=uid(100), through=4,
+                                        sources={'clawd': cfg}, fetch=board)
         self.assertEqual((code, result['complete'], result['budget_exhausted'], result['root']['id']), (1, False, False, uid(100)))
         self.assertEqual([i['complete'] for i in result['items']], [True, True, False, False])
         relocated, missing = result['items'][2], result['items'][3]
         self.assertEqual((relocated['target']['remote_status'], relocated['target']['error'], relocated['target']['message']['thread_id']),
                          ('unavailable', 'invalid_response', uid(100)))
         self.assertEqual((missing['target']['remote_status'], missing['target']['error'], missing['parent']), ('missing', 'http_404', {'id': uid(100), 'status': 'same_as_root'}))
-        self.assertEqual([path for path, _, _ in client.calls],
+        self.assertEqual([path for path, _, _ in board.calls],
                          ['/posts/' + uid(100), '/comments/' + uid(12), '/comments/' + uid(11), '/comments/' + uid(13), '/comments/' + uid(14), '/comments/' + uid(15)])
         self.assertEqual(self.path.read_bytes(), before)
 

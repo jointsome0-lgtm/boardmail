@@ -204,7 +204,7 @@ class SubscriptionTests(unittest.TestCase):
             self.store.set_subscription(source, uid(100), True)
         seen = []
 
-        def collect(cfg, state, known):
+        def collect(cfg, state, known, **asks):
             seen.append((cfg['adapter'], list(cfg['subscriptions'])))
             return Batch(state=state)
 

@@ -32,7 +32,9 @@ NoRedirect = partial(transport.NoRedirect, "clawdchat")
 
 
 class Client:
-    def __init__(self, settings):
+    """The requests of one pass or one command. fetch asks the board: the transport, or an invented board in its
+    place."""
+    def __init__(self, settings, *, fetch=transport.fetch):
         try:
             self.owner = uuid(settings["account_id"])
         except (KeyError, ValueError, TypeError, AttributeError):
@@ -43,6 +45,7 @@ class Client:
         self.requests = 0
         self.limit = MAX_REQUESTS
         self.opener = transport.opener("clawdchat")
+        self.fetch = fetch
 
     def phase(self, seconds):
         self.deadline = min(self.end, time.monotonic() + seconds)
@@ -60,7 +63,7 @@ class Client:
                 raise MailError("budget_exhausted")
             self.requests += 1
             try:
-                result = transport.fetch("clawdchat", url, through=self.opener, left=remaining, headers=headers)
+                result = self.fetch("clawdchat", url, through=self.opener, left=remaining, headers=headers)
             except (OSError, HTTPException) as exc:
                 code = transport.failure("clawdchat", exc)
                 # A retry is for a board that was not reached and for these statuses.
@@ -202,16 +205,18 @@ def lookup(client, mid, root=None):
     return "available", None, message
 
 
-def collect(settings, state, known):
+def collect(settings, state, known, *, fetch=transport.fetch):
     """Rotate retries, read fresh and backfill pages, then confirm new references.
 
     State retains references only. Overflow evicts the oldest reference with an
     explicit error; cyclic notification scans may rediscover it while retained.
+
+    fetch asks the board: the transport, or an invented board in its place.
     """
     batch = Batch(state={"offset": 0, "pending": []})
     pending = {}
     try:
-        client = Client(settings)
+        client = Client(settings, fetch=fetch)
         client.phase(5)
         profile = client.get("/agents/me", authenticated=True)
         if uuid(profile["id"]) != client.owner:

@@ -10,11 +10,11 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import adapter_clawdchat, cli, commands, providers, replies, schema, verification
+from boardmail import cli, commands, providers, replies, schema, verification
 from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, uid
-from test_clawdchat import FixtureClient as ClawdClient, original as clawd_original
+from test_clawdchat import Board as ClawdChat, original as clawd_original
 from test_mail import mail
 from test_replies import WriteBarrierStore, run_reply_workers
 
@@ -41,7 +41,7 @@ class VerificationTests(unittest.TestCase):
             self.raw = named(320, 301, 1, body=self.body, reply_to=None if root_target else 310)
             self.client.others[self.reply] = self.raw
         elif adapter == 'clawdchat':
-            self.client = ClawdClient()
+            self.client = ClawdChat()
             self.raw = clawd_original(320, post_id=self.root, post={'id': self.root, 'title': 'Example'},
                 parent_id=None if root_target else self.target, content=self.body, author={'id': uid(1), 'name': 'owner'})
             self.client.originals = {self.reply: self.raw}
@@ -61,10 +61,13 @@ class VerificationTests(unittest.TestCase):
     def call(self, action='verify', **options):
         if action == 'verify':
             options = {'key': self.key, 'ref': self.ref, **options}
-        module = adapter_clawdchat if self.adapter == 'clawdchat' else providers
-        with patch.object(module, 'Client', return_value=self.client):
+        def run(**asks):
             return commands.outcome(lambda: commands.execute(self.store, 'reply_' + action,
-                sources={self.source: self.settings}, source=self.source, id=self.target, **options))
+                sources={self.source: self.settings}, source=self.source, id=self.target, **options, **asks))
+        if self.adapter == 'clawdchat':
+            return run(fetch=self.client)  # The client of ClawdChat asks the invented board.
+        with patch.object(providers, 'Client', return_value=self.client):
+            return run()
 
     def assert_unverified(self, reason=None):
         result, code = self.call()

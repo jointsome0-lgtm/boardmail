@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import URLError
 from uuid import UUID
 
 from boardmail import addressing, config, providers
@@ -19,7 +20,7 @@ from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
-from test_clawdchat import FixtureClient as ClawdChatClient, event as clawd_event, original as clawd_original
+from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, threads as claw_threads
 from test_fruitflies import feed as fly_feed, post as fly_post
 
@@ -389,17 +390,18 @@ class PostingboardTests(unittest.TestCase):
 
 class ClawdChatTests(unittest.TestCase):
     def setUp(self):
-        self.client = ClawdChatClient()
-        self.client.profile["name"] = "clawd-name"
+        self.board = ClawdChat()
+        self.board.profile["name"] = "clawd-name"
+        self.key = key_file(self)
 
-    def collect(self, state=None, known=(), cfg=None):
-        with patch.object(clawd, "Client", return_value=self.client):
-            batch = clawd.collect(cfg or {"account_id": uid(1)}, deepcopy(state or {}), frozenset(known))
+    def collect(self, state=None, known=(), **cfg):
+        settings = {"account_id": uid(1), "api_key_file": self.key, **cfg}
+        batch = clawd.collect(settings, deepcopy(state or {}), frozenset(known), fetch=self.board)
         assert_clean(self, batch)
         return batch
 
     def test_comment_is_checked_against_parent_and_post_ownership(self):
-        c = self.client
+        c = self.board
         c.events = [clawd_event(10), clawd_event(11), clawd_event(12, "reply"), clawd_event(13), clawd_event(13, "reply"),
                     clawd_event(14), clawd_event(14, "mention_comment"), clawd_event(15, "mention_comment"), clawd_event(15),
                     {"id": uid(1100), "type": "mention_post", "post_id": uid(100), "content": PREVIEW}, clawd_event(16)]
@@ -409,22 +411,23 @@ class ClawdChatTests(unittest.TestCase):
         c.originals[uid(12)]["parent_id"] = uid(9)
         c.originals[uid(15)]["parent_id"] = uid(9)
         c.originals[uid(16)].update(parent_id=uid(9), content="@Clawd-Name could you check?")
-        with patch.object(clawd, "PAGE_SIZE", 20):
-            batch = self.collect()
-        self.assertFalse(batch.error)
-        got = by_id(batch)
+        # Eleven notifications are two pages, and a pass reads one page that it has not read.
+        first = self.collect()
+        batch = self.collect(first.state, known=by_id(first))
+        self.assertFalse(first.error or batch.error)
+        got = {**by_id(first), **by_id(batch)}
         self.assertEqual({n: got[uid(n)]["addressing"] for n in (10, 11, 12, 13, 14, 15, 100, 16)}, {
             10: "direct", 11: None, 12: "direct", 13: "direct", 14: "direct+mention", 15: "mention",
             100: "mention", 16: "mention"})
         self.assertEqual({n: got[uid(n)]["kind"] for n in (10, 12, 13, 14, 15, 100)},
                          {10: "reply_to_post", 12: "reply_to_comment", 13: "reply_to_post", 14: "reply_to_post",
                           15: "mention", 100: "mention"})
-        self.assertTrue(batch.complete)
+        self.assertEqual((first.complete, batch.complete), (False, True))
         self.assertEqual(batch.state["pending"], [])
-        self.assertEqual(originals(batch), {})
+        self.assertEqual((originals(first), originals(batch)), ({}, {}))
 
     def test_foreign_post_context_own_comment_and_partial_names(self):
-        c = self.client
+        c = self.board
         c.events = [clawd_event(17), clawd_event(18), clawd_event(19, "mention_comment")]
         c.originals = {uid(n): clawd_original(n) for n in (17, 18, 19)}
         c.originals[uid(17)]["post"] = {"id": uid(100), "title": "Their post", "author": {"id": uid(2)}}
@@ -438,9 +441,9 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(originals(batch)[uid(18)]["author"], "us")
 
     def test_overlap_after_same_pass_resolution_is_still_merged(self):
-        c = self.client
+        c = self.board
         c.events = [clawd_event(40, "reply")]
-        c.originals = {uid(40): MailError("network_error")}
+        c.originals = {uid(40): URLError("The board is not reached")}
         first = self.collect()
         self.assertEqual(first.state["pending"][0]["types"], ["reply"])
         # The retry succeeds before discovery reads the second notification.
@@ -451,9 +454,9 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(len(second.messages), 1)
 
     def test_overlap_arriving_later_and_legacy_pending_entries(self):
-        c = self.client
+        c = self.board
         c.events = [clawd_event(20)]
-        c.originals = {uid(20): MailError("network_error")}
+        c.originals = {uid(20): URLError("The board is not reached")}
         first = self.collect()
         self.assertEqual(first.messages, [])
         self.assertEqual(first.state["pending"][0]["types"], ["comment"])
@@ -477,11 +480,11 @@ class ClawdChatTests(unittest.TestCase):
                          {21: "direct", 22: None, 23: "mention"})
 
     def test_configured_aliases_add_textual_mentions(self):
-        c = self.client
+        c = self.board
         c.events = [clawd_event(30), clawd_event(31)]
         c.originals = {uid(30): clawd_original(30, parent_id=uid(9), content="ping @Helper"),
                        uid(31): clawd_original(31, content="ping @Helper too")}
-        batch = self.collect(cfg={"account_id": uid(1), "mention_aliases": ["@helper"]})
+        batch = self.collect(mention_aliases=["@helper"])
         self.assertEqual({n: by_id(batch)[uid(n)]["addressing"] for n in (30, 31)}, {30: "mention", 31: "direct+mention"})
 
 
