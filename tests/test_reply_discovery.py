@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from boardmail import commands, replies
 from boardmail.store import Store
-from examples.fixtures import uid
+from examples.fixtures import FakeBoard, uid
 from test_mail import mail
 
 
@@ -51,31 +51,32 @@ class ReplyDiscoveryTests(unittest.TestCase):
         self.store.mark('moltbook', uid(11), 'read')
         self.store.mark('moltbook', uid(11), 'clear_reply')
         before = self.path.read_bytes()
-        with patch('boardmail.providers.Client.get', side_effect=AssertionError('Discovery must not fetch')):
-            status, code = commands.execute(self.store, 'status')
-            self.assertEqual(code, 0)
-            self.assertEqual(status['counts']['replied'], 3)
-            page = status['reply_attempts']
-            self.assertEqual(len(page['items']), 20)
-            observed, sizes = [], []
-            while True:
-                self.assertEqual(page['counts'], {'prepared': 23, 'unknown': 22, 'confirmed': 2})
-                sizes.append(len(page['items']))
-                for item in page['items']:
-                    observed.append((item['source'], item['id'], item['state']))
-                    self.assertNotIn('body', item); self.assertNotIn('idempotency_key', item)
-                    route = item['show']
-                    recovered = self.cli(*route['command'].split(), route['arguments']['source'], route['arguments']['id'])
-                    self.assertEqual(recovered['reply']['state'], item['state'])
-                    self.assertEqual(recovered['next_action'], item['next_action'])
-                if not page['has_more']:
-                    self.assertIsNone(page['next']); break
-                route = page['next']
-                self.assertEqual(route['tool'], 'boardmail_reply_list')
-                page = self.cli(*route['command'].split(), '--after', str(route['arguments']['after']),
-                                '--limit', str(route['arguments']['limit']))
-            self.assertEqual(sizes, [20, 20, 5])
-            self.assertEqual(observed, expected)
+        board = FakeBoard([])  # It has no answer, and it is asked nothing.
+        status, code = commands.execute(self.store, 'status', fetch=board)
+        self.assertEqual(code, 0)
+        self.assertEqual(status['counts']['replied'], 3)
+        page = status['reply_attempts']
+        self.assertEqual(len(page['items']), 20)
+        observed, sizes = [], []
+        while True:
+            self.assertEqual(page['counts'], {'prepared': 23, 'unknown': 22, 'confirmed': 2})
+            sizes.append(len(page['items']))
+            for item in page['items']:
+                observed.append((item['source'], item['id'], item['state']))
+                self.assertNotIn('body', item); self.assertNotIn('idempotency_key', item)
+                route = item['show']
+                recovered = self.cli(*route['command'].split(), route['arguments']['source'], route['arguments']['id'])
+                self.assertEqual(recovered['reply']['state'], item['state'])
+                self.assertEqual(recovered['next_action'], item['next_action'])
+            if not page['has_more']:
+                self.assertIsNone(page['next']); break
+            route = page['next']
+            self.assertEqual(route['tool'], 'boardmail_reply_list')
+            page = self.cli(*route['command'].split(), '--after', str(route['arguments']['after']),
+                            '--limit', str(route['arguments']['limit']))
+        self.assertEqual(sizes, [20, 20, 5])
+        self.assertEqual(observed, expected)
+        self.assertEqual(board.asked, [])
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_exact_page_boundary_and_cursor_validation(self):

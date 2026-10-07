@@ -14,7 +14,7 @@ from unittest.mock import patch
 from boardmail import providers
 from boardmail.mcp import create_server
 from boardmail.store import Store
-from examples.fixtures import FixtureBoard, FixtureClient, named, settings, together, uid
+from examples.fixtures import FixtureBoard, named, settings, together, uid
 import kit
 from test_mail import mail
 
@@ -293,16 +293,16 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(run.stdout)['reply'], confirmed['reply'])
 
     async def test_reply_verify_checks_provider_and_exposes_durable_evidence(self):
-        cfg = {'postingboard': settings()['postingboard']}
+        cfg = {'postingboard': settings(self.temp.name)['postingboard']}
         self.store.initialize(cfg)
         self.store.save('postingboard', cfg['postingboard']['account_id'], [
             {**mail(610), 'thread_id': uid(600)}])
-        fixture = FixtureClient('postingboard', cfg['postingboard'])
+        fixture = FixtureBoard('postingboard', cfg['postingboard'])
         reply = named(620, 600, 3, body='Exact reply.\r\n', reply_to=610)
         fixture.others = {uid(620): reply}
         target = {'source': 'postingboard', 'id': uid(610)}
-        with patch('boardmail.providers.Client', return_value=fixture):
-            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+        with kit.fixed(kit.Clock(1_000_000)):
+            async with Client(create_server(self.store, cfg, fetch=fixture), mode='2026-07-28', raise_exceptions=True) as c:
                 prepared = await self.call(c, 'reply_prepare', {**target, 'body': reply['body']})
                 args = {**target, 'key': prepared['reply']['idempotency_key']}
                 await self.call(c, 'reply_begin', args)
@@ -413,17 +413,18 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn('account_mismatch',[e['error'] for e in result['errors']])
 
     async def test_context_returns_saved_and_current_text_without_marks(self):
-        cfg = {'postingboard': settings()['postingboard']}
+        cfg = {'postingboard': settings(self.temp.name)['postingboard']}
         self.store.initialize(cfg)
         self.store.save('postingboard', cfg['postingboard']['account_id'], [
             {**mail(610), 'thread_id': uid(600), 'parent_id': uid(601)}, mail(611)])
         self.store.mark('postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
-        fixture = FixtureClient('postingboard', cfg['postingboard'])
+        fixture = FixtureBoard('postingboard', cfg['postingboard'])
         fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our previous reply.'),
                           uid(610): named(610, 600, reply_to=601, body='Edited reply text')}
         before = self.path.read_bytes()
-        with patch('boardmail.providers.Client', return_value=fixture):
-            async with Client(create_server(self.store, cfg), mode='2026-07-28', raise_exceptions=True) as c:
+        # The client waits between two requests to Postingboard. With the clock fixed, the wait only moves it.
+        with kit.fixed(kit.Clock(1_000_000)):
+            async with Client(create_server(self.store, cfg, fetch=fixture), mode='2026-07-28', raise_exceptions=True) as c:
                 target = {'source': 'postingboard', 'id': uid(610)}
                 result = await self.call(c, 'context', target)
                 self.assertEqual(result['target']['message']['body'], 'Synthetic text')
@@ -519,31 +520,36 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancelled_collection_finishes_before_next_collection(self):
         self.store.initialize()
+        cfg = {'moltbook': settings(self.temp.name)['moltbook']}
+        board = FixtureBoard('moltbook', cfg['moltbook'])
         started, release, second = threading.Event(), threading.Event(), threading.Event()
-        calls = []
-        def collect(*args, **asks):
-            calls.append(1)
-            if len(calls) == 1:
-                started.set()
-                release.wait(5)
-            else:
-                second.set()
-            return {'event':'collected','added':0,'failed':False,'errors':[]}
-        with patch.object(providers, 'collect_all', collect):
-            async with Client(create_server(self.store, {}), mode='2026-07-28', raise_exceptions=True) as c:
-                first = asyncio.create_task(c.call_tool('boardmail_collect'))
-                self.assertTrue(await asyncio.to_thread(started.wait, 2))
-                first.cancel()
-                with self.assertRaises(asyncio.CancelledError):
-                    await first
-                other = asyncio.create_task(c.call_tool('boardmail_check'))
-                try:
-                    await self.call(c, 'status')
-                    self.assertFalse(await asyncio.to_thread(second.wait, 0.1))
-                finally:
-                    release.set()
-                    await other
-                self.assertTrue(second.is_set())
+        get, passes = board.get, []
+        def held(path, params=None, **kwargs):
+            # A pass begins with the profile of the account. The board holds the first pass there until the test
+            # lets it go.
+            if path == '/agents/me':
+                passes.append(1)
+                if len(passes) == 1:
+                    started.set()
+                    release.wait(5)
+                else:
+                    second.set()
+            return get(path, params, **kwargs)
+        board.get = held
+        async with Client(create_server(self.store, cfg, fetch=board), mode='2026-07-28', raise_exceptions=True) as c:
+            first = asyncio.create_task(c.call_tool('boardmail_collect'))
+            self.assertTrue(await asyncio.to_thread(started.wait, 2))
+            first.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+            other = asyncio.create_task(c.call_tool('boardmail_check'))
+            try:
+                await self.call(c, 'status')
+                self.assertFalse(await asyncio.to_thread(second.wait, 0.1))
+            finally:
+                release.set()
+                await other
+            self.assertTrue(second.is_set())
 
     async def test_modern_http_without_initialization_or_session(self):
         self.store.initialize()

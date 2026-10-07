@@ -13,11 +13,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from boardmail import commands, config, providers
+from boardmail import commands, config
 from boardmail.adapters import Batch, collect_all
 from boardmail.store import Store
-from examples.fixtures import settings, uid
+from examples.fixtures import FixtureBoard, original, settings, together, uid
+from kit import Clock, fixed
 from test_mail import mail
+from test_subscription_providers import ThreadBoard
 
 
 class SubscriptionTests(unittest.TestCase):
@@ -190,37 +192,53 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertTrue(self.store.is_paused(source))
                 self.assertFalse(self.cli('subscribe', source, uid(100))[1]['changed'])
                 self.store.set_paused(source, False)
-                with patch.object(providers, 'collect', return_value=Batch()) as collect:
-                    self.assertFalse(collect_all(self.store, sources)['failed'])
-                    self.assertEqual(collect.call_args.args[0], 'the-colony')
-                    self.assertEqual(collect.call_args.args[1]['subscriptions'], [uid(100)])
+                # The invented Colony is asked for the thread, under the adapter that the config names.
+                cfg = {**sources[source], 'api_key_file': settings(self.root)['the-colony']['api_key_file']}
+                board = ThreadBoard('the-colony', cfg)
+                self.assertFalse(collect_all(self.store, {source: cfg}, fetch=board)['failed'])
+                self.assertEqual([path for path, _, _ in board.calls], ['/agents/me', '/notifications', '/posts/' + uid(100)])
 
     def test_every_builtin_gets_current_source_selections_and_pause_still_applies(self):
-        sources = {f'board{n}': {'account_id': uid(n), 'adapter': adapter}
+        fused = ('postingboard', 'the-colony', 'moltbook')
+        self.assertEqual(config.SUBSCRIPTION_ADAPTERS[:3], fused)
+        key = settings(self.root)['moltbook']['api_key_file']
+        sources = {f'board{n}': {'account_id': uid(n), 'adapter': adapter, **({'api_key_file': key} if adapter in fused else {})}
                    for n, adapter in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
-        original = deepcopy(sources)
+        before = deepcopy(sources)
         self.store.initialize(sources)
         for source in sources:
             self.store.set_subscription(source, uid(100), True)
+        # Postingboard, Colony and Moltbook are invented boards: the threads that a board is asked for are the
+        # ones that its collector was handed. Each other board gets a collector that notes what it is handed.
+        boards = {cfg['adapter']: (FixtureBoard if cfg['adapter'] == 'postingboard' else ThreadBoard)(cfg['adapter'], cfg)
+                  for cfg in sources.values() if cfg['adapter'] in fused}
         seen = []
 
         def collect(cfg, state, known, **asks):
             seen.append((cfg['adapter'], list(cfg['subscriptions'])))
             return Batch(state=state)
 
-        with patch.object(providers, 'collect', side_effect=lambda adapter, cfg, state, known, **kw: collect(cfg, state, known)), \
+        def threads(adapter):
+            """The threads that the invented board was asked for since the last look."""
+            prefix = '/v1/posts/' if adapter == 'postingboard' else '/posts/'
+            asked = [path.removeprefix(prefix) for path, _, _ in boards[adapter].calls if path.startswith(prefix)]
+            boards[adapter].calls.clear()
+            return asked
+
+        with fixed(Clock(1790000000)), \
                 patch('boardmail.adapters.importlib.import_module', return_value=SimpleNamespace(API_VERSION=1, collect=collect)):
-            self.assertFalse(collect_all(self.store, sources)['failed'])
-            self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS])
+            self.assertFalse(collect_all(self.store, sources, fetch=together(boards))['failed'])
+            self.assertEqual([threads(adapter) for adapter in fused], [[uid(100)]] * 3)
+            self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS[3:]])
             seen.clear()
             self.store.set_subscription('board1', uid(100), False)
             self.store.set_subscription('board2', uid(101), True)
             self.store.set_paused('board3', True)
-            self.assertFalse(collect_all(self.store, sources)['failed'])
-        self.assertEqual(seen[:2], [('postingboard', []), ('the-colony', [uid(100), uid(101)])])
-        self.assertEqual(len(seen), 5)
-        self.assertNotIn('moltbook', [name for name, roots in seen])
-        self.assertEqual(sources, original)
+            self.assertFalse(collect_all(self.store, sources, fetch=together(boards))['failed'])
+            self.assertEqual([threads(adapter) for adapter in fused[:2]], [[], [uid(100), uid(101)]])
+        self.assertEqual(boards['moltbook'].calls, [])
+        self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS[3:]])
+        self.assertEqual(sources, before)
 
     def test_custom_adapter_keeps_its_own_settings(self):
         sources = {'example': {'account_id': 'demo-agent', 'adapter': '/unused.py', 'subscriptions': 'custom-option'}}
@@ -234,22 +252,35 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(received, [sources['example']])
 
     def test_unsubscribe_during_collection_keeps_pass_snapshot_without_resurrecting_selection(self):
-        sources = {'moltbook': settings()['moltbook']}
+        sources = {'moltbook': settings(self.root)['moltbook']}
         self.store.initialize(sources)
         self.store.set_subscription('moltbook', uid(100), True)
+        # The invented Moltbook has the thread, with one comment of another account under it.
+        board = ThreadBoard('moltbook', sources['moltbook'])
+        board.posts[uid(100)] = {**original(100, 100), 'title': 'Subscribed thread'}
+        board.comments[uid(100)] = [original(10, 100)]
         entered, finish = threading.Event(), threading.Event()
-        snapshots = []
+        get = board.get
 
-        def collect(adapter, cfg, state, known, **kwargs):
-            snapshots.append(list(cfg['subscriptions']))
-            entered.set()
-            if not finish.wait(5):
-                raise RuntimeError('test did not release collector')
-            return Batch(messages=[dict(mail(10), kind='thread_activity', addressing='thread')]
-                         if cfg['subscriptions'] else [], state={'last_pass': 'saved'})
+        def held(path, params=None, **kwargs):
+            # The board holds the first pass at its first request until the test lets it go.
+            if not entered.is_set():
+                entered.set()
+                if not finish.wait(5):
+                    raise RuntimeError('test did not release collector')
+            return get(path, params, **kwargs)
 
-        with patch.object(providers, 'collect', side_effect=collect), ThreadPoolExecutor(1) as pool:
-            running = pool.submit(collect_all, self.store, sources)
+        def snapshots():
+            """For each pass, the threads that it asked the board for."""
+            passes = []
+            for path, _, _ in board.calls:
+                if path == '/agents/me': passes.append([])
+                elif path.startswith('/posts/') and not path.endswith('/comments'): passes[-1].append(path.removeprefix('/posts/'))
+            return passes
+
+        board.get = held
+        with ThreadPoolExecutor(1) as pool:
+            running = pool.submit(collect_all, self.store, sources, fetch=board)
             try:
                 self.assertTrue(entered.wait(5))
                 Store(self.path).set_subscription('moltbook', uid(100), False)
@@ -261,11 +292,11 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual((page['messages'], page['thread_activity'][0]['count']), ([], 1))
             self.store.mark('moltbook', uid(10), 'read')
             saved = self.store.show('moltbook', uid(10))
-            self.assertEqual(collect_all(self.store, sources)['added'], 0)
+            self.assertEqual(collect_all(self.store, sources, fetch=board)['added'], 0)
             self.store.set_subscription('moltbook', uid(100), True)
-            self.assertEqual(collect_all(self.store, sources)['added'], 0)
+            self.assertEqual(collect_all(self.store, sources, fetch=board)['added'], 0)
             self.assertEqual(self.store.show('moltbook', uid(10)), saved)
-        self.assertEqual(snapshots, [[uid(100)], [], [uid(100)]])
+        self.assertEqual(snapshots(), [[uid(100)], [], [uid(100)]])
 
 
 if __name__ == '__main__':

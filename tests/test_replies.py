@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from boardmail import commands, replies
 from boardmail.store import Store
-from examples.fixtures import uid
+from examples.fixtures import FakeBoard, uid
 from test_mail import mail
 
 
@@ -672,13 +672,14 @@ os._exit(79)
                 self.store.save(source, uid(2), [mail(20)])
                 self.store.set_paused(source, True)
                 original = self.store.collection_state(source, uid(2), source)
-                with patch('boardmail.providers.collect', side_effect=AssertionError('No network allowed')):
-                    result, _ = commands.execute(self.store, 'reply_prepare', source=source, id=uid(20), body=self.body)
-                    key = result['reply']['idempotency_key']
-                    result, _ = commands.execute(self.store, 'reply_begin', source=source, id=uid(20), key=key)
-                    self.assertTrue(result['send_allowed'])
-                    commands.execute(self.store, 'reply_confirm', source=source, id=uid(20), key=key,
-                                     ref=self.ref, readback_body=self.body)
+                board = FakeBoard([])  # It has no answer, and it is asked nothing.
+                result, _ = commands.execute(self.store, 'reply_prepare', source=source, id=uid(20), body=self.body, fetch=board)
+                key = result['reply']['idempotency_key']
+                result, _ = commands.execute(self.store, 'reply_begin', source=source, id=uid(20), key=key, fetch=board)
+                self.assertTrue(result['send_allowed'])
+                commands.execute(self.store, 'reply_confirm', source=source, id=uid(20), key=key,
+                                 ref=self.ref, readback_body=self.body, fetch=board)
+                self.assertEqual(board.asked, [])
                 self.assertTrue(self.store.is_paused(source))
                 self.assertEqual(self.store.collection_state(source, uid(2), source), original)
 

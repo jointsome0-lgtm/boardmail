@@ -333,8 +333,8 @@ class CachedClient:
 class Lookup:
     """Original lookups for one command through a single client and budget.
 
-    fetch asks the board: the transport, or an invented board in its place. The clients of ClawdChat and Botnet
-    are handed it. Postingboard, Colony and Moltbook still take their client from client_factory."""
+    fetch asks the board: the transport, or an invented board in its place. The client of the board is handed
+    it. A client from client_factory is asked instead of the board, and is not handed fetch."""
 
     def __init__(self, adapter, settings, client_factory=None, fetch=transport.fetch):
         self.adapter = adapter
@@ -347,7 +347,7 @@ class Lookup:
             client = client_factory(adapter, settings) if client_factory else adapter_botnet.Client(settings, fetch=fetch)
             self.lookup = adapter_botnet.lookup
         else:
-            client = (client_factory or providers.Client)(adapter, settings)
+            client = client_factory(adapter, settings) if client_factory else providers.Client(adapter, settings, fetch=fetch)
             self.lookup = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
                            "moltbook": providers.moltbook_lookup}[adapter]
         self.client = CachedClient(client)

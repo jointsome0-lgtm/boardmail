@@ -4,13 +4,12 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from urllib.error import HTTPError
 from uuid import UUID
 
 from boardmail import commands, providers
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, original, settings, uid
+from examples.fixtures import FixtureBoard, original, settings, uid
 from test_mail import mail
 
 
@@ -22,9 +21,7 @@ class ExchangeTests(unittest.TestCase):
         self.cfg = {**settings()['the-colony'], 'adapter': 'the-colony'}
         self.sources = {self.source: self.cfg, 'other-colony': {**self.cfg, 'account_id': uid(99)}}
         self.store = Store(self.path); self.store.initialize(self.sources)
-        self.fixture = FixtureClient('the-colony', self.cfg)
-        hosts = patch.dict(providers.HOSTS, {'the-colony': self.fixture.host})
-        hosts.start(); self.addCleanup(hosts.stop)
+        self.fixture = FixtureBoard('the-colony', self.cfg)
         self.ref = self.fixture.host + '/posts/' + uid(101) + '#comment-' + uid(120)
         self.parent = original(120, 101, int(UUID(self.cfg['account_id'])), colony=True, body='Our published answer.')
         self.target = {**original(130, 101, colony=True, body='A new follow-up.'), 'parent_id': uid(120)}
@@ -39,12 +36,13 @@ class ExchangeTests(unittest.TestCase):
         self.store.mark('other-colony', uid(204), 'replied', ref=self.ref)
 
     def context(self, mid=130, *, local=False):
-        with patch.object(providers, 'Client', return_value=self.fixture) as factory:
-            result = commands.execute(self.store, 'context', source=self.source, id=uid(mid),
-                                      sources=self.sources, local=local)
-            if local or self.store.is_paused(self.source): factory.assert_not_called()
-            else: factory.assert_called_once_with('the-colony', self.cfg)
-            return result
+        """The context command with the invented Colony in the place of the transport. There is no key file for
+        the client to read: the board gives an original to anyone."""
+        before = len(self.fixture.asked)
+        result = commands.execute(self.store, 'context', source=self.source, id=uid(mid),
+                                  sources=self.sources, local=local, fetch=self.fixture)
+        if local or self.store.is_paused(self.source): self.assertEqual(len(self.fixture.asked), before)
+        return result
 
     def test_all_exact_links_include_cross_thread_answers_but_exclude_other_source_and_target(self):
         before = self.path.read_bytes()

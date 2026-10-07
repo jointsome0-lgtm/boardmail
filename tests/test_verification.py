@@ -1,4 +1,5 @@
 """Remote reply reconciliation with invented provider originals, never publication."""
+from contextlib import contextmanager
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -8,12 +9,12 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
 
 from boardmail import cli, commands, providers, replies, schema, verification
 from boardmail.adapters import Batch
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, uid
+from examples.fixtures import KEY, FixtureBoard, named, original, uid
+from kit import Clock, Network, edge, fixed
 from test_clawdchat import Board as ClawdChat, original as clawd_original
 from test_mail import mail
 from test_replies import WriteBarrierStore, run_reply_workers
@@ -24,12 +25,17 @@ class VerificationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'mail.sqlite3'
         self.store = Store(self.path); self.store.initialize()
+        self.key_file = Path(self.temp.name) / 'example.key'
+        self.key_file.write_text(KEY + '\n')
         self.body = 'A synthetic reply. Кириллица.\r\nExact newline.\n'
         self.root, self.target, self.reply = uid(301), uid(310), uid(320)
 
     def setup_source(self, adapter, *, root_target=False):
         self.adapter, self.source = adapter, 'alias-' + adapter
         self.settings = {'account_id': uid(1), 'adapter': adapter, 'api_key_file': 'missing.key'}
+        if adapter == 'postingboard':
+            # Postingboard is asked with the key of the account. The other boards give an original to anyone.
+            self.settings['api_key_file'] = self.key_file
         if root_target:
             self.target = self.root
         self.store.save_collection(self.source, uid(1), adapter, 0, Batch())
@@ -37,7 +43,7 @@ class VerificationTests(unittest.TestCase):
         self.store.mark(self.source, self.target, 'read')
         self.store.mark(self.source, self.target, 'needs_reply')
         if adapter == 'postingboard':
-            self.client = FixtureClient(adapter, self.settings)
+            self.client = FixtureBoard(adapter, self.settings)
             self.raw = named(320, 301, 1, body=self.body, reply_to=None if root_target else 310)
             self.client.others[self.reply] = self.raw
         elif adapter == 'clawdchat':
@@ -46,7 +52,7 @@ class VerificationTests(unittest.TestCase):
                 parent_id=None if root_target else self.target, content=self.body, author={'id': uid(1), 'name': 'owner'})
             self.client.originals = {self.reply: self.raw}
         else:
-            self.client = FixtureClient(adapter, self.settings)
+            self.client = FixtureBoard(adapter, self.settings)
             flags = {'held': False} if adapter == 'the-colony' else {'verification_status': 'verified', 'is_deleted': False, 'is_spam': False}
             self.client.root = {**original(301, 301, 1, colony=adapter == 'the-colony'), **flags, 'title': 'Example'}
             self.raw = {**original(320, 301, 1, colony=adapter == 'the-colony', body=self.body), **flags,
@@ -61,13 +67,18 @@ class VerificationTests(unittest.TestCase):
     def call(self, action='verify', **options):
         if action == 'verify':
             options = {'key': self.key, 'ref': self.ref, **options}
-        def run(**asks):
-            return commands.outcome(lambda: commands.execute(self.store, 'reply_' + action,
-                sources={self.source: self.settings}, source=self.source, id=self.target, **options, **asks))
-        if self.adapter == 'clawdchat':
-            return run(fetch=self.client)  # The client of ClawdChat asks the invented board.
-        with patch.object(providers, 'Client', return_value=self.client):
-            return run()
+        # The client of the board asks the invented board.
+        return commands.outcome(lambda: commands.execute(self.store, 'reply_' + action,
+            sources={self.source: self.settings}, source=self.source, id=self.target, fetch=self.client, **options))
+
+    @contextmanager
+    def unreached(self, error=None):
+        """Inside the block the board is not reached: each request to it ends with a timeout."""
+        self.client.fail = error or TimeoutError()
+        try:
+            yield
+        finally:
+            self.client.fail = False
 
     def assert_unverified(self, reason=None):
         result, code = self.call()
@@ -91,8 +102,7 @@ class VerificationTests(unittest.TestCase):
 
     def test_candidate_survives_timeout_and_reopen_without_becoming_evidence(self):
         self.setup_source('postingboard')
-        with patch.object(verification, 'read', side_effect=TimeoutError('private provider prose secret-token')), \
-                patch.object(verification.time, 'time', return_value=2000):
+        with self.unreached(TimeoutError('private provider prose secret-token')), fixed(Clock(2000)):
             failed, code = self.call()
         self.assertEqual(code, 1)
         self.store = Store(self.path)
@@ -122,7 +132,7 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(failed['changed'])
         # A later completed failure replaces the diagnostic, even if the local clock moved back.
         self.raw['agent_id'] = uid(2)
-        with patch.object(verification.time, 'time', return_value=1999):
+        with fixed(Clock(1999)):
             updated, code = self.call()
             before = self.path.read_bytes()
             repeated, _ = self.call()
@@ -138,15 +148,18 @@ class VerificationTests(unittest.TestCase):
     def test_candidate_survives_process_exit_before_provider_read_returns(self):
         self.setup_source('postingboard')
         program = '''import json, os, sys
-from unittest.mock import patch
+from pathlib import Path
 from boardmail import verification
 from boardmail.store import Store
 path, source, target, key, ref, settings = sys.argv[1:]
-with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
-    verification.execute(Store(path), {source: json.loads(settings)}, source, target, key=key, ref=ref)
+settings = json.loads(settings)
+settings['api_key_file'] = Path(settings['api_key_file'])
+# The process ends while the board is asked, so no answer comes back.
+verification.execute(Store(path), {source: settings}, source, target, key=key, ref=ref,
+                     fetch=lambda *asked, **more: os._exit(73))
 '''
         child = subprocess.run([sys.executable, '-c', program, str(self.path), self.source,
-                                self.target, self.key, self.ref, json.dumps(self.settings)],
+                                self.target, self.key, self.ref, json.dumps(self.settings, default=str)],
                                cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=15)
         self.assertEqual(child.returncode, 73, child.stderr)
         self.store = Store(self.path)
@@ -163,8 +176,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
     def test_candidates_are_bounded_without_replacing_an_earlier_url(self):
         self.setup_source('postingboard')
         refs = [providers.parent_reference(self.adapter, self.root, uid(320 + i)) for i in range(9)]
-        with patch.object(verification, 'read', side_effect=TimeoutError()) as read, \
-                patch.object(verification.time, 'time', return_value=2000):
+        with self.unreached(), fixed(Clock(2000)):
             for ref in refs[:8]:
                 self.assertEqual(self.call(ref=ref)[1], 1)
             shown = self.call('show')[0]
@@ -172,10 +184,10 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
             before = self.path.read_bytes()
             self.assertEqual(self.call(ref=refs[0])[1], 1)
             self.assertEqual(self.path.read_bytes(), before)
-            calls = read.call_count
+            asked = len(self.client.asked)
             rejected, code = self.call(ref=refs[8])
             self.assertEqual((code, rejected['error']), (2, 'reply_candidate_limit'))
-            self.assertEqual(read.call_count, calls)
+            self.assertEqual(len(self.client.asked), asked)
             self.assertEqual(self.path.read_bytes(), before)
         # The bounded candidate directory does not block independent caller readback.
         confirmed, code = self.call('confirm', key=self.key, ref=refs[8], readback_body=self.body)
@@ -186,7 +198,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
     def test_concurrent_candidate_admission_keeps_exactly_eight_and_reads_only_the_winner(self):
         self.setup_source('postingboard')
         existing = [providers.parent_reference(self.adapter, self.root, uid(400 + i)) for i in range(7)]
-        with patch.object(verification, 'read', side_effect=TimeoutError()):
+        with self.unreached():
             for ref in existing:
                 self.assertEqual(self.call(ref=ref)[1], 1)
         contenders = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in (500, 501)]
@@ -195,17 +207,18 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
 
         def invoke(index):
             return commands.outcome(lambda: verification.execute(stores[index], {self.source: self.settings},
-                self.source, self.target, key=self.key, ref=contenders[index]))
+                self.source, self.target, key=self.key, ref=contenders[index], fetch=self.client))
 
-        with patch.object(verification, 'read', side_effect=TimeoutError()) as read:
+        asked = len(self.client.calls)
+        with self.unreached():
             results = run_reply_workers([lambda: invoke(0), lambda: invoke(1)])
         self.assertEqual(sorted(code for _, code in results), [1, 2])
         winner = next(i for i, (_, code) in enumerate(results) if code == 1)
         loser = 1 - winner
         self.assertEqual(results[winner][0]['verification']['reason'], 'network_error')
         self.assertEqual(results[loser][0]['error'], 'reply_candidate_limit')
-        read.assert_called_once()
-        self.assertEqual(read.call_args.args[2], uid(500 + winner))
+        # The winner alone asked the board, and it asked for its own reply.
+        self.assertEqual([path for path, _, _ in self.client.calls[asked:]], ['/v1/posts/' + uid(500 + winner)])
         shown = self.call('show')[0]
         self.assertEqual({item['reply_ref'] for item in shown['reply_candidates']},
                          {*existing, contenders[winner]})
@@ -220,21 +233,21 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         self.setup_source('postingboard')
         self.client.others[uid(321)] = named(321, 301, 1, body=self.body, reply_to=310)
         refs = [self.ref, providers.parent_reference(self.adapter, self.root, uid(321))]
-        barrier, original_read = threading.Barrier(2), verification.read
+        barrier, get = threading.Barrier(2), self.client.get
 
-        def provider_return(*args):
-            observed = original_read(*args)
-            barrier.wait(timeout=5)  # Both valid originals exist before either confirmation write.
-            return observed
+        def answered(path, *args, **kwargs):
+            answer = get(path, *args, **kwargs)
+            barrier.wait(timeout=5)  # Both valid originals are read before either confirmation is written.
+            return answer
 
         def invoke(index):
             return commands.outcome(lambda: verification.execute(Store(self.path), {self.source: self.settings},
-                self.source, self.target, key=self.key, ref=refs[index]))
+                self.source, self.target, key=self.key, ref=refs[index], fetch=self.client))
 
-        with patch.object(providers, 'Client', return_value=self.client), \
-                patch.object(verification, 'read', side_effect=provider_return) as read:
-            results = run_reply_workers([lambda: invoke(0), lambda: invoke(1)])
-        self.assertEqual(read.call_count, 2)
+        self.client.get = answered
+        results = run_reply_workers([lambda: invoke(0), lambda: invoke(1)])
+        self.client.get = get
+        self.assertEqual(len(self.client.calls), 2)
         self.assertEqual(sorted(code for _, code in results), [0, 2])
         winner = next(i for i, (_, code) in enumerate(results) if code == 0)
         self.assertEqual(results[1 - winner][0]['error'], 'reply_reference_conflict')
@@ -259,28 +272,28 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
     def test_concurrent_failed_provider_return_cannot_overwrite_committed_success(self):
         self.setup_source('postingboard')
         barrier, committed = threading.Barrier(2), threading.Event()
-        original_read, snapshot, worker = verification.read, {}, threading.local()
+        get, snapshot, worker = self.client.get, {}, threading.local()
 
-        def provider_return(*args):
+        def answered(path, *args, **kwargs):
             barrier.wait(timeout=5)
             if worker.fail:
                 if not committed.wait(timeout=5):
                     raise AssertionError('Successful verification did not commit')
                 raise TimeoutError()
-            return original_read(*args)
+            return get(path, *args, **kwargs)
 
         def invoke(fail):
             worker.fail = fail
             outcome = commands.outcome(lambda: verification.execute(Store(self.path), {self.source: self.settings},
-                self.source, self.target, key=self.key, ref=self.ref))
+                self.source, self.target, key=self.key, ref=self.ref, fetch=self.client))
             if not fail:
                 snapshot['bytes'] = self.path.read_bytes()
                 committed.set()
             return outcome
 
-        with patch.object(providers, 'Client', return_value=self.client), \
-                patch.object(verification, 'read', side_effect=provider_return):
-            succeeded, failed = run_reply_workers([lambda: invoke(False), lambda: invoke(True)])
+        self.client.get = answered
+        succeeded, failed = run_reply_workers([lambda: invoke(False), lambda: invoke(True)])
+        self.client.get = get
         self.assertEqual((succeeded[1], failed[1]), (0, 1))
         self.assertEqual(failed[0]['verification']['reason'], 'network_error')
         self.assertFalse(failed[0]['last_check_saved'] or failed[0]['remote_verified'])
@@ -294,8 +307,8 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
 
     def test_last_check_keeps_the_last_committed_failure_within_one_second(self):
         self.setup_source('postingboard')
-        with patch.object(verification.time, 'time', return_value=2000):
-            with patch.object(verification, 'read', side_effect=TimeoutError()):
+        with fixed(Clock(2000)):
+            with self.unreached():
                 self.call()
             self.raw['agent_id'] = uid(2)
             result, _ = self.call()
@@ -309,10 +322,10 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
             schema.add(db, 'reply_candidate_checks')
             db.execute("CREATE TRIGGER fail_check BEFORE INSERT ON reply_candidate_checks "
                        "BEGIN SELECT RAISE(ABORT, 'private database detail'); END")
-        with patch.object(verification, 'read', side_effect=TimeoutError()) as read:
+        with self.unreached():
             result, code = self.call()
         self.assertEqual((code, result['verification']['reason']), (1, 'network_error'))
-        read.assert_called_once()
+        self.assertEqual(len(self.client.asked), 1)
         self.assertFalse(result['last_check_saved'])
         self.assertTrue(result['changed'])  # The pointer committed before the failed diagnostic write.
         self.assertIsNone(result['reply_candidates'][0]['last_check'])
@@ -326,16 +339,16 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
 
     def test_late_failed_check_cannot_write_after_another_caller_confirms(self):
         self.setup_source('postingboard')
-        read = verification.read
-        committed = {}
-        def racing_failure(*args):
-            with patch.object(verification, 'read', side_effect=read):
-                committed['result'], code = self.call()
+        get, committed = self.client.get, {}
+        def racing_failure(path, *args, **kwargs):
+            # While this request is on its way another caller reads the same original and confirms. Then it fails.
+            self.client.get = get
+            committed['result'], code = self.call()
             self.assertEqual(code, 0)
             committed['bytes'] = self.path.read_bytes()
             raise TimeoutError()
-        with patch.object(verification, 'read', side_effect=racing_failure):
-            result, code = self.call()
+        self.client.get = racing_failure
+        result, code = self.call()
         self.assertEqual(code, 1)
         self.assertFalse(result['last_check_saved'])
         self.assertEqual(result['reply']['state'], 'confirmed')
@@ -354,13 +367,13 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
                 with self.store.connect() as db:
                     old = db.execute(f'SELECT {column} FROM {table} WHERE source=?', (self.source,)).fetchone()[0]
                 committed = {}
-                def changed_then_failed(*args):
+                def changed_then_failed(path, *args, **kwargs):
                     with self.store.connect(write=True) as db:
                         db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (value, self.source))
                     committed['bytes'] = self.path.read_bytes()
                     raise TimeoutError()
-                with patch.object(verification, 'read', side_effect=changed_then_failed):
-                    result, code = self.call()
+                self.client.get = changed_then_failed
+                result, code = self.call()
                 self.assertEqual((code, result['verification']['reason']), (1, 'network_error'))
                 self.assertFalse(result['last_check_saved'])
                 self.assertEqual(self.path.read_bytes(), committed['bytes'])
@@ -376,7 +389,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         before = self.path.read_bytes()
         self.assertIsNone(self.call('show')[0]['reply_candidates'][0]['last_check'])
         self.assertEqual(self.path.read_bytes(), before)
-        with patch.object(verification, 'read', side_effect=TimeoutError()):
+        with self.unreached():
             self.call()
         other = providers.parent_reference(self.adapter, self.root, uid(321))
         with self.store.connect(write=True) as db:
@@ -395,7 +408,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
                 self.client.others[uid(321)] = named(321, 301, 1, body=self.body, reply_to=310)
                 refs = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in order]
                 # Unknown covers a publisher's unresolved outcome. These are provider GET failures, not POSTs.
-                with patch.object(verification, 'read', side_effect=TimeoutError()):
+                with self.unreached():
                     for ref in refs:
                         self.assertEqual(self.call(ref=ref)[1], 1)
                 confirmed, code = self.call(ref=refs[0])
@@ -420,16 +433,15 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
 
     def test_candidate_write_failure_prevents_provider_request(self):
         self.setup_source('postingboard')
-        with patch.object(verification, 'read', side_effect=TimeoutError()):
+        with self.unreached():
             self.call()
         with self.store.connect(write=True) as db:
             db.execute("CREATE TRIGGER fail_candidate BEFORE INSERT ON reply_candidates "
                        "BEGIN SELECT RAISE(ABORT, 'stop'); END")
-        before = self.path.read_bytes()
-        with patch.object(verification, 'read') as read:
-            result, code = self.call(ref=providers.parent_reference(self.adapter, self.root, uid(999)))
+        before, asked = self.path.read_bytes(), len(self.client.asked)
+        result, code = self.call(ref=providers.parent_reference(self.adapter, self.root, uid(999)))
         self.assertEqual((code, result['error']), (2, 'local_state_error'))
-        read.assert_not_called()
+        self.assertEqual(len(self.client.asked), asked)
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_all_providers_and_source_aliases_save_exact_evidence_and_independent_marks(self):
@@ -569,9 +581,13 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         self.assertNotIn('private provider prose', json.dumps(failed))
         self.assertNotIn('secret-token', json.dumps(failed))
         self.client.fail = False
-        self.client.comments = [original(319, 301), self.raw]
-        with patch.object(providers, 'PAGE_SIZE', 1), patch.object(providers, 'MAX_PAGES', 1):
-            self.assert_unverified('budget_exhausted')
+        # The board gives one comment on a page and the reply is the last of 101. A search reads 100 pages at most.
+        self.client.per_page, self.client.comments = 1, [original(n, 301) for n in range(1000, 1100)] + [self.raw]
+        self.client.calls.clear()
+        self.assert_unverified('budget_exhausted')
+        self.assertEqual(len([path for path, _, _ in self.client.calls if path.endswith('/comments')]), 200)
+        del self.client.comments[0]
+        self.assertEqual(self.call()[1], 0)
 
     def test_invalid_references_and_preconditions_never_make_a_request(self):
         self.setup_source('moltbook')
@@ -661,7 +677,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
 
     def test_receipt_and_confirmation_roll_back_together(self):
         self.setup_source('postingboard')
-        with patch.object(verification, 'read', side_effect=TimeoutError()):
+        with self.unreached():
             self.call()
         with self.store.connect(write=True) as db:
             db.execute("CREATE TRIGGER fail_mark BEFORE UPDATE OF replied_at ON messages BEGIN SELECT RAISE(ABORT, 'stop'); END")
@@ -682,7 +698,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         self.adapter = self.source = 'moltbook'
         self.settings = {'account_id': uid(2), 'api_key_file': 'missing.key'}
         self.root, self.target = uid(100), uid(11)
-        self.client = FixtureClient('moltbook', self.settings)
+        self.client = FixtureBoard('moltbook', self.settings)
         flags = {'verification_status': 'verified', 'is_deleted': False, 'is_spam': False}
         self.client.root = {**original(100, 100), **flags, 'title': 'Legacy example'}
         self.client.comments = [{**original(320, 100, 2, body=self.body), **flags, 'parent_id': self.target}]
@@ -693,7 +709,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         # A v1 source name identifies its original built-in even without adapter_state.
         expected_client, expected_ref = self.client, self.ref
         self.settings['adapter'] = 'postingboard'
-        self.client = FixtureClient('postingboard', self.settings)
+        self.client = FixtureBoard('postingboard', self.settings)
         self.client.others[self.reply] = named(320, 100, 2, body=self.body, reply_to=11)
         self.ref = providers.parent_reference('postingboard', self.root, self.reply)
         before = self.path.read_bytes()
@@ -706,7 +722,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         before = self.path.read_bytes()
         self.assertEqual(self.call('show')[0]['reply_candidates'], [])
         self.assertEqual(self.path.read_bytes(), before)
-        with patch.object(verification, 'read', side_effect=TimeoutError()):
+        with self.unreached():
             failed, code = self.call()
         self.assertEqual((code, failed['reply']['state']), (1, 'unknown'))
         self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], self.ref)
@@ -720,11 +736,13 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
     def test_cli_with_db_still_loads_explicit_config_and_uses_same_verifier(self):
         self.setup_source('postingboard')
         config = self.path.parent / 'config.json'
-        config.write_text(json.dumps({'database': str(self.path), 'sources': {self.source: self.settings}}))
+        config.write_text(json.dumps({'database': str(self.path), 'sources': {self.source: self.settings}}, default=str))
         args = cli.parser().parse_args(['--db', str(self.path), '--config', str(config), 'reply', 'verify',
                                       self.source, self.target, '--key', self.key, '--ref', self.ref])
-        with patch.object(providers, 'Client', return_value=self.client):
+        # The command line hands no board in. The invented one stands where the request leaves the process.
+        with Network({'getpostingboard.dev': edge(self.client)}):
             result, code = cli.run(args)
+        self.assertEqual([path for path, _, _ in self.client.calls], ['/v1/posts/' + self.reply])
         self.assertEqual((code, result['reply']['state'], result['remote_verified']), (0, 'confirmed', True))
 
 

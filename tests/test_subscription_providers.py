@@ -12,7 +12,6 @@ import re
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 from uuid import UUID
 
@@ -23,7 +22,7 @@ from boardmail import addressing, providers, subscriptions
 from boardmail.adapters import Batch, collect_all, validate
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, settings, uid
+from examples.fixtures import FixtureBoard, named, original, settings, status, uid
 from kit import Clock, fixed
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, thread as claw_thread, threads as claw_threads
@@ -56,15 +55,20 @@ def not_found():
 class PostingboardSubscriptionTests(unittest.TestCase):
     """Root 301 is ours, root 302 belongs to another account (examples.fixtures)."""
 
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        # The client waits between two requests, and a pass has its time. Here a wait only moves the clock.
+        self.enterContext(fixed(Clock(1790000000)))
+
     def client(self, threads, subscribed, **extra):
-        cfg = {**settings()["postingboard"], "threads": [uid(n) for n in threads], "subscriptions": [uid(n) for n in subscribed], **extra}
-        client = FixtureClient("postingboard", cfg)
+        cfg = {**settings(self.temp.name)["postingboard"], "threads": [uid(n) for n in threads], "subscriptions": [uid(n) for n in subscribed], **extra}
+        client = FixtureBoard("postingboard", cfg)
         client.comments[uid(302)] += [named(323, 302, reply_to=313, body="answering your reply"),
                                       named(324, 302, reply_to=315), named(325, 302, reply_to=999)]
         return client
 
     def collect(self, client, state=None, known=()):
-        batch = providers.collect("postingboard", client.settings, deepcopy(state or {}), set(known), client_factory=lambda *_: client)
+        batch = providers.collect("postingboard", client.settings, deepcopy(state or {}), set(known), fetch=client)
         shape(self, batch)
         return batch
 
@@ -127,16 +131,19 @@ class PostingboardSubscriptionTests(unittest.TestCase):
         self.assertIn(uid(315), by_id(batch))
 
 
-class ThreadClient:
-    """Invented Colony/Moltbook API: identity, empty notifications and public thread pages
-    shaped like the saved live responses (Colony: items/total/has_more/page; Moltbook: cursor tree)."""
+class ThreadBoard(FixtureBoard):
+    """The invented Colony or Moltbook with public threads: the identity of the account, no notifications, and
+    thread pages shaped like the saved live responses (Colony: items/total/has_more/page; Moltbook: cursor tree).
 
-    def __init__(self, source, cfg):
-        self.source, self.settings, self.owner = source, cfg, cfg["account_id"]
-        self.host = "https://" + source + ".example.invalid"
-        self.calls, self.posts, self.comments, self.failures = [], {}, {}, {}
+    clock is the clock of the test. fits is how many public requests the time of a pass has room for: the answer
+    to the last of them comes as that time ends, so the client sends no further one. None: an answer takes no
+    time. per_page is the most comments that the board gives on a page."""
+
+    def __init__(self, source, cfg, clock=None):
+        super().__init__(source, cfg)
+        self.posts, self.comments, self.failures = {}, {}, {}
         self.colony = source == "the-colony"
-        self.limit, self.requests = None, 0  # Public requests allowed per pass, when bounded.
+        self.clock, self.fits, self.requests = clock, None, 0
 
     def get(self, path, params=None, *, authenticated=False):
         params = dict(params or {})
@@ -148,9 +155,9 @@ class ThreadClient:
             assert authenticated
             return [] if self.colony else {"notifications": [], "has_more": False, "next_cursor": "0"}
         assert not authenticated, "Public thread reads must be anonymous"
-        if self.limit is not None and self.requests >= self.limit:
-            raise MailError("budget_exhausted")
         self.requests += 1
+        if self.requests == self.fits:
+            self.clock.advance(providers.SOURCE_SECONDS)
         match = re.fullmatch(r"/posts/([0-9a-f-]{36})(/comments)?", path)
         root = match.group(1)
         if root in self.failures:
@@ -159,7 +166,7 @@ class ThreadClient:
             raise not_found()
         if not match.group(2):
             return deepcopy(self.posts[root]) if self.colony else {"success": True, "post": deepcopy(self.posts[root])}
-        items, limit = self.comments.get(root, []), params["limit"]
+        items, limit = self.comments.get(root, []), self.limit(params)
         if self.colony:
             assert params["sort"] == "oldest", "Colony requires oldest, not Moltbook's old"
             page = params.get("page", 1)
@@ -174,14 +181,24 @@ class ThreadClient:
 
 
 class NotificationBoardSubscriptionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        # A pass has its time. The clock stands still until a board moves it.
+        self.clock = Clock(1790000000)
+        self.enterContext(fixed(self.clock))
+
     def client(self, source, roots, **extra):
-        cfg = {**settings()[source], "subscriptions": [uid(n) for n in roots], "mention_aliases": ["@sample"], **extra}
-        return ThreadClient(source, cfg)
+        cfg = {**settings(self.temp.name)[source], "subscriptions": [uid(n) for n in roots], "mention_aliases": ["@sample"], **extra}
+        return ThreadBoard(source, cfg, self.clock)
 
     def collect(self, client, state=None, known=()):
-        batch = providers.collect(client.source, client.settings, deepcopy(state or {}), set(known), client_factory=lambda *_: client)
+        batch = providers.collect(client.source, client.settings, deepcopy(state or {}), set(known), fetch=client)
         shape(self, batch)
         return batch
+
+    def others(self, client, root, numbers, parent=None):
+        """Comments of another account under a root, as the board keeps them."""
+        return [{**original(n, root, colony=client.colony), "parent_id": uid(parent) if parent else None} for n in numbers]
 
     def thread(self, client, root, author=10):
         colony = client.colony
@@ -195,8 +212,9 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
 
     def test_colony_and_moltbook_paginate_from_the_head_and_address_by_shown_parents(self):
         for source, root in (("the-colony", 400), ("moltbook", 500)):
-            with self.subTest(source=source), patch.object(providers, "PAGE_SIZE", 3):
+            with self.subTest(source=source):
                 client = self.client(source, [root])
+                client.per_page = 3
                 self.thread(client, root)
                 batch = self.collect(client)
                 self.assertFalse(batch.error)
@@ -245,10 +263,11 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         self.assertEqual(batch.error, "http_503")
         self.assertIn(uid(413), by_id(batch))
         self.assertEqual(batch.state["subscriptions"]["next"], uid(400), "A finished pass restarts the rotation")
-        client.failures[uid(400)] = MailError("budget_exhausted")
+        client.failures[uid(400)] = status(429)  # The board tells the client to slow down before it gave anything.
         client.calls.clear()
         cut = self.collect(client, batch.state, known=set(by_id(batch)))
         self.assertFalse(cut.complete)
+        self.assertEqual(cut.error, "http_429")
         self.assertEqual(cut.state["subscriptions"]["next"], uid(400), "Resume at the interrupted root")
         self.assertEqual([c[0] for c in client.calls if c[0].startswith("/posts/")], ["/posts/" + uid(400)])
 
@@ -257,38 +276,33 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
             with self.subTest(source=source):
                 client = self.client(source, [400, 401])
                 self.thread(client, 401)
-                clock = [0]
                 real = client.get
 
                 def slow(path, params=None, **kwargs):
                     if path == '/posts/' + uid(400):
-                        clock[0] += providers.SOURCE_SECONDS
-                        raise MailError('budget_exhausted')
+                        # The root has not answered when the time of the pass is over, and the transport says so.
+                        self.clock.advance(providers.SOURCE_SECONDS + 1)
+                        raise MailError('source_timeout')
                     return real(path, params, **kwargs)
 
                 client.get = slow
-                with patch.object(providers.time, 'monotonic', side_effect=lambda: clock[0]):
-                    first = self.collect(client)
-                    second = self.collect(client, first.state)
+                first = self.collect(client)
+                second = self.collect(client, first.state)
                 self.assertFalse(first.complete)
+                self.assertEqual(first.state['subscriptions']['next'], uid(401))
                 self.assertIn(uid(412), by_id(second), 'The slow root must give another root a turn')
 
     def test_cut_off_pagination_still_delivers_what_was_read(self):
         client = self.client("the-colony", [400])
         self.thread(client, 400)
-        real = client.get
-        def flaky(path, params=None, **kw):
-            if path.endswith("/comments") and params.get("page") == 2:
-                raise MailError("budget_exhausted")
-            return real(path, params, **kw)
-        client.get = flaky
-        with patch.object(providers, "PAGE_SIZE", 3):
-            batch = self.collect(client)
+        client.per_page, client.fits = 3, 2  # The time of the pass is over after the root and the first page of three.
+        batch = self.collect(client)
         self.assertFalse(batch.complete)
+        self.assertIsNone(batch.error)
         self.assertEqual(set(by_id(batch)), {uid(411), uid(413)}, "First page delivered; own comment 412 is context")
-        client.get = real
-        with patch.object(providers, "PAGE_SIZE", 3):
-            second = self.collect(client, batch.state, known=set(by_id(batch)))
+        self.assertEqual([p["page"] for path, p, _ in client.calls if path.endswith("/comments")], [1])
+        client.fits = None
+        second = self.collect(client, batch.state, known=set(by_id(batch)))
         self.assertEqual(set(by_id(second)), {uid(n) for n in (414, 415, 416)})
         self.assertEqual(by_id(second)[uid(414)]["addressing"], "thread", "A page-one parent's ownership was retained")
         self.assertEqual(batch.state["subscriptions"]["roots"][uid(400)]["page"], 2, "The cut pass saved its next page")
@@ -298,20 +312,23 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
     def test_colony_page_cap_keeps_progress_until_the_real_end(self):
         client = self.client("the-colony", [400])
         self.thread(client, 400)
+        # The board gives one comment on a page, and a pass reads 100 pages of a thread at most. So 201 comments
+        # take three passes.
+        client.per_page, client.comments[uid(400)] = 1, self.others(client, 400, range(1000, 1201))
         state, known, got = {}, set(), []
-        with patch.object(providers, "PAGE_SIZE", 3), patch.object(providers, "MAX_PAGES", 1):
-            for number in (1, 2, 3):
-                batch = self.collect(client, state, known)
-                got.extend(m["id"] for m in batch.messages)
-                known.update(got)
-                state = json.loads(json.dumps(batch.state))  # A resumed collector sees saved state.
-                progress = state["subscriptions"]["roots"][uid(400)]
-                self.assertEqual(batch.complete, number == 3)
-                self.assertEqual(progress.get("page"), number+1 if number < 3 else None)
-            replay = self.collect(client, state, known)
-        self.assertEqual(got, [uid(n) for n in (411, 413, 414, 415, 416)])
+        for number in (1, 2, 3):
+            batch = self.collect(client, state, known)
+            got.extend(m["id"] for m in batch.messages)
+            known.update(got)
+            state = json.loads(json.dumps(batch.state))  # A resumed collector sees saved state.
+            progress = state["subscriptions"]["roots"][uid(400)]
+            self.assertEqual(batch.complete, number == 3)
+            self.assertEqual(progress.get("page"), 100*number+1 if number < 3 else None)
+        replay = self.collect(client, state, known)
+        self.assertEqual(got, [uid(n) for n in range(1000, 1201)])
         self.assertEqual(replay.messages, [])
-        self.assertEqual([p["page"] for path, p, _ in client.calls if path.endswith("/comments")], [1, 2, 3, 1])
+        self.assertEqual([p["page"] for path, p, _ in client.calls if path.endswith("/comments")],
+                         [*range(1, 202), *range(1, 101)])
 
     def test_colony_invalid_continuation_never_claims_a_finished_scan(self):
         for values, error in (({"page": 1}, "pagination_no_progress"),
@@ -340,12 +357,15 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
         client = self.client("the-colony", [400])
         self.thread(client, 400)
         client.comments[uid(400)].insert(3, deepcopy(client.comments[uid(400)][0]))
-        with tempfile.TemporaryDirectory() as directory, patch.object(providers, "PAGE_SIZE", 3), patch.object(providers, "MAX_PAGES", 1):
+        client.per_page = 3
+        with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "mail.sqlite3"
             store = Store(database)
             store.initialize({client.source: client.settings})
             store.set_subscription(client.source, uid(400), True, client.settings)
-            collect = lambda db: collect_all(db, {client.source: client.settings}, client_factory=lambda *_: client)
+            def collect(db):
+                client.requests, client.fits = 0, 2  # The time of a pass is over after the root and one page.
+                return collect_all(db, {client.source: client.settings}, fetch=client)
             self.assertEqual(collect(store)["added"], 2)
             store.mark(client.source, uid(411), "read")
             store.mark(client.source, uid(411), "replied", ref="https://thecolony.ai/posts/" + uid(400) + "#comment-" + uid(999))
@@ -356,10 +376,10 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
             self.assertEqual(Store(database).show(client.source, uid(411)), marked)
 
     def passes(self, client, roots, limit, count):
-        """Repeated passes under one identical public-request budget; every message once."""
+        """Repeated passes whose time has room for the same number of public requests; every message once."""
         state, known, got, nexts = {}, set(), {}, []
         for _ in range(count):
-            client.requests, client.limit = 0, limit
+            client.requests, client.fits = 0, limit
             batch = self.collect(client, state, known)
             for message in batch.messages:
                 self.assertNotIn(message["id"], got, "No message is delivered twice")
@@ -371,8 +391,9 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
 
     def test_repeated_identical_budgets_advance_a_long_thread_and_a_healthy_root(self):
         for source, root in (("the-colony", 400), ("moltbook", 500)):
-            with self.subTest(source=source), patch.object(providers, "PAGE_SIZE", 3):
+            with self.subTest(source=source):
                 client = self.client(source, [root, root + 1])
+                client.per_page = 3
                 self.thread(client, root)  # Seven comments: three pages of three.
                 client.posts[uid(root + 1)] = {**original(root + 1, root + 1, 20, colony=client.colony), "title": "Healthy"}
                 client.comments[uid(root + 1)] = [{**original(root + 21, root + 1, 20, colony=client.colony), "parent_id": None}]
@@ -390,7 +411,7 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
                 self.assertEqual(progress["owners"][uid(root + 11)], False, "Page-one ownership survived the passes")
                 # Later activity is found by the next cycle from the head.
                 client.comments[uid(root)].append({**original(root + 18, root, 30, colony=client.colony), "parent_id": uid(root + 12)})
-                client.requests, client.limit = 0, 2
+                client.requests, client.fits = 0, 2
                 fresh = self.collect(client, state, set(got))
                 self.assertEqual([(m["id"], m["addressing"]) for m in fresh.messages], [], "Page one first; the new comment is on page three")
                 for _ in range(8):  # Both roots alternate; page three comes around on the fifth pass.
@@ -402,14 +423,26 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
 
     def test_ownership_cache_eviction_never_delivers_our_comments_or_forgets_the_current_root(self):
         for source in ('the-colony', 'moltbook'):
-            with self.subTest(source=source), patch.object(subscriptions, 'MAX_OWNERS', 2):
+            with self.subTest(source=source):
                 client = self.client(source, [400])
                 self.thread(client, 400)
+                # 400 more comments of others: as many as the ownership that a root keeps.
+                if client.colony:
+                    # Pages of 100. When the last one is read, the root and the seven comments have left the map.
+                    client.comments[uid(400)] += self.others(client, 400, range(1000, 1400))
+                else:
+                    # One page with a tree under its first comment. The seven comments leave the map before the
+                    # first of them is looked at.
+                    client.comments[uid(400)].insert(0, {**self.others(client, 400, [999])[0],
+                                                         'replies': self.others(client, 400, range(1000, 1400), parent=999)})
                 batch = self.collect(client)
                 got = by_id(batch)
+                self.assertEqual(len(batch.state['subscriptions']['roots'][uid(400)]['owners']), subscriptions.MAX_OWNERS)
                 self.assertNotIn(uid(412), got)
                 self.assertNotIn(uid(417), got)
                 self.assertEqual(got[uid(411)]['addressing'], 'thread', 'The root was verified in this very pass')
+                if client.colony:
+                    self.assertEqual(got[uid(1399)]['addressing'], 'thread', 'And it still is on the last page')
 
     def test_missing_parent_field_is_not_a_top_level_reply(self):
         for source, root in (("the-colony", 400), ("moltbook", 500)):
@@ -438,12 +471,16 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
     def test_bounded_ownership_map_leaves_older_parents_unknown(self):
         client = self.client("the-colony", [400])
         self.thread(client, 400)
-        with patch.object(subscriptions, "MAX_OWNERS", 3), patch.object(providers, "PAGE_SIZE", 3):
-            batch = self.collect(client)
+        # 400 comments of others, as many as the ownership that a root keeps, and then two late replies.
+        client.comments[uid(400)] += [*self.others(client, 400, range(1000, 1400)), *self.others(client, 400, [1400], parent=411),
+                                      *self.others(client, 400, [1401], parent=412), *self.others(client, 400, [1402], parent=1399)]
+        batch = self.collect(client)
         got = by_id(batch)
         self.assertEqual(got[uid(413)]["addressing"], "direct", "Parent 412 was fetched on the same page")
-        self.assertIsNone(got[uid(414)]["addressing"], "Parent 411 left the bounded map: unknown, never invented")
-        self.assertEqual(len(batch.state["subscriptions"]["roots"][uid(400)]["owners"]), 3)
+        self.assertIsNone(got[uid(1400)]["addressing"], "Parent 411 left the bounded map: unknown, never invented")
+        self.assertIsNone(got[uid(1401)]["addressing"], "So did our own comment 412")
+        self.assertEqual(got[uid(1402)]["addressing"], "thread", "Parent 1399 is still in it")
+        self.assertEqual(len(batch.state["subscriptions"]["roots"][uid(400)]["owners"]), subscriptions.MAX_OWNERS)
 
 
 class ClawdThreads(ClawdChat):

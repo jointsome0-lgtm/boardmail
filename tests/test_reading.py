@@ -7,13 +7,12 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
 
 from boardmail import commands
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import uid
+from examples.fixtures import FakeBoard, settings, uid
 from test_mail import mail
 
 
@@ -51,11 +50,13 @@ class ReadingTests(unittest.TestCase):
 
     def test_invalid_preferences_fail_before_collection_and_can_be_reset(self):
         before = self.path.read_bytes()
-        with patch('boardmail.providers.collect_all') as collect:
-            for args in ({'scope': 'guess'}, {'context': 'full'}, {'through': 2}):
-                result, code = commands.outcome(lambda: commands.execute(self.store, 'check', sources={}, **args))
-                self.assertEqual((result['error'], code), ('invalid_arguments', 2))
-            collect.assert_not_called()
+        # A collection would ask the board for the profile of the account. The board has no answer, and it is
+        # asked nothing.
+        board, sources = FakeBoard([]), {'moltbook': settings(self.temp.name)['moltbook']}
+        for args in ({'scope': 'guess'}, {'context': 'full'}, {'through': 2}):
+            result, code = commands.outcome(lambda: commands.execute(self.store, 'check', sources=sources, fetch=board, **args))
+            self.assertEqual((result['error'], code), ('invalid_arguments', 2))
+        self.assertEqual(board.asked, [])
         self.assertEqual(self.path.read_bytes(), before)
         self.store.settings(scope='all')
         with self.store.connect(write=True) as db:
@@ -153,8 +154,9 @@ class ReadingTests(unittest.TestCase):
         self.store.save_collection('moltbook', uid(2), 'moltbook', 0, batch)
         self.assertEqual(self.store.status()['counts']['total'], 1)
         before = self.path.read_bytes()
-        with patch('boardmail.providers.Client', side_effect=AssertionError('network')):
-            brief = self.run_command()['messages'][0]['brief']
+        board = FakeBoard([])  # It has no answer, and it is asked nothing.
+        brief = self.run_command(fetch=board)['messages'][0]['brief']
+        self.assertEqual(board.asked, [])
         self.assertEqual(brief['root']['status'], 'cached')
         self.assertEqual(len(brief['root']['body']), 600)
         self.assertTrue(brief['root']['truncated'])
