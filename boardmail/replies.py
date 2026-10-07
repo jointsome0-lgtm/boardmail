@@ -5,6 +5,7 @@ import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from . import schema
 from .config import MailError, identifier
 
 MAX_BODY_BYTES = 65536
@@ -20,27 +21,6 @@ RECOVERY_GUIDANCE = (
     "resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the "
     "handoff before deciding whether retry or confirmation is justified."
 )
-SCHEMA = """CREATE TABLE IF NOT EXISTS reply_attempts (
-    source TEXT NOT NULL, message_id TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE, body TEXT NOT NULL, body_sha256 TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('prepared','unknown','confirmed')),
-    prepared_at INTEGER NOT NULL, attempted_at INTEGER, confirmed_at INTEGER,
-    reply_ref TEXT, readback_sha256 TEXT,
-    PRIMARY KEY (source,message_id))"""
-
-VERIFICATION_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_verifications (
-    source TEXT NOT NULL, message_id TEXT NOT NULL, evidence TEXT NOT NULL,
-    PRIMARY KEY (source,message_id))"""
-
-CANDIDATE_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_candidates (
-    source TEXT NOT NULL, message_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
-    reply_ref TEXT NOT NULL, adapter TEXT NOT NULL, account_id TEXT NOT NULL,
-    recorded_at INTEGER NOT NULL, PRIMARY KEY (source,message_id,reply_ref))"""
-
-CHECK_SCHEMA = """CREATE TABLE IF NOT EXISTS reply_candidate_checks (
-    source TEXT NOT NULL, message_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
-    reply_ref TEXT NOT NULL, checked_at INTEGER NOT NULL, reason TEXT NOT NULL,
-    PRIMARY KEY (source,message_id,reply_ref))"""
 
 
 def digest(body):
@@ -82,14 +62,14 @@ def reference(ref):
 
 
 def saved(db, source, message_id):
-    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reply_attempts'").fetchone():
+    if not schema.has(db, 'reply_attempts'):
         return None
     row = db.execute('SELECT * FROM reply_attempts WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     return dict(row) if row else None
 
 
 def receipt(db, source, message_id, attempt):
-    if not attempt or not db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_verifications'").fetchone():
+    if not attempt or not schema.has(db, 'reply_verifications'):
         return None
     row = db.execute('SELECT evidence FROM reply_verifications WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     evidence = json.loads(row[0]) if row else None
@@ -99,11 +79,10 @@ def receipt(db, source, message_id, attempt):
 
 def candidates(db, source, message_id, attempt):
     """Caller-supplied references, separate from receipts and confirmed reply URLs."""
-    if (not attempt or attempt['state'] != 'unknown'
-            or not db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_candidates'").fetchone()):
+    if not attempt or attempt['state'] != 'unknown' or not schema.has(db, 'reply_candidates'):
         return []
     checks = {}
-    if db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_candidate_checks'").fetchone():
+    if schema.has(db, 'reply_candidate_checks'):
         checks = {row['reply_ref']: {'checked_at': row['checked_at'], 'reason': row['reason'],
                                      'status': 'unverified'}
                   for row in db.execute('SELECT reply_ref,checked_at,reason FROM reply_candidate_checks '
@@ -131,7 +110,7 @@ def pending(db, after=0, limit=PAGE_SIZE):
         raise MailError('invalid_arguments')
     counts = {state: 0 for state in NEXT_ACTION}
     rows = []
-    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reply_attempts'").fetchone():
+    if schema.has(db, 'reply_attempts'):
         counts.update(db.execute('SELECT state, COUNT(*) FROM reply_attempts GROUP BY state'))
         rows = db.execute("""SELECT m.arrival_seq, a.source, a.message_id id, a.state
             FROM reply_attempts a JOIN messages m ON m.source=a.source AND m.id=a.message_id
@@ -196,7 +175,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                         raise MailError('reply_already_started')
                     if replace_key is None:
                         raise MailError('reply_body_conflict')
-                db.execute(SCHEMA)
+                schema.add(db, 'reply_attempts')
                 values = (str(uuid4()), body, body_sha, now, source, message_id)
                 if attempt is None:
                     db.execute("""INSERT INTO reply_attempts
@@ -233,7 +212,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                     message.update(replied_at=now, reply_ref=ref)
                     changed = True
                 if verification is not None:
-                    db.execute(VERIFICATION_SCHEMA)
+                    schema.add(db, 'reply_verifications')
                     db.execute('INSERT INTO reply_verifications VALUES (?,?,?) ON CONFLICT(source,message_id) '
                                'DO UPDATE SET evidence=excluded.evidence',
                                (source, message_id, json.dumps(verification, ensure_ascii=True)))

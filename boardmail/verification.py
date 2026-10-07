@@ -3,7 +3,7 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import adapter_clawdchat, providers, replies
+from . import adapter_clawdchat, providers, replies, schema
 from .config import LEGACY_ADAPTERS, MailError, uuid
 
 ADAPTERS = ('postingboard', 'the-colony', 'moltbook', 'clawdchat')
@@ -42,7 +42,7 @@ def check_source(db, source, settings):
     if dict(row).get('paused'):
         raise MailError('source_paused')
     previous = None
-    if db.execute("SELECT 1 FROM sqlite_master WHERE name='adapter_state'").fetchone():
+    if schema.has(db, 'adapter_state'):
         previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
     # Schema v1 had three fixed source names and no adapter aliases or state table.
     expected = previous['adapter'] if previous else source if source in LEGACY_ADAPTERS else None
@@ -145,7 +145,7 @@ def save_failed_check(store, source, message_id, attempt, thread, settings, evid
                 return False, False
             # Keep the seven-column candidate table writable by 0.12.0 clients.
             # Commit order defines the last saved check; wall clocks are not an ordering key.
-            db.execute(replies.CHECK_SCHEMA)
+            schema.add(db, 'reply_candidate_checks')
             changed = db.execute('INSERT INTO reply_candidate_checks VALUES (?,?,?,?,?,?) '
                                  'ON CONFLICT(source,message_id,reply_ref) DO UPDATE SET '
                                  'idempotency_key=excluded.idempotency_key,checked_at=excluded.checked_at,reason=excluded.reason '
@@ -198,7 +198,7 @@ def execute(store, sources, source, message_id, *, key, ref):
                 if not any(item['reply_ref'] == ref for item in existing):
                     if len(existing) >= replies.MAX_CANDIDATES:
                         raise MailError('reply_candidate_limit')
-                    db.execute(replies.CANDIDATE_SCHEMA)
+                    schema.add(db, 'reply_candidates')
                     db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                                (source, message_id, key, ref, adapter, settings['account_id'], int(time.time())))
                     candidate_changed = True

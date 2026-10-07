@@ -1,6 +1,7 @@
 """Bounded local reading views. Only proven thread activity loses its body."""
 import json
 
+from . import schema
 from .config import MailError
 
 DEFAULTS = {"scope": "addressed", "context": "brief"}
@@ -29,7 +30,7 @@ def excerpt(item, budget=600):
 def brief(db, item):
     source, root_id, parent_id = item["source"], item["thread_id"], item["parent_id"]
     adapter = source
-    if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+    if schema.version(db) >= 2:
         row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
         if row is not None:
             adapter = row[0]
@@ -43,7 +44,7 @@ def brief(db, item):
             if row["thread_id"] != root_id:
                 return {"id": mid, "status": "unavailable", "reason": "thread_mismatch"}
             return {"status": "stored", **excerpt(dict(row))}
-        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='originals'").fetchone():
+        if schema.has(db, "originals"):
             row = db.execute("SELECT value,fetched_at FROM originals WHERE source=? AND id=?", (source, mid)).fetchone()
             if row is not None:
                 cached = json.loads(row["value"])
