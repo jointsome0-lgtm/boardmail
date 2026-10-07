@@ -10,15 +10,26 @@ import json
 import re
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 from . import addressing, subscriptions, transport
-from .adapters import Batch, Board, Originals
+from .adapters import Batch, Board, Originals, Replies, public_comment
 from .adapters import collect_all  # Kept for existing Python callers of the 0.1 collector.
 from .errors import MailError, uuid
 
 HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai",
          "moltbook":"https://www.moltbook.com"}
+# What the transport is told of the three boards. They share one client and differ in one header.
+SHARED = dict(
+    accept='application/json', agent='boardmail/0.2', key=None, kind=None, cap=16 * 1024 * 1024,
+    silence=10, budget=None, at_the_end=False, to_the_end=False,
+    late='source_timeout', large='response_too_large', network='network_error', content='invalid_response',
+    statuses=None, status=None, redirect='redirect_refused')
+transport.BOARDS.update({
+    'postingboard': transport.Board(protocol='getpostingboard/1', **SHARED),
+    'the-colony': transport.Board(protocol=None, **SHARED),
+    'moltbook': transport.Board(protocol=None, **SHARED),
+})
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
@@ -907,12 +918,6 @@ def parent_reference(adapter, thread, parent):
     if adapter == "moltbook":
         url = HOSTS[adapter] + "/post/" + uuid(thread)
         return url if parent == thread else url + "#comment-" + uuid(parent)
-    if adapter == "clawdchat":
-        # Passive readers use this mapping without loading adapter code.
-        return "https://clawdchat.cn/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
-    if adapter == "botnet":
-        url = "https://botnet.com/topics/" + uuid(thread)
-        return url if parent == thread else url + "#message-" + quote(parent, safe=":")
     return None
 
 
@@ -1026,21 +1031,53 @@ def postingboard_settings(settings):
     settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
 
 
-def declaration(name, coverage, find, *fields, configure=None, parents_since_discovery=False, **asked):
+def postingboard_reply(client, mid, thread, check):
+    """Replies.read of Postingboard: the post of the account itself, read with its key."""
+    original = client.get("/v1/posts/" + mid, authenticated=True)["post"]
+    root = uuid(original["root_id"])
+    if original.get("thread_id") is not None and uuid(original["thread_id"]) != root:
+        raise MailError("reply_thread_mismatch")
+    return original, root, uuid(original["agent_id"]), original["reply_to_id"], original["body"], "authenticated_original"
+
+
+def colony_reply(client, mid, thread, check):
+    """Replies.read of Colony."""
+    return public_comment(client.get("/comments/" + mid), body="body")
+
+
+def moltbook_reply(client, mid, thread, check):
+    """Replies.read of Moltbook: the comment out of the comment tree of its thread, and the root of that thread
+    is checked like the comment."""
+    originals = {}
+    status, error, _ = moltbook_lookup(client, mid, thread, originals=originals)
+    if status != "available":
+        raise MailError(error or "reply_" + status)
+    original = originals[thread, mid]
+    check(originals[thread, thread])
+    return public_comment(original, top_by_depth=True)
+
+
+def declaration(name, coverage, find, replies, *fields, configure=None, parents_since_discovery=False, **asked):
     """What one of the three boards of this module declares. Each has an API key and a UUID for an account.
-    find reads an original of the board, and asked says how Originals calls it."""
+    find reads an original of the board, and asked says how Originals calls it. replies is what Replies holds of
+    the board besides its client."""
+    client = partial(Client, name)
     return Board(name=name, coverage=coverage, collect=partial(collect, name), account=uuid, configure=configure,
                  fields=frozenset(("api_key_file", "mention_aliases", *fields)), required=frozenset(("api_key_file",)),
-                 since_v1=True, originals=Originals(partial(Client, name), find, **asked),
-                 parents_since_discovery=parents_since_discovery)
+                 since_v1=True, originals=Originals(client, find, **asked), replies=Replies(client=client, **replies),
+                 reference=partial(parent_reference, name), parents_since_discovery=parents_since_discovery)
 
 
 BOARDS = (
     declaration("postingboard", "Configured roots, optional native Inbox/alias search, and activity in locally subscribed roots. Bounded backfill does not prove complete history.",
-                postingboard_lookup, "threads", "inbox", "alias_search", configure=postingboard_settings,
-                parents_since_discovery=True),
+                postingboard_lookup, dict(hosts=("getpostingboard.dev",), direct=("v1", "posts"), read=postingboard_reply),
+                "threads", "inbox", "alias_search", configure=postingboard_settings, parents_since_discovery=True),
     declaration("the-colony", "Retained reply/mention notifications and available comment pages in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
-                colony_lookup, "totp_secret_file", root_as_thread=True),
+                colony_lookup, dict(hosts=("thecolony.ai",), pages=("post", "posts"), read=colony_reply, explicit=("held",)),
+                "totp_secret_file", root_as_thread=True),
     declaration("moltbook", "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-                moltbook_lookup, keeps=True, root_as_thread=True, comment_by_thread=True),
+                moltbook_lookup,
+                dict(hosts=("www.moltbook.com", "moltbook.com"), pages=("post",), read=moltbook_reply, verified=True,
+                     explicit=("is_deleted", "is_spam")),
+                keeps=True, root_as_thread=True, comment_by_thread=True),
 )

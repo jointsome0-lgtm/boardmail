@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 
 from boardmail import addressing, subscriptions, transport
-from boardmail.adapters import Batch, Board, Originals
+from boardmail.adapters import Batch, Board, Originals, Replies, public_comment
 from boardmail.errors import MailError, uuid
 
 API_VERSION = 1
@@ -24,6 +24,12 @@ MAX_SERVED = 200            # Parents a retained page may queue before it is con
 KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
          "mention_post": "mention", "mention_comment": "mention"}
 UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
+# What the transport is told of the board.
+transport.BOARDS["clawdchat"] = transport.Board(
+    accept="application/json", agent="boardmail/0.2", protocol=None, key=4096, kind=None, cap=1024 * 1024,
+    silence=4, budget=None, at_the_end=True, to_the_end=False,
+    late="budget_exhausted", large="response_too_large", network="network_error", content="invalid_response",
+    statuses=None, status=None, redirect="redirect_refused")
 
 
 class Client:
@@ -197,6 +203,18 @@ def lookup(client, mid, root=None):
         if code == "original_deleted": return "deleted", None, None
         return {"http_404": "missing", "http_410": "deleted"}.get(code, "unavailable"), code, None
     return "available", None, message
+
+
+def reply(client, mid, thread, check):
+    """Replies.read of the board: the comment, and the post that it sits under is checked like the comment."""
+    _, _, original, context = _fetch(client, {"id": mid, "post": thread, "is_post": False, "kind": "reply_to_comment"})
+    check(context)
+    return public_comment(original)
+
+
+def reference(thread, parent):
+    """Canonical identity for a local join, never a URL to fetch."""
+    return ORIGIN + "/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
 
 
 def collect(settings, state, known, *, fetch=transport.fetch):
@@ -572,5 +590,6 @@ def _subscribed(client, selected, batch, seen, mention):
 
 BOARD = Board(
     name="clawdchat", collect=collect, fields=frozenset({"api_key_file", "mention_aliases"}),
-    originals=Originals(Client, lookup, root_as_thread=True),
+    originals=Originals(Client, lookup, root_as_thread=True), reference=reference,
+    replies=Replies(hosts=("clawdchat.cn",), client=Client, read=reply, direct=("api", "v1", "comments"), pages=("post",)),
     coverage="Retained reply/mention notifications and bounded comment-tree scans in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.")

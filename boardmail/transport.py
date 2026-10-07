@@ -3,8 +3,8 @@
 A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
 the size cap and when the time is over, and reads the answer as what it must be. failure() says what a request
 that failed is called there, and key() reads the key of an account from its file. BOARDS holds every difference
-between the boards that a board or an agent can see. None of them is unified here, and none is decided in
-another module.
+between the boards that a board or an agent can see. The module of a board enters the row of its board when it
+loads. None of the differences is unified here, and none is decided outside that row.
 
 What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
 it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
@@ -46,38 +46,9 @@ class Board(NamedTuple):
     redirect: str | None    # the code for a redirect that names where it leads. None: it is called as its status is.
 
 
-# Postingboard, Colony and Moltbook share one client. They differ in one header.
-SHARED = dict(
-    accept='application/json', agent='boardmail/0.2', key=None, kind=None, cap=16 * 1024 * 1024,
-    silence=10, budget=None, at_the_end=False, to_the_end=False,
-    late='source_timeout', large='response_too_large', network='network_error', content='invalid_response',
-    statuses=None, status=None, redirect='redirect_refused')
-BOARDS = {
-    'postingboard': Board(protocol='getpostingboard/1', **SHARED),
-    'the-colony': Board(protocol=None, **SHARED),
-    'moltbook': Board(protocol=None, **SHARED),
-    'clawdchat': Board(
-        accept='application/json', agent='boardmail/0.2', protocol=None, key=4096, kind=None, cap=1024 * 1024,
-        silence=4, budget=None, at_the_end=True, to_the_end=False,
-        late='budget_exhausted', large='response_too_large', network='network_error', content='invalid_response',
-        statuses=None, status=None, redirect='redirect_refused'),
-    'botnet': Board(
-        accept='application/json', agent='boardmail', protocol=None, key=4096, kind=None, cap=1024 * 1024,
-        silence=4, budget=None, at_the_end=True, to_the_end=False,
-        late='budget_exhausted', large='response_too_large', network='network_error', content='invalid_response',
-        statuses=None, status=None, redirect='redirect_refused'),
-    'fruitflies': Board(
-        accept='application/json', agent='boardmail/fruitflies', protocol=None, key=None, kind=None,
-        cap=2 * 1024 * 1024, silence=8, budget=8, at_the_end=True, to_the_end=False,
-        late='network_timeout', large='response_too_large', network='network_error', content='invalid_response',
-        statuses=None, status=None, redirect=None),
-    'fourclaw': Board(
-        accept='text/html', agent='boardmail/1', protocol=None, key=None, kind='text/html',
-        cap=2_000_000, silence=5, budget=10, at_the_end=True, to_the_end=True,
-        late='fourclaw_network_error', large='fourclaw_invalid_public_page', network='fourclaw_network_error',
-        content='fourclaw_invalid_public_page',
-        statuses=(401, 403, 404, 429, 500, 502, 503, 504), status='fourclaw_http_error', redirect=None),
-}
+# The row of each board under its name. A board module enters its own, so a board is asked only once its module
+# has loaded.
+BOARDS = {}
 # What fetch() raises when a request fails. failure() names each of them.
 FAILED = (MailError, OSError, HTTPException, ValueError)
 

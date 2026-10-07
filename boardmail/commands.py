@@ -11,7 +11,7 @@ from .errors import exit_code, next_action
 LOCAL_FAILURES = (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError)
 # The function that runs each command of the command table.
 HANDLERS = {}
-# What providers.parent_reference is given that it cannot make a reference from.
+# What the reference of a board is given that it cannot make a reference from.
 NO_REFERENCE = object()
 
 
@@ -490,8 +490,9 @@ def previous_exchange(store, source, adapter, target, parent, relations):
     elif parent["error"] == "invalid_response":
         result["reason"] = "parent_invalid"
     else:
-        ref = config.converted(providers.parent_reference, adapter, relations["thread_id"], parent["id"],
-                               otherwise=NO_REFERENCE)
+        reference = boards.declared(adapter).reference
+        ref = (config.converted(reference, relations["thread_id"], parent["id"], otherwise=NO_REFERENCE)
+               if reference else None)
         if ref is NO_REFERENCE:
             result["reason"] = "parent_invalid"
         elif ref is None:

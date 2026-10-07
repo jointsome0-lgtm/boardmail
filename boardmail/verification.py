@@ -1,31 +1,26 @@
 """Verify a known reply reference with bounded provider reads, never publication."""
+from functools import partial
 import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import adapter_clawdchat, boards, providers, replies, schema, transport
+from . import boards, providers, replies, schema, transport
 from .config import MailError, uuid
 
-ADAPTERS = ('postingboard', 'the-colony', 'moltbook', 'clawdchat')
 
-
-def candidate(adapter, ref, thread):
-    """Parse an allowlisted identity. Never send a caller URL to the HTTP client."""
+def candidate(about, ref, thread):
+    """Parse an allowlisted identity. Never send a caller URL to the HTTP client. about is what the board
+    declares of its replies."""
     try:
         replies.reference(ref)
         url = urlsplit(ref)
-        hosts = {'postingboard': ('getpostingboard.dev',), 'the-colony': ('thecolony.ai',),
-                 'moltbook': ('www.moltbook.com', 'moltbook.com'), 'clawdchat': ('clawdchat.cn',)}
-        if (url.scheme != 'https' or url.hostname not in hosts[adapter] or url.port not in (None, 443)
+        if (url.scheme != 'https' or url.hostname not in about.hosts or url.port not in (None, 443)
                 or url.query or '%' in ref or '\\' in ref):
             raise ValueError()
         parts = url.path.split('/')
-        if adapter == 'postingboard' and parts[:3] == ['', 'v1', 'posts'] and len(parts) == 4 and not url.fragment:
-            return uuid(parts[3])
-        if adapter == 'clawdchat' and parts[:4] == ['', 'api', 'v1', 'comments'] and len(parts) == 5 and not url.fragment:
-            return uuid(parts[4])
-        paths = {'the-colony': ('post', 'posts'), 'moltbook': ('post',), 'clawdchat': ('post',)}
-        if len(parts) == 3 and parts[1] in paths.get(adapter, ()) and uuid(parts[2]) == thread and url.fragment.startswith('comment-'):
+        if about.direct and parts[:-1] == ['', *about.direct] and not url.fragment:
+            return uuid(parts[-1])
+        if len(parts) == 3 and parts[1] in about.pages and uuid(parts[2]) == thread and url.fragment.startswith('comment-'):
             return uuid(url.fragment.removeprefix('comment-'))
         raise ValueError()
     except (MailError, ValueError, TypeError, AttributeError, KeyError):
@@ -55,7 +50,7 @@ def check_source(db, source, settings, writing=False):
         raise MailError('adapter_mismatch')
 
 
-def available(original, *, adapter):
+def available(original, about):
     """Availability is a provider observation, not a promise about future visibility."""
     if any(original.get(k) not in (None, False, 0) for k in ('is_deleted', 'is_spam', 'is_hidden', 'held')):
         raise MailError('reply_not_visible')
@@ -68,61 +63,24 @@ def available(original, *, adapter):
             raise MailError('reply_provider_status_unknown')
     if 'verification_status' in original and original['verification_status'] != 'verified':
         raise MailError('reply_provider_not_verified')
-    if adapter == 'moltbook':
-        if original.get('verification_status') != 'verified':
-            raise MailError('reply_provider_not_verified')
-        if original.get('is_deleted') is not False or original.get('is_spam') is not False:
-            raise MailError('reply_provider_status_unknown')
-    if adapter == 'the-colony' and original.get('held') is not False:
+    if about.verified and original.get('verification_status') != 'verified':
+        raise MailError('reply_provider_not_verified')
+    if any(original.get(field) is not False for field in about.explicit):
         raise MailError('reply_provider_status_unknown')
 
 
-def read(adapter, settings, mid, thread, fetch=transport.fetch):
+def read(about, settings, mid, thread, fetch=transport.fetch):
     """Return the original and its observed status using fixed provider endpoints.
 
     fetch asks the board: the transport, or an invented board in its place. The client of the board is handed
-    it."""
-    client = (adapter_clawdchat.Client(settings, fetch=fetch) if adapter == 'clawdchat'
-              else providers.Client(adapter, settings, fetch=fetch))
-    if adapter == 'postingboard':
-        original = client.get('/v1/posts/' + mid, authenticated=True)['post']
-        root = uuid(original['root_id'])
-        if original.get('thread_id') is not None and uuid(original['thread_id']) != root:
-            raise MailError('reply_thread_mismatch')
-        author = uuid(original['agent_id'])
-        parent = original['reply_to_id']
-        body = original['body']
-        basis = 'authenticated_original'
-    else:
-        if adapter == 'moltbook':
-            originals = {}
-            status, error, _ = providers.moltbook_lookup(client, mid, thread, originals=originals)
-            if status != 'available':
-                raise MailError(error or 'reply_' + status)
-            original = originals[thread, mid]
-            available(originals[thread, thread], adapter=adapter)
-        elif adapter == 'clawdchat':
-            _, _, original, context = adapter_clawdchat._fetch(client, {
-                'id': mid, 'post': thread, 'is_post': False, 'kind': 'reply_to_comment'})
-            available(context, adapter=adapter)
-        else:
-            original = client.get('/comments/' + mid)
-        root = uuid(original['post_id'])
-        author = uuid(original['author']['id'])
-        if original.get('author_id') is not None and uuid(original['author_id']) != author:
-            raise MailError('reply_author_mismatch')
-        # Moltbook omits parent_id for top-level comments and explicitly reports depth 0.
-        if adapter == 'moltbook' and 'parent_id' not in original and type(original.get('depth')) is int and original['depth'] == 0:
-            parent = None
-        else:
-            parent = original['parent_id']  # Missing relationship evidence must fail closed.
-        body = original['body' if adapter == 'the-colony' else 'content']
-        basis = 'anonymous_original'
+    it. about is what the board declares of its replies, and its read is what knows the endpoints."""
+    client = about.client(settings, fetch=fetch)
+    original, root, author, parent, body, basis = about.read(client, mid, thread, partial(available, about=about))
     if uuid(original['id']) != mid:
         raise MailError('reply_identity_mismatch')
     if root != thread or mid == thread:
         raise MailError('reply_thread_mismatch')
-    available(original, adapter=adapter)
+    available(original, about)
     return {'reply_id': mid, 'thread_id': root, 'author_id': author,
             'target_id': uuid(parent) if parent is not None else root, 'body_sha256': replies.digest(body),
             'availability_basis': basis, 'provider_status': original.get('verification_status', 'available')}, body
@@ -179,12 +137,13 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
         raise MailError('source_not_found')
     settings = dict(sources[source])
     adapter = boards.owner(source, settings)
-    if adapter not in ADAPTERS:
+    about = boards.declared(adapter).replies
+    if about is None:
         raise MailError('reply_verification_unsupported')
     with store.connect() as db:
         check_source(db, source, settings)
     thread = uuid(shown['message']['thread_id'])
-    mid = candidate(adapter, ref, thread)
+    mid = candidate(about, ref, thread)
     if any(value not in (None, ref) for value in (attempt['reply_ref'], shown['message']['reply_ref'])):
         raise MailError('reply_reference_conflict')
     candidate_changed = False
@@ -212,7 +171,7 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
     evidence = {'adapter': adapter, 'reply_ref': ref, 'idempotency_key': key, 'key_scope': 'local',
                 'checked_at': int(time.time()), 'status': 'unverified', 'reason': None}
     try:
-        observed, body = read(adapter, settings, mid, thread, fetch)
+        observed, body = read(about, settings, mid, thread, fetch)
         evidence.update(observed)
         if observed['author_id'] != uuid(settings['account_id']):
             raise MailError('reply_author_mismatch')

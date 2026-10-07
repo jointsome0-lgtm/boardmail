@@ -12,11 +12,15 @@ import unittest
 from uuid import UUID
 
 from boardmail import cli, commands, providers, replies, schema, verification
+from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import KEY, FixtureBoard, named, original, uid
 from kit import Clock, Network, edge, fixed, mark, new_inbox, notify, on_statement
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file as clawd_key_file, original as clawd_original
 from test_replies import run_reply_workers
+
+# The boards on which a reply can be verified.
+VERIFIED = tuple(name for name, about in BOARDS.items() if about.replies)
 
 
 class VerificationTests(unittest.TestCase):
@@ -56,7 +60,7 @@ class VerificationTests(unittest.TestCase):
             self.raw = {**original(320, 301, 1, colony=adapter == 'the-colony', body=self.body), **flags,
                         'parent_id': None if root_target else self.target}
             self.client.comments = [self.raw]
-        self.ref = providers.parent_reference(adapter, self.root, self.reply)
+        self.ref = BOARDS[adapter].reference(self.root, self.reply)
         self.key = self.call('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.call('begin', key=self.key)
         self.before = self.path.read_bytes()
@@ -202,7 +206,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
 
     def test_candidates_are_bounded_without_replacing_an_earlier_url(self):
         self.setup_source('postingboard')
-        refs = [providers.parent_reference(self.adapter, self.root, uid(320 + i)) for i in range(9)]
+        refs = [BOARDS[self.adapter].reference(self.root, uid(320 + i)) for i in range(9)]
         with self.unreached(), fixed(Clock(2000)):
             for ref in refs[:8]:
                 self.assertEqual(self.call(ref=ref)[1], 1)
@@ -224,11 +228,11 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
 
     def test_concurrent_candidate_admission_keeps_exactly_eight_and_reads_only_the_winner(self):
         self.setup_source('postingboard')
-        existing = [providers.parent_reference(self.adapter, self.root, uid(400 + i)) for i in range(7)]
+        existing = [BOARDS[self.adapter].reference(self.root, uid(400 + i)) for i in range(7)]
         with self.unreached():
             for ref in existing:
                 self.assertEqual(self.call(ref=ref)[1], 1)
-        contenders = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in (500, 501)]
+        contenders = [BOARDS[self.adapter].reference(self.root, uid(n)) for n in (500, 501)]
         barrier, worker = threading.Barrier(2), threading.local()
 
         def at_once(sql):
@@ -264,7 +268,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
     def test_concurrent_valid_provider_reads_confirm_only_one_exact_url_and_receipt(self):
         self.setup_source('postingboard')
         self.client.others[uid(321)] = named(321, 301, 1, body=self.body, reply_to=310)
-        refs = [self.ref, providers.parent_reference(self.adapter, self.root, uid(321))]
+        refs = [self.ref, BOARDS[self.adapter].reference(self.root, uid(321))]
         barrier, get = threading.Barrier(2), self.client.get
 
         def answered(path, *args, **kwargs):
@@ -423,7 +427,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(self.path.read_bytes(), before)
         with self.unreached():
             self.call()
-        other = providers.parent_reference(self.adapter, self.root, uid(321))
+        other = BOARDS[self.adapter].reference(self.root, uid(321))
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                        (self.source, self.target, self.key, other, self.adapter, uid(1), 1001))
@@ -438,7 +442,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.store = new_inbox(self.path)
                 self.setup_source('postingboard')
                 self.client.others[uid(321)] = named(321, 301, 1, body=self.body, reply_to=310)
-                refs = [providers.parent_reference(self.adapter, self.root, uid(n)) for n in order]
+                refs = [BOARDS[self.adapter].reference(self.root, uid(n)) for n in order]
                 # Unknown covers a publisher's unresolved outcome. These are provider GET failures, not POSTs.
                 with self.unreached():
                     for ref in refs:
@@ -455,7 +459,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
 
     def test_wrong_candidate_does_not_block_a_different_verified_reply(self):
         self.setup_source('postingboard')
-        wrong = providers.parent_reference(self.adapter, self.root, uid(999))
+        wrong = BOARDS[self.adapter].reference(self.root, uid(999))
         self.assertEqual(self.call(ref=wrong)[1], 1)
         self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], wrong)
         confirmed, code = self.call()
@@ -471,13 +475,13 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
             db.execute("CREATE TRIGGER fail_candidate BEFORE INSERT ON reply_candidates "
                        "BEGIN SELECT RAISE(ABORT, 'stop'); END")
         before, asked = self.path.read_bytes(), len(self.client.asked)
-        result, code = self.call(ref=providers.parent_reference(self.adapter, self.root, uid(999)))
+        result, code = self.call(ref=BOARDS[self.adapter].reference(self.root, uid(999)))
         self.assertEqual((code, result['error']), (2, 'local_state_error'))
         self.assertEqual(len(self.client.asked), asked)
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_all_providers_and_source_aliases_save_exact_evidence_and_independent_marks(self):
-        for adapter in verification.ADAPTERS:
+        for adapter in VERIFIED:
             with self.subTest(adapter=adapter):
                 self.setup_source(adapter)
                 marks = self.store.show(self.source, self.target)
@@ -493,6 +497,9 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertEqual(evidence['body_sha256'], result['reply']['body_sha256'])
                 self.assertEqual(evidence['idempotency_key'], self.key)
                 self.assertEqual(evidence['key_scope'], 'local')
+                # Postingboard gives the post to the account that wrote it. The other boards give it to anyone.
+                self.assertEqual(evidence['availability_basis'],
+                                 'authenticated_original' if adapter == 'postingboard' else 'anonymous_original')
                 with self.store.connect() as db:
                     saved = json.loads(db.execute('SELECT evidence FROM reply_verifications WHERE source=?',
                                                    (self.source,)).fetchone()[0])
@@ -586,7 +593,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assert_unverified('reply_provider_not_verified')
 
     def test_top_level_requires_explicit_parent_or_moltbook_depth_zero(self):
-        for adapter in verification.ADAPTERS:
+        for adapter in VERIFIED:
             with self.subTest(adapter=adapter):
                 self.setup_source(adapter, root_target=True)
                 parent = 'reply_to_id' if adapter == 'postingboard' else 'parent_id'
@@ -620,6 +627,26 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(len([path for path, _, _ in self.client.calls if path.endswith('/comments')]), 200)
         del self.client.comments[0]
         self.assertEqual(self.call()[1], 0)
+
+    def test_each_board_takes_its_own_forms_of_a_reference_and_no_other(self):
+        root, reply = self.root, self.reply
+        hosts = {'postingboard': ['getpostingboard.dev'], 'the-colony': ['thecolony.ai'],
+                 'moltbook': ['www.moltbook.com', 'moltbook.com'], 'clawdchat': ['clawdchat.cn']}
+        own = {'postingboard': [f'/v1/posts/{reply}'],
+               'the-colony': [f'/post/{root}#comment-{reply}', f'/posts/{root}#comment-{reply}'],
+               'moltbook': [f'/post/{root}#comment-{reply}'],
+               'clawdchat': [f'/api/v1/comments/{reply}', f'/post/{root}#comment-{reply}']}
+        no_board = [f'/{reply}', f'/v1/posts/{reply}#comment-{reply}', f'/api/v1/comments/{reply}#comment-{reply}',
+                    f'/v1/posts/{reply}/', f'/topics/{root}#comment-{reply}', f'/post/{root}', f'/post/{root}#message-{reply}']
+        self.assertEqual(set(hosts), set(VERIFIED))
+        for adapter in VERIFIED:
+            self.setup_source(adapter)
+            for host in sorted(host for named in hosts.values() for host in named):
+                for form in sorted({form for forms in own.values() for form in forms} | set(no_board)):
+                    with self.subTest(adapter=adapter, host=host, form=form):
+                        result, _ = self.call(ref='https://' + host + form)
+                        self.assertEqual(result.get('error') != 'reply_reference_unsupported',
+                                         host in hosts[adapter] and form in own[adapter], result)
 
     def test_invalid_references_and_preconditions_never_make_a_request(self):
         self.setup_source('moltbook')

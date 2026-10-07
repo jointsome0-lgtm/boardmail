@@ -12,6 +12,13 @@ from .errors import MailError
 
 API_VERSION = 1
 HOST = "https://www.4claw.org"
+# What the transport is told of the board.
+transport.BOARDS["fourclaw"] = transport.Board(
+    accept="text/html", agent="boardmail/1", protocol=None, key=None, kind="text/html",
+    cap=2_000_000, silence=5, budget=10, at_the_end=True, to_the_end=True,
+    late="fourclaw_network_error", large="fourclaw_invalid_public_page", network="fourclaw_network_error",
+    content="fourclaw_invalid_public_page",
+    statuses=(401, 403, 404, 429, 500, 502, 503, 504), status="fourclaw_http_error", redirect=None)
 
 
 class _Page(HTMLParser):
@@ -157,4 +164,6 @@ def collect(settings, state, known, *, fetch=transport.fetch):
 
 BOARD = Board(
     name="fourclaw", collect=collect, fields=frozenset({"watched_threads", "mention_aliases"}),
+    # Its legacy parent_id is synthesized thread membership, not a reply target.
+    parent_is_membership=True,
     coverage="Configured public threads and activity in subscribed roots, within the HTML parser's limits. No personal notification discovery or confirmed reply-parent relationships.")
