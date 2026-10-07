@@ -1,10 +1,10 @@
 import unittest
 import json
 from http.client import IncompleteRead
-from unittest.mock import patch
 from urllib.error import URLError
 from boardmail import adapter_fourclaw as adapter
 from boardmail.adapters import validate
+from examples.fixtures import FakeBoard
 
 THREAD = "00000000-0000-4000-8000-000000000001"
 
@@ -26,10 +26,20 @@ def page(owner="Other", replies=None, ids=None):
     return '<div class="claw-section-title">A title</div>' + post(owner, "Opening", True) + ''.join(replies) + script
 
 
+def thread(asked):
+    """The thread whose page a request asks for."""
+    return asked.url.removeprefix(adapter.HOST + '/t/')
+
+
+def threads(pages):
+    """An invented board that has these pages, by thread. A page that is an exception is how a request for it fails."""
+    return FakeBoard(lambda asked: pages[thread(asked)])
+
+
 class FourclawTests(unittest.TestCase):
     def collect(self, html, state=None, known=frozenset(), **extra):
-        with patch.object(adapter, '_fetch', return_value=html):
-            batch = adapter.collect(dict(account_id="Reader", watched_threads=[THREAD], **extra), state or {}, known)
+        batch = adapter.collect(dict(account_id="Reader", watched_threads=[THREAD], **extra), state or {}, known,
+                                fetch=threads({THREAD: html}))
         validate(batch)
         return batch
 
@@ -42,6 +52,7 @@ class FourclawTests(unittest.TestCase):
         self.assertEqual(batch.messages[0]['body'], '@reader hello\nworld & friends')
         self.assertEqual(batch.messages[0]['kind'], 'mention')
         self.assertEqual(batch.messages[0]['url'], f'{adapter.HOST}/t/{THREAD}')
+        self.assertNotIn('discovery', batch.messages[0], 'A watched page is no subscription')
 
     def test_owned_op_and_idempotence_after_reordering(self):
         first = post('Other', 'First reply')
@@ -53,20 +64,18 @@ class FourclawTests(unittest.TestCase):
         self.assertEqual(replay.messages, [])
 
     def test_unavailable_stays_eligible_and_does_not_starve(self):
-        threads = [f'00000000-0000-4000-8000-{n:012d}' for n in range(1, 7)]
-        settings = dict(account_id='Reader', watched_threads=threads)
-        seen = []
-        def fetch(thread):
-            seen.append(thread)
-            if thread == threads[0]: raise URLError('secret upstream prose')
-            return page(replies=[post('Other', '@Reader hi')])
-        with patch.object(adapter, '_fetch', side_effect=fetch):
-            first = adapter.collect(settings, {}, set())
-            second = adapter.collect(settings, first.state, {m['id'] for m in first.messages})
+        watching = [f'00000000-0000-4000-8000-{n:012d}' for n in range(1, 7)]
+        settings = dict(account_id='Reader', watched_threads=watching)
+        board = threads({watched: page(replies=[post('Other', '@Reader hi')]) for watched in watching}
+                        | {watching[0]: URLError('secret upstream prose')})
+        first = adapter.collect(settings, {}, set(), fetch=board)
+        second = adapter.collect(settings, first.state, {m['id'] for m in first.messages}, fetch=board)
+        self.assertEqual({asked.board for asked in board.asked}, {'fourclaw'})
+        seen = [thread(asked) for asked in board.asked]
         self.assertEqual(first.error, 'fourclaw_network_error')
         self.assertEqual(len(first.messages), 3)
-        self.assertTrue(set(threads).issubset(seen))
-        self.assertEqual(seen.count(threads[0]), 2)
+        self.assertTrue(set(watching).issubset(seen))
+        self.assertEqual(seen.count(watching[0]), 2)
         self.assertEqual(set(second.state), {'next_thread'})
         self.assertNotIn('secret', str(first))
 
@@ -79,8 +88,8 @@ class FourclawTests(unittest.TestCase):
 
     def test_broken_response_preserves_confirmed_mail(self):
         settings = dict(account_id='Reader', watched_threads=[THREAD, '00000000-0000-4000-8000-000000000002'])
-        with patch.object(adapter, '_fetch', side_effect=[page(replies=[post('Other', '@Reader hi')]), IncompleteRead(b'partial')]):
-            batch = adapter.collect(settings, {}, set())
+        board = FakeBoard([page(replies=[post('Other', '@Reader hi')]), IncompleteRead(b'partial')])
+        batch = adapter.collect(settings, {}, set(), fetch=board)
         self.assertEqual(len(batch.messages), 1)
         self.assertEqual(batch.error, 'fourclaw_network_error')
         self.assertEqual(batch.unavailable, 1)
@@ -93,15 +102,15 @@ class FourclawTests(unittest.TestCase):
         self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
 
     def test_bad_thread_cannot_change_host(self):
-        with patch.object(adapter, '_fetch') as fetch:
-            batch = adapter.collect(dict(account_id='Reader', watched_threads=['../elsewhere']), {}, set())
+        board = threads({})
+        batch = adapter.collect(dict(account_id='Reader', watched_threads=['../elsewhere']), {}, set(), fetch=board)
         self.assertEqual(batch.error, 'invalid_config')
-        fetch.assert_not_called()
+        self.assertEqual(board.asked, [])
 
     def test_malformed_later_thread_preserves_earlier_mail(self):
         settings = dict(account_id='Reader', watched_threads=[THREAD, '00000000-0000-4000-8000-000000000002'])
-        with patch.object(adapter, '_fetch', side_effect=[page(replies=[post('Other', '@Reader hi')]), '<div class><p>gone</p></div>']):
-            batch = adapter.collect(settings, {}, set())
+        board = FakeBoard([page(replies=[post('Other', '@Reader hi')]), '<div class><p>gone</p></div>'])
+        batch = adapter.collect(settings, {}, set(), fetch=board)
         self.assertEqual(len(batch.messages), 1)
         self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
         validate(batch)

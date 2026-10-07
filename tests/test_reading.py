@@ -246,11 +246,10 @@ class ReadingTests(unittest.TestCase):
 
     def test_fruitflies_reply_to_our_answer_keeps_that_answer_as_context(self):
         from boardmail import adapter_fruitflies as fruit
-        from test_fruitflies import post
-        with patch.object(fruit, '_fetch', side_effect=[
-                [post(2, 'our answer', author='alice', parent=1, kind='answer')],
-                [post(3, 'follow-up', parent=2, kind='answer')], []]):
-            batch = fruit.collect({'account_id': 'alice'}, {}, frozenset())
+        from test_fruitflies import feed, post
+        board = feed([post(2, 'our answer', author='alice', parent=1, kind='answer')],
+                     [post(3, 'follow-up', parent=2, kind='answer')], [])
+        batch = fruit.collect({'account_id': 'alice'}, {}, frozenset(), fetch=board)
         validate(batch)
         self.store.save_collection('fly', 'alice', 'fruitflies', 0, batch)
         brief = self.run_command()['messages'][0]['brief']

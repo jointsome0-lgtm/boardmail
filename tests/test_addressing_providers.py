@@ -20,8 +20,8 @@ from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
 from test_clawdchat import FixtureClient as ClawdChatClient, event as clawd_event, original as clawd_original
-from test_fourclaw import THREAD, page as claw_page, post as claw_post
-from test_fruitflies import post as fly_post
+from test_fourclaw import THREAD, page as claw_page, post as claw_post, threads as claw_threads
+from test_fruitflies import feed as fly_feed, post as fly_post
 
 PREVIEW = "PRIVATE NOTIFICATION PREVIEW"
 
@@ -487,8 +487,8 @@ class ClawdChatTests(unittest.TestCase):
 
 class FourclawTests(unittest.TestCase):
     def collect(self, html, **extra):
-        with patch.object(fourclaw, "_fetch", return_value=html):
-            batch = fourclaw.collect(dict(account_id="Reader", watched_threads=[THREAD], **extra), {}, frozenset())
+        batch = fourclaw.collect(dict(account_id="Reader", watched_threads=[THREAD], **extra), {}, frozenset(),
+                                 fetch=claw_threads({THREAD: html}))
         assert_clean(self, batch)
         return batch
 
@@ -512,8 +512,7 @@ class FourclawTests(unittest.TestCase):
 
 class FruitfliesTests(unittest.TestCase):
     def collect(self, pages, cfg=None):
-        with patch.object(fruit, "_fetch", side_effect=pages):
-            batch = fruit.collect(cfg or {"account_id": "alice"}, {}, frozenset())
+        batch = fruit.collect(cfg or {"account_id": "alice"}, {}, frozenset(), fetch=fly_feed(*pages))
         assert_clean(self, batch)
         return batch
 
