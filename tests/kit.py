@@ -107,9 +107,12 @@ class Network:
 
 
 class Clock:
-    """The time inside fixed(): it stands still until the story moves it."""
-    def __init__(self, now):
-        self.now = now
+    """The time inside fixed(): it stands still until the story moves it.
+
+    With a step it also moves by that many seconds each time a package module asks how long something has taken,
+    so a wait of the package comes to its end without anyone waiting."""
+    def __init__(self, now, step=0):
+        self.now, self.step = now, step
 
     def __call__(self):
         return self.now
@@ -123,7 +126,8 @@ def fixed(clock):
     """Time and generated keys at the standard-library edge.
 
     time.time() is the clock for everyone. time.monotonic() is the clock for a package module, so no deadline
-    passes while a story runs, and stays real for anyone else: the event loop of the MCP client needs it.
+    passes while a story runs unless the clock has a step, and stays real for anyone else: the event loop of the
+    MCP client needs it.
     A uuid4() that a package module asks for counts up from 1, so a key is the same on every run and through
     both entry points, and no two keys are equal. Random bytes for anyone else stay random.
     """
@@ -133,7 +137,10 @@ def fixed(clock):
         return sys._getframe(frames + 1).f_globals.get('__name__', '').startswith('boardmail.')
 
     def monotonic():
-        return clock.now if package_asks(1) else elapsed()
+        if not package_asks(1):
+            return elapsed()
+        clock.advance(clock.step)
+        return clock.now
 
     def urandom(size):
         # uuid4() reads os.urandom itself, so the module that asked for the key is one frame further up.

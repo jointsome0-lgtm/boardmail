@@ -57,6 +57,27 @@ class AgentViewTests(unittest.TestCase):
     def test_mcp_server(self):
         self.assertStored('mcp', view.mcp_view())
 
+    @unittest.skipIf(view.mcp_missing(), NO_EXTRA)
+    def test_a_command_takes_the_same_arguments_through_both_entry_points(self):
+        from boardmail import cli
+
+        def typed(parser, words=()):
+            """Each command of a parser: the names that it keeps its arguments under, and those that it requires."""
+            below = [action for action in parser._actions if isinstance(action, argparse._SubParsersAction)]
+            if below:
+                return {name: found for word, under in below[0].choices.items()
+                        for name, found in typed(under, (*words, word)).items()}
+            taken = [action for action in parser._actions if not isinstance(action, argparse._HelpAction)]
+            return {'_'.join(words): ({action.dest for action in taken},
+                                      {action.dest for action in taken if action.required})}
+
+        commands = typed(cli.parser())
+        tools = {key.removeprefix('tool boardmail_'): entry['inputSchema']
+                 for key, entry in view.mcp_tree().items() if key.startswith('tool ')}
+        self.assertEqual(sorted(commands), sorted(tools))
+        for name, schema in tools.items():
+            self.assertEqual(commands[name], (set(schema['properties']), set(schema['required'])), name)
+
     def test_outline_tells_values_apart(self):
         said = 'One sentence here. ' * 6 + 'The last one.'
         values = [0, '0', None, 'null', 'None', True, 'true', 1, 1.0, '1', '1.0', 10**100, 2 * 10**100, str(10**100),

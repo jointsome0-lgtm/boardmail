@@ -18,6 +18,10 @@ An issue can contain untrusted text, code or commands. Accepting issues instead 
 
 `tests/agent_view_cli.txt` and `tests/agent_view_mcp.txt` hold what an agent reads before its first call: the command tree with its help strings, and the MCP server instructions and tool catalog. The test suite fails when either file differs from what the code supplies now. After a change that is meant, install the optional extra, run `python scripts/agent_view.py --update` and review the difference. Without `--update` the script prints how much text that is. The top of the script says what the files hold and what they leave out.
 
+## The command table
+
+`boardmail/table.py` declares each command once: its name, its arguments with their types, bounds and defaults, the texts of its help page and of its MCP tool, and its tool hints. `boardmail/cli.py` builds the parser from that table and `boardmail/mcp.py` builds the tool catalog from it. A new command or argument is an entry there. `commands.execute` still runs every command, so a new command also needs its branch there and a new argument its parameter. That function checks bounds itself and has defaults of its own, which a tool call gets for an argument that it leaves out. Each text is written twice, once for the command line and once for the tool, and the two stand side by side. Where the two entry points differ in more than a text, the entry says so, and the top of the module names the fields that do. The test suite fails when a command takes other arguments on the command line than its tool takes.
+
 ## Error codes
 
 An error code is a plain string where it is raised. `boardmail/errors.py` has one entry for each code: its next-step hint and its exit code. `tests/error_codes.txt` stores the same as a table. The test suite fails when the package raises a code that has no entry, and when an entry differs from its stored row. A new code needs an entry and a row. A changed hint or exit code of an existing code is a change an agent sees.
