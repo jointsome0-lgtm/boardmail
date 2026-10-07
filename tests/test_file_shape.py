@@ -8,6 +8,7 @@ import argparse
 from contextlib import closing
 import json
 from pathlib import Path
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -45,9 +46,11 @@ Made by tests/test_file_shape.py. Each command ran once on a fresh copy of each 
   version 1             tests/fixtures/v1.sql
   version 1, collected  that file after its first collect
 
-A line with + is something that the file has after the command and did not have before it. A table that is
-added is named there and written out under the new inbox or at the end. "same shape" says that the command
-added nothing and took nothing away. "file unchanged" says more: the file is the same byte for byte.
+A table is written in the words of the statements that the file itself keeps: its columns, then what holds
+for the whole table, then its indexes. A line with + is something that the file has after the command and did
+not have before it. A table that is added is named there and written out under the new inbox or at the end.
+"same shape" says that the command added nothing and took nothing away. "file unchanged" says more: the file
+is the same byte for byte.
 
 Where commands stand together, the others ran first and the row is about the last one, counted from the file
 as they left it. MESSAGE is a message that all three files hold, and THREAD is its thread. KEY is the key that
@@ -101,6 +104,9 @@ WRITES = [
     (PREPARE, BEGIN, 'reply verify moltbook MESSAGE --key KEY --ref ANSWER'),
 ]
 
+# The first word of a part of CREATE TABLE that is not a column.
+RULES = ('CONSTRAINT', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN')
+
 
 def commands(parser, words=()):
     """Every command of the parser, as the words that are typed for it."""
@@ -110,30 +116,40 @@ def commands(parser, words=()):
     return [name for word, under in below[0].choices.items() for name in commands(under, (*words, word))]
 
 
+def parts(text):
+    """What stands between the commas of text. A comma inside brackets does not count."""
+    found, depth = [''], 0
+    for char in text:
+        depth += (char == '(') - (char == ')')
+        if char == ',' and not depth:
+            found.append('')
+        else:
+            found[-1] += char
+    return [part.strip() for part in found]
+
+
 def shape(path):
     """(the version number of an inbox file, what it holds). What it holds maps 'table NAME' to the lines of
-    that table: its columns in their order, then its keys and its indexes."""
+    that table, in the words of the statements that the file keeps: its columns in their order, then what holds
+    for the whole table, then its indexes. So nothing that a statement says can change unseen."""
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as db:
         holds = {}
-        for kind, name, sql in db.execute("SELECT type, name, sql FROM sqlite_master WHERE type != 'index' "
-                                          "AND name NOT LIKE 'sqlite_%' ORDER BY type, name").fetchall():
-            lines = holds[f'{kind} {name}'] = []
-            if kind != 'table':
-                continue
-            columns = db.execute(f'PRAGMA table_info("{name}")').fetchall()
-            for _, column, declared, required, default, _ in columns:
-                lines.append(' '.join(filter(None, [column, declared, 'NOT NULL' if required else '',
-                                                    '' if default is None else f'DEFAULT {default}'])))
-            key = [column for place, column in sorted((row[5], row[1]) for row in columns) if place]
-            if key:
-                lines.append(f'PRIMARY KEY ({", ".join(key)})' + ' AUTOINCREMENT' * ('AUTOINCREMENT' in sql.upper()))
-            indexes = db.execute(f'PRAGMA index_list("{name}")').fetchall()
-            for _, index, unique, origin, _ in sorted(indexes, key=lambda row: (row[3] == 'c', row[1])):
-                over = ', '.join(column for *_, column in db.execute(f'PRAGMA index_info("{index}")'))
-                if origin == 'u':
-                    lines.append(f'UNIQUE ({over})')
-                elif origin == 'c':
-                    lines.append('UNIQUE ' * unique + f'INDEX {index} ({over})')
+        # A statement is kept for everything except what SQLite makes by itself, and tables come first here.
+        for kind, name, table, sql in db.execute(
+                "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY type != 'table', type, name").fetchall():
+            written = ' '.join(sql.split())
+            if kind == 'index':
+                holds[f'table {table}'].append(written)
+            elif kind == 'table':
+                head, _, rest = written.partition('(')
+                inside, _, tail = rest.rpartition(')')
+                found = parts(inside)
+                whole_table = [part for part in found if re.split(r'[\s(]', part)[0].upper() in RULES]
+                holds[f'table {name}'] = [part for part in found if part not in whole_table] + whole_table + [
+                    extra for extra in (tail.strip(), head.strip()) if extra not in ('', f'CREATE TABLE {name}')]
+            else:
+                holds[f'{kind} {name}'] = [written]
         return db.execute('PRAGMA user_version').fetchone()[0], holds
 
 
@@ -221,7 +237,9 @@ class FileShapeTests(unittest.TestCase):
                         if thing not in old:
                             self.assertEqual(tables.setdefault(thing, new[thing]), new[thing],
                                              f'{thing} has two shapes')
-                    found = ['file unchanged'] if same and part is READS else changes(old, new) or ['same shape']
+                    found = changes(old, new) or ['same shape' if old == new else 'the same in another order']
+                    if same and part is READS:
+                        found = ['file unchanged']
                     versions = str(was) if was == version else f'{was} -> {version}'
                     lead = f'  {name + ":":22}exit {code}  version {versions}  '
                     lines.append(lead + ('\n' + ' ' * len(lead)).join(found) + '\n')

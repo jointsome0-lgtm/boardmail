@@ -5,9 +5,11 @@ Made by tests/test_file_shape.py. Each command ran once on a fresh copy of each 
   version 1             tests/fixtures/v1.sql
   version 1, collected  that file after its first collect
 
-A line with + is something that the file has after the command and did not have before it. A table that is
-added is named there and written out under the new inbox or at the end. "same shape" says that the command
-added nothing and took nothing away. "file unchanged" says more: the file is the same byte for byte.
+A table is written in the words of the statements that the file itself keeps: its columns, then what holds
+for the whole table, then its indexes. A line with + is something that the file has after the command and did
+not have before it. A table that is added is named there and written out under the new inbox or at the end.
+"same shape" says that the command added nothing and took nothing away. "file unchanged" says more: the file
+is the same byte for byte.
 
 Where commands stand together, the others ran first and the row is about the last one, counted from the file
 as they left it. MESSAGE is a message that all three files hold, and THREAD is its thread. KEY is the key that
@@ -17,14 +19,13 @@ first and not yet the second.
 == new inbox
 version 2
 table adapter_state
-    source TEXT
+    source TEXT PRIMARY KEY
     adapter TEXT NOT NULL
     revision INTEGER NOT NULL
     state TEXT NOT NULL
     backlog_pending INTEGER NOT NULL DEFAULT 0
-    PRIMARY KEY (source)
 table messages
-    arrival_seq INTEGER
+    arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT
     source TEXT NOT NULL
     id TEXT NOT NULL
     thread_id TEXT NOT NULL
@@ -43,17 +44,16 @@ table messages
     reply_ref TEXT
     discovery TEXT
     addressing TEXT
-    PRIMARY KEY (arrival_seq) AUTOINCREMENT
-    UNIQUE (source, id)
-    INDEX messages_reply_ref (source, reply_ref)
+    UNIQUE(source, id)
+    CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
 table originals
     source TEXT NOT NULL
     id TEXT NOT NULL
     value TEXT NOT NULL
     fetched_at INTEGER NOT NULL
-    PRIMARY KEY (source, id)
+    PRIMARY KEY (source,id)
 table sources
-    source TEXT
+    source TEXT PRIMARY KEY
     account_id TEXT NOT NULL
     status TEXT NOT NULL DEFAULT 'unknown'
     last_checked INTEGER
@@ -61,17 +61,16 @@ table sources
     error TEXT
     unavailable INTEGER NOT NULL DEFAULT 0
     paused INTEGER NOT NULL DEFAULT 0
-    PRIMARY KEY (source)
 table subscriptions
     source TEXT NOT NULL
     thread_id TEXT NOT NULL
     subscribed_at INTEGER NOT NULL
-    PRIMARY KEY (source, thread_id)
+    PRIMARY KEY (source,thread_id)
 
 == version 1
 version 1
 table messages
-    arrival_seq INTEGER
+    arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT
     source TEXT NOT NULL
     id TEXT NOT NULL
     thread_id TEXT NOT NULL
@@ -88,29 +87,26 @@ table messages
     needs_reply INTEGER NOT NULL DEFAULT 0
     replied_at INTEGER
     reply_ref TEXT
-    PRIMARY KEY (arrival_seq) AUTOINCREMENT
-    UNIQUE (source, id)
+    UNIQUE(source, id)
 table sources
-    source TEXT
+    source TEXT PRIMARY KEY
     account_id TEXT NOT NULL
     status TEXT NOT NULL DEFAULT 'unknown'
     last_checked INTEGER
     last_ok INTEGER
     error TEXT
     unavailable INTEGER NOT NULL DEFAULT 0
-    PRIMARY KEY (source)
 
 == version 1, collected
 version 2
 table adapter_state
-    source TEXT
+    source TEXT PRIMARY KEY
     adapter TEXT NOT NULL
     revision INTEGER NOT NULL
     state TEXT NOT NULL
     backlog_pending INTEGER NOT NULL DEFAULT 0
-    PRIMARY KEY (source)
 table messages
-    arrival_seq INTEGER
+    arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT
     source TEXT NOT NULL
     id TEXT NOT NULL
     thread_id TEXT NOT NULL
@@ -129,29 +125,27 @@ table messages
     reply_ref TEXT
     discovery TEXT
     addressing TEXT
-    PRIMARY KEY (arrival_seq) AUTOINCREMENT
-    UNIQUE (source, id)
-    INDEX messages_reply_ref (source, reply_ref)
+    UNIQUE(source, id)
+    CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
 table originals
     source TEXT NOT NULL
     id TEXT NOT NULL
     value TEXT NOT NULL
     fetched_at INTEGER NOT NULL
-    PRIMARY KEY (source, id)
+    PRIMARY KEY (source,id)
 table sources
-    source TEXT
+    source TEXT PRIMARY KEY
     account_id TEXT NOT NULL
     status TEXT NOT NULL DEFAULT 'unknown'
     last_checked INTEGER
     last_ok INTEGER
     error TEXT
     unavailable INTEGER NOT NULL DEFAULT 0
-    PRIMARY KEY (source)
 table subscriptions
     source TEXT NOT NULL
     thread_id TEXT NOT NULL
     subscribed_at INTEGER NOT NULL
-    PRIMARY KEY (source, thread_id)
+    PRIMARY KEY (source,thread_id)
 
 == Commands that only read
 
@@ -237,7 +231,7 @@ $ boardmail collect
   version 1:            exit 0  version 1 -> 2  + table adapter_state
                                                 + messages: discovery TEXT
                                                 + messages: addressing TEXT
-                                                + messages: INDEX messages_reply_ref (source, reply_ref)
+                                                + messages: CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
                                                 + table originals
                                                 + table subscriptions
   version 1, collected: exit 0  version 2  same shape
@@ -247,7 +241,7 @@ $ boardmail check
   version 1:            exit 0  version 1 -> 2  + table adapter_state
                                                 + messages: discovery TEXT
                                                 + messages: addressing TEXT
-                                                + messages: INDEX messages_reply_ref (source, reply_ref)
+                                                + messages: CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
                                                 + table originals
                                                 + table subscriptions
   version 1, collected: exit 0  version 2  same shape
@@ -363,23 +357,21 @@ $ boardmail reply verify moltbook MESSAGE --key KEY --ref ANSWER
 
 == Tables that init does not create
 table reader_settings
-    key TEXT
+    key TEXT PRIMARY KEY
     value TEXT NOT NULL
-    PRIMARY KEY (key)
 table reply_attempts
     source TEXT NOT NULL
     message_id TEXT NOT NULL
-    idempotency_key TEXT NOT NULL
+    idempotency_key TEXT NOT NULL UNIQUE
     body TEXT NOT NULL
     body_sha256 TEXT NOT NULL
-    state TEXT NOT NULL
+    state TEXT NOT NULL CHECK (state IN ('prepared','unknown','confirmed'))
     prepared_at INTEGER NOT NULL
     attempted_at INTEGER
     confirmed_at INTEGER
     reply_ref TEXT
     readback_sha256 TEXT
-    PRIMARY KEY (source, message_id)
-    UNIQUE (idempotency_key)
+    PRIMARY KEY (source,message_id)
 table reply_candidate_checks
     source TEXT NOT NULL
     message_id TEXT NOT NULL
@@ -387,7 +379,7 @@ table reply_candidate_checks
     reply_ref TEXT NOT NULL
     checked_at INTEGER NOT NULL
     reason TEXT NOT NULL
-    PRIMARY KEY (source, message_id, reply_ref)
+    PRIMARY KEY (source,message_id,reply_ref)
 table reply_candidates
     source TEXT NOT NULL
     message_id TEXT NOT NULL
@@ -396,16 +388,16 @@ table reply_candidates
     adapter TEXT NOT NULL
     account_id TEXT NOT NULL
     recorded_at INTEGER NOT NULL
-    PRIMARY KEY (source, message_id, reply_ref)
+    PRIMARY KEY (source,message_id,reply_ref)
 table reply_verifications
     source TEXT NOT NULL
     message_id TEXT NOT NULL
     evidence TEXT NOT NULL
-    PRIMARY KEY (source, message_id)
+    PRIMARY KEY (source,message_id)
 table thread_tags
     tag TEXT NOT NULL
     source TEXT NOT NULL
     thread_id TEXT NOT NULL
     tagged_at INTEGER NOT NULL
-    PRIMARY KEY (tag, source, thread_id)
-    INDEX thread_tags_membership (source, thread_id, tag)
+    PRIMARY KEY (tag,source,thread_id)
+    CREATE INDEX thread_tags_membership ON thread_tags(source,thread_id,tag)
