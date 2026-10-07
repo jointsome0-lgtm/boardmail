@@ -6,6 +6,7 @@ import unittest
 from urllib.parse import urlsplit
 
 from boardmail import config, providers
+from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, settings, uid
 from kit import Clock, fixed, mark, new_inbox
@@ -101,9 +102,9 @@ class IdentityTests(unittest.TestCase):
 
 class ConfigFieldsTests(unittest.TestCase):
     def test_builtin_typos_and_settings_for_other_adapters_are_rejected(self):
-        for adapter in config.SOURCE_FIELDS:
+        for adapter, board in BOARDS.items():
             base = {'adapter': adapter, 'account_id': uid(1)}
-            if adapter in config.LEGACY_ADAPTERS: base['api_key_file'] = 'unused.key'
+            if 'api_key_file' in board.required: base['api_key_file'] = 'unused.key'
             if adapter == 'postingboard': base['inbox'] = True
             for key in ('mention_mode', 'unrecognized_setting'):
                 with self.subTest(adapter=adapter, key=key), tempfile.TemporaryDirectory() as folder:

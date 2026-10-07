@@ -2,63 +2,11 @@
 import json
 from pathlib import Path
 import re
-from uuid import UUID
 
-LEGACY_ADAPTERS = frozenset(("postingboard", "the-colony", "moltbook"))
-PACKAGED_ADAPTERS = {
-    "botnet": "boardmail.adapter_botnet",
-    "clawdchat": "boardmail.adapter_clawdchat",
-    "fourclaw": "boardmail.adapter_fourclaw",
-    "fruitflies": "boardmail.adapter_fruitflies",
-}
+from .boards import BOARDS, owner
+from .errors import MailError, converted, identifier, uuid  # Their callers find them here as well.
 
-SOURCE_FIELDS = {
-    "botnet": {"api_key_file"},
-    "postingboard": {"api_key_file", "threads", "mention_aliases", "inbox", "alias_search"},
-    "the-colony": {"api_key_file", "totp_secret_file", "mention_aliases"},
-    "moltbook": {"api_key_file", "mention_aliases"},
-    "clawdchat": {"api_key_file", "mention_aliases"},
-    "fourclaw": {"watched_threads", "mention_aliases"},
-    "fruitflies": {"mention_aliases"},
-}
 MAX_ALIAS = 100
-
-COVERAGE = {
-    "postingboard": "Configured roots, optional native Inbox/alias search, and activity in locally subscribed roots. Bounded backfill does not prove complete history.",
-    "the-colony": "Retained reply/mention notifications and available comment pages in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
-    "moltbook": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-    "clawdchat": "Retained reply/mention notifications and bounded comment-tree scans in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
-    "fourclaw": "Configured public threads and activity in subscribed roots, within the HTML parser's limits. No personal notification discovery or confirmed reply-parent relationships.",
-    "fruitflies": "Public-feed mentions, replies to discovered account posts, and recognized descendants of subscribed roots. Feed and ancestry bounds leave gaps in history.",
-    "botnet": "Retained forum reply/mention notifications, confirmed against anonymous topic messages. Cyclic backfill and bounded retries do not prove complete history. No topic subscriptions or private coordination inbox.",
-}
-SUBSCRIPTION_ADAPTERS = tuple(adapter for adapter in COVERAGE if adapter != "botnet")
-
-
-class MailError(Exception):
-    """A fixed safe error code, never provider prose, credentials or paths."""
-
-
-def uuid(value):
-    return str(UUID(value))
-
-
-def identifier(value):
-    if not isinstance(value, str) or not value or len(value) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in value):
-        raise ValueError("Invalid identifier")
-    value.encode("utf-8")
-    return value
-
-
-def converted(convert, *values, error=None, otherwise=None):
-    """convert(*values). Where convert does not take them, the error code is raised if there is one, and
-    otherwise is the answer if there is none."""
-    try:
-        return convert(*values)
-    except (ValueError, TypeError, AttributeError):
-        if error is None:
-            return otherwise
-        raise MailError(error) from None
 
 
 def path_from(value, base):
@@ -84,47 +32,36 @@ def load(path):
         for source, settings in sources.items():
             if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", source) or not isinstance(settings, dict):
                 raise ValueError()
-            if source not in COVERAGE and "adapter" not in settings:
+            # An adapter that the settings name is text. A source that names none is a board of the package.
+            if not isinstance(settings.get("adapter", source), str) or source not in BOARDS and "adapter" not in settings:
                 raise ValueError()
-            adapter = settings.get("adapter", source)
-            if not isinstance(adapter, str) or not adapter:
+            adapter = owner(source, settings)
+            # What that board declares, or None for the file of an operator, whose own settings pass unchanged.
+            board = BOARDS.get(adapter)
+            if not adapter or board and (settings.keys() - board.fields - {"account_id", "adapter"}
+                                         or board.required - settings.keys()):
                 raise ValueError()
-            if adapter in SOURCE_FIELDS and settings.keys() - (SOURCE_FIELDS[adapter] | {"account_id", "adapter"}):
-                raise ValueError()
-            settings["account_id"] = uuid(settings["account_id"]) if adapter in LEGACY_ADAPTERS else identifier(settings["account_id"])
-            settings["adapter"] = adapter if adapter in COVERAGE else path_from(adapter, path.parent).resolve()
+            settings["account_id"] = (board.account if board else identifier)(settings["account_id"])
+            settings["adapter"] = adapter if board else path_from(adapter, path.parent).resolve()
             settings["config_dir"] = str(path.parent)
-            if adapter in LEGACY_ADAPTERS or "api_key_file" in settings:
+            if "api_key_file" in settings:
                 if not isinstance(settings["api_key_file"], str) or not settings["api_key_file"]:
                     raise ValueError()
                 settings["api_key_file"] = path_from(settings["api_key_file"], path.parent)
-            if adapter in COVERAGE and "totp_secret_file" in settings:
+            if board and "totp_secret_file" in settings:
                 secret_file = settings["totp_secret_file"]
-                if adapter != "the-colony" or not isinstance(secret_file, str) or not secret_file.strip():
+                if not isinstance(secret_file, str) or not secret_file.strip():
                     raise ValueError()
                 settings["totp_secret_file"] = path_from(secret_file, path.parent)
-            if adapter in COVERAGE and ("mention_aliases" in settings or adapter == "postingboard"):
+            if board and board.configure:
+                board.configure(settings)
+            if board and "mention_aliases" in settings:
                 # One rule for every built-in adapter: non-blank text, bounded, deduplicated.
                 # Adapters add their own stricter name rules on top.
-                aliases = settings.get("mention_aliases", [])
+                aliases = settings["mention_aliases"]
                 if not isinstance(aliases, list) or any(not isinstance(a, str) or not a.strip() or len(a) > MAX_ALIAS for a in aliases):
                     raise ValueError()
                 settings["mention_aliases"] = list(dict.fromkeys(a.strip() for a in aliases))
-            if adapter == "postingboard":
-                inbox = settings.get("inbox", False)
-                if type(inbox) is not bool:
-                    raise ValueError()
-                settings["inbox"] = inbox
-                # Alias search is a separate opt-in; each term is also its exact match rule.
-                search = settings.get("alias_search", [])
-                if not isinstance(search, list) or any(not isinstance(a, str) or not a.strip() or len(a) > 100 for a in search):
-                    raise ValueError()
-                settings["alias_search"] = list(dict.fromkeys(a.strip() for a in search))
-                # Local subscriptions can supply roots at collection time.
-                threads = settings.get("threads", [])
-                if not isinstance(threads, list):
-                    raise ValueError()
-                settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
     except (KeyError, TypeError, ValueError, AttributeError):
         raise MailError("invalid_config") from None
     return data

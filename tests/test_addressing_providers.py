@@ -16,6 +16,7 @@ from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
 from boardmail.adapters import Batch, validate
+from boardmail.boards import BOARDS
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, uid
@@ -561,17 +562,18 @@ class ConfigTests(unittest.TestCase):
     def load(self, adapter, **extra):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "config.json"
-            base = {"adapter": adapter, "account_id": uid(1) if adapter in config.LEGACY_ADAPTERS or adapter == "clawdchat" else "reader"}
-            if adapter in config.LEGACY_ADAPTERS or adapter == "clawdchat": base["api_key_file"] = "unused.key"
+            keyed = "api_key_file" in BOARDS[adapter].required or adapter == "clawdchat"
+            base = {"adapter": adapter, "account_id": uid(1) if keyed else "reader"}
+            if keyed: base["api_key_file"] = "unused.key"
             if adapter == "postingboard": base["inbox"] = True
             if adapter == "fourclaw": base["watched_threads"] = [THREAD]
             path.write_text(json.dumps({"database": "mail.sqlite3", "sources": {"alias": {**base, **extra}}}))
             return config.load(path)["sources"]["alias"]
 
     def test_mention_aliases_are_validated_the_same_way_for_every_builtin(self):
-        for adapter in config.SOURCE_FIELDS:
+        for adapter, board in BOARDS.items():
             with self.subTest(adapter=adapter):
-                if "mention_aliases" not in config.SOURCE_FIELDS[adapter]:
+                if "mention_aliases" not in board.fields:
                     with self.assertRaisesRegex(MailError, "^invalid_config$"):
                         self.load(adapter, mention_aliases=["other"])
                     continue

@@ -1,9 +1,11 @@
 """One entry for each error code: its next-step hint, its exit code and, through that, its MCP error flag.
 
 A code stays a plain string where it is raised. This module imports nothing
-from the package, so every module can import it at the top.
+from the package, so every module can import it at the top. That is why the
+error itself and the checks of a value that every module shares are here too.
 """
 from typing import NamedTuple
+from uuid import UUID
 
 
 class Entry(NamedTuple):
@@ -108,6 +110,32 @@ CODES = {
     'reply_missing': Entry(),
     'thread_missing': Entry(),
 }
+
+
+class MailError(Exception):
+    """A fixed safe error code, never provider prose, credentials or paths."""
+
+
+def uuid(value):
+    return str(UUID(value))
+
+
+def identifier(value):
+    if not isinstance(value, str) or not value or len(value) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("Invalid identifier")
+    value.encode("utf-8")
+    return value
+
+
+def converted(convert, *values, error=None, otherwise=None):
+    """convert(*values). Where convert does not take them, the error code is raised if there is one, and
+    otherwise is the answer if there is none."""
+    try:
+        return convert(*values)
+    except (ValueError, TypeError, AttributeError):
+        if error is None:
+            return otherwise
+        raise MailError(error) from None
 
 
 def next_action(code):

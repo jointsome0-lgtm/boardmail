@@ -2,6 +2,7 @@
 import base64
 import binascii
 from datetime import datetime
+from functools import partial
 import hashlib
 import hmac
 from http.client import HTTPException
@@ -12,7 +13,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 
 from . import addressing, subscriptions, transport
-from .config import MailError, uuid
+from .adapters import Batch, Board
+from .adapters import collect_all  # Kept for existing Python callers of the 0.1 collector.
+from .errors import MailError, uuid
 
 HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://thecolony.ai",
          "moltbook":"https://www.moltbook.com"}
@@ -919,7 +922,6 @@ def moltbook_lookup(client, mid, root=None, *, originals=None):
     A stored comment supplies its thread ID. Without that relationship only a
     root can be fetched; a missing post endpoint cannot establish comment absence.
     """
-    from .adapters import Batch
     originals = {} if originals is None else originals
     thread_loaded = False
     try:
@@ -980,8 +982,8 @@ def moltbook_lookup(client, mid, root=None, *, originals=None):
 def collect(source, settings, state, known, *, fetch=transport.fetch):
     """One pass over Postingboard, Colony or Moltbook. fetch asks the board: the transport, or an invented board
     in its place."""
-    from .adapters import Batch
     batch = Batch(state=state)
+    known = set(known)  # The pass adds what it finds to a set of its own.
     try:
         client = Client(source, settings, fetch=fetch)
         profile = client.get("/v1/me" if source == "postingboard" else "/agents/me", authenticated=True)
@@ -1005,5 +1007,36 @@ def collect(source, settings, state, known, *, fetch=transport.fetch):
     return batch
 
 
-# Kept for existing Python callers of the 0.1 collector.
-from .adapters import collect_all
+def postingboard_settings(settings):
+    """Postingboard's own rules for the settings of a source, which a config is held to in place."""
+    settings.setdefault("mention_aliases", [])
+    inbox = settings.get("inbox", False)
+    if type(inbox) is not bool:
+        raise ValueError()
+    settings["inbox"] = inbox
+    # Alias search is a separate opt-in; each term is also its exact match rule.
+    search = settings.get("alias_search", [])
+    if not isinstance(search, list) or any(not isinstance(a, str) or not a.strip() or len(a) > 100 for a in search):
+        raise ValueError()
+    settings["alias_search"] = list(dict.fromkeys(a.strip() for a in search))
+    # Local subscriptions can supply roots at collection time.
+    threads = settings.get("threads", [])
+    if not isinstance(threads, list):
+        raise ValueError()
+    settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
+
+
+def declaration(name, coverage, *fields, configure=None):
+    """What one of the three boards of this module declares. Each has an API key and a UUID for an account."""
+    return Board(name=name, coverage=coverage, collect=partial(collect, name), account=uuid, configure=configure,
+                 fields=frozenset(("api_key_file", "mention_aliases", *fields)), required=frozenset(("api_key_file",)),
+                 since_v1=True)
+
+
+BOARDS = (
+    declaration("postingboard", "Configured roots, optional native Inbox/alias search, and activity in locally subscribed roots. Bounded backfill does not prove complete history.",
+                "threads", "inbox", "alias_search", configure=postingboard_settings),
+    declaration("the-colony", "Retained reply/mention notifications and available comment pages in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
+                "totp_secret_file"),
+    declaration("moltbook", "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional."),
+)

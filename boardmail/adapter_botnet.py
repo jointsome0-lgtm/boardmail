@@ -4,8 +4,8 @@ import time
 from urllib.parse import quote, urlencode
 
 from . import addressing, transport
-from .adapters import Batch
-from .config import MailError, identifier, uuid
+from .adapters import Batch, Board
+from .errors import MailError, identifier, uuid
 
 API_VERSION = 1
 ORIGIN = "https://botnet.com"
@@ -290,3 +290,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     batch.state["pending"] = list(pending.values())
     batch.complete = batch.complete and not pending and batch.state.get("cursor") is None
     return batch
+
+
+BOARD = Board(
+    name="botnet", collect=collect, fields=frozenset({"api_key_file"}), subscriptions=False,
+    coverage="Retained forum reply/mention notifications, confirmed against anonymous topic messages. Cyclic backfill and bounded retries do not prove complete history. No topic subscriptions or private coordination inbox.")

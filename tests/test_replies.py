@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from boardmail import commands, replies
+from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, uid
 from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox
@@ -647,8 +648,7 @@ os._exit(79)
         self.assertIsNone(shown['message']['replied_at'])
 
     def test_every_source_uses_the_same_local_protocol_even_when_paused(self):
-        from boardmail.config import COVERAGE
-        for n, source in enumerate([*COVERAGE, 'custom'], 1):
+        for n, source in enumerate([*BOARDS, 'custom'], 1):
             with self.subTest(source=source):
                 arrive(self.store, source, uid(2), [mail(20)])
                 commands.execute(self.store, 'pause', source=source)

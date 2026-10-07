@@ -6,9 +6,9 @@ import sqlite3
 import threading
 import time
 
-from .config import COVERAGE, LEGACY_ADAPTERS, SUBSCRIPTION_ADAPTERS, MailError
+from .config import MailError
 from .errors import next_action
-from . import reader, replies, schema, tags
+from . import boards, reader, replies, schema, tags
 
 STALE_AFTER = 540
 
@@ -47,7 +47,7 @@ class Store:
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
                 db.execute("INSERT INTO adapter_state VALUES (?,?,0,'{}',0)",
-                           (source, str(settings.get("adapter", source))))
+                           (source, boards.owner(source, settings)))
 
     def known(self, source, account_id):
         with self.connect() as db:
@@ -80,7 +80,7 @@ class Store:
             version = schema.version(db)
             schema.add(db, "adapter_state")
             if version == 1:
-                for source in COVERAGE:
+                for source in boards.BOARDS:
                     db.execute("""INSERT OR IGNORE INTO adapter_state
                         SELECT source,source,0,'{}',0 FROM sources WHERE source=?""", (source,))
             schema.upgrade(db)
@@ -108,9 +108,9 @@ class Store:
                 progress = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
-                adapter = str(settings.get("adapter", source))
+                adapter = boards.owner(source, settings)
                 previous_adapter = progress["adapter"] if progress is not None else None
-                if (previous_adapter is None and row is not None and source in LEGACY_ADAPTERS
+                if (previous_adapter is None and row is not None and boards.declared(source).since_v1
                         and schema.version(db) == 1):
                     # Version 1 used fixed source names before adapter bindings existed.
                     previous_adapter = source
@@ -120,7 +120,7 @@ class Store:
                 if progress is None:
                     raise MailError("subscription_config_required")
                 adapter = progress["adapter"]
-            if adapter not in SUBSCRIPTION_ADAPTERS:
+            if not boards.declared(adapter).subscriptions:
                 raise MailError("subscriptions_unsupported")
             if subscribed:
                 if row is None:
@@ -230,7 +230,7 @@ class Store:
             if value["status"] == "ok" and elapsed > stale_after:
                 value["status"] = "stale"
             adapter, pending = progress.get(value["source"], (value["source"], False))
-            value.update(coverage=COVERAGE.get(adapter, "Configured adapter scope; consult its instructions."), history_complete=False)
+            value.update(coverage=boards.declared(adapter).coverage, history_complete=False)
             value.update(backlog_pending=pending,
                          next_action=next_action(value["error"]) if value["error"] else "collect_periodically")
             if value["paused"]:

@@ -4,7 +4,7 @@ import errno
 from functools import wraps
 import sqlite3
 
-from . import config, providers, replies, table, tags, transport, verification
+from . import boards, config, providers, replies, table, tags, transport, verification
 from .config import MailError
 from .errors import exit_code, next_action
 
@@ -291,7 +291,7 @@ def run_reply_verify(store, *, sources, fetch, source, id, key, ref):
 def remote_settings(store, source, sources, local):
     """Settings enabling a remote lookup, or None for a local read."""
     settings = None if local or not sources or store.is_paused(source) else sources.get(source)
-    return settings if settings and settings.get("adapter", source) in LOOKUP_ADAPTERS else None
+    return settings if settings and boards.owner(source, settings) in LOOKUP_ADAPTERS else None
 
 
 def element(status, message=None, *, origin=None, error=None, id=None):
@@ -424,7 +424,7 @@ def context(store, source, message_id, settings, *, fetch=transport.fetch):
     """Thread root, immediate parent and target. Reads local rows first, then
     supported originals when configured. Nothing is marked, locally or remotely."""
     lookup = None
-    adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
+    adapter = boards.owner(source, settings) if settings is not None else store.adapter(source)
     if settings is not None:
         kind = config.uuid
         if adapter == "botnet":
@@ -458,7 +458,7 @@ def expand(store, source, thread, after, through, limit, settings, *, fetch=tran
     The common root is returned once; a parent that is the root becomes a
     same_as_root reference after its availability was counted. Marks stay
     unchanged; an empty page fetches nothing. Context can lie outside the interval."""
-    adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
+    adapter = boards.owner(source, settings) if settings is not None else store.adapter(source)
     if settings is not None:
         config.converted(config.uuid, thread, error="invalid_arguments")
     page = store.page(after, limit, through=through, source=source, thread=thread, scope="all", context="none")
