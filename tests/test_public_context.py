@@ -6,6 +6,7 @@ import unittest
 from urllib.error import HTTPError
 
 from boardmail import commands, providers
+from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
 from kit import Clock, fixed, mark
@@ -46,7 +47,7 @@ class PublicContextTests(unittest.TestCase):
         self.assertEqual((code, result['added']), (0, 2))
         self.target_raw['content'] = 'Current reply.'
         self.client.calls.clear()
-        self.ref = providers.parent_reference(adapter, self.root, self.parent)
+        self.ref = BOARDS[adapter].reference(self.root, self.parent)
         mark(self.store, self.source, self.answered, 'replied', ref=self.ref)
         mark(self.store, self.source, self.target, 'needs_reply')
 
@@ -88,7 +89,7 @@ class PublicContextTests(unittest.TestCase):
         for adapter in ('moltbook', 'clawdchat'):
             with self.subTest(adapter=adapter):
                 self.setup_source(adapter)
-                for ref in (providers.parent_reference(adapter, self.root, self.root), self.ref + '/',
+                for ref in (BOARDS[adapter].reference(self.root, self.root), self.ref + '/',
                             self.ref.replace(self.parent, uid(999))):
                     mark(self.store, self.source, self.answered, 'replied', ref=ref)
                     result, _ = self.context(local=True)

@@ -50,6 +50,41 @@ class Originals:
 
 
 @dataclass(frozen=True)
+class Replies:
+    """How a reply that an account published on a board is found again and checked.
+
+    A reference to a reply is an https address on one of hosts. direct is the path under which a reply has an
+    address of its own, and pages are the first path segments of a thread page that holds a reply as the
+    fragment comment-<id>. client is client(settings, *, fetch). read is read(client, mid, thread, check): it
+    asks the board for the reply and returns the original, its thread, its author, what it answers or None for
+    the thread itself, its text, and the basis on which the original could be read. Whatever else it reads on
+    the way it hands to check, which raises where that is not plainly public. verified: an original counts only
+    with the verification status verified. explicit: the fields that an original must give as false.
+    """
+    hosts: tuple
+    client: Callable
+    read: Callable
+    direct: tuple = ()
+    pages: tuple = ()
+    verified: bool = False
+    explicit: tuple = ()
+
+
+def public_comment(original, body='content', top_by_depth=False):
+    """What Replies.read returns for a comment that anyone can read, as three of the boards give one. body is
+    the field of its text. top_by_depth: the board omits parent_id for a top-level comment and reports depth 0."""
+    root = uuid(original['post_id'])
+    author = uuid(original['author']['id'])
+    if original.get('author_id') is not None and uuid(original['author_id']) != author:
+        raise MailError('reply_author_mismatch')
+    if top_by_depth and 'parent_id' not in original and type(original.get('depth')) is int and original['depth'] == 0:
+        parent = None
+    else:
+        parent = original['parent_id']  # Missing relationship evidence must fail closed.
+    return original, root, author, parent, original[body], 'anonymous_original'
+
+
+@dataclass(frozen=True)
 class Board:
     """What a board that ships with the package says of itself in its own module. boards.py lists them, and the
     core asks that list instead of comparing names.
@@ -60,10 +95,16 @@ class Board:
     one, holds its settings to its own rules in place and raises ValueError where they do not fit. since_v1
     says that an inbox of schema v1, which has no adapter rows, holds the board under its own name.
 
-    originals is how context and expand read an original, and None for a board that has no such lookup. The
-    last two are how its threads are read. rooted: a reply that names no parent answers the root of its thread.
-    parents_since_discovery: a row with no discovery was stored before the reply targets of the board were
-    kept, so only a fetched original says what it answers.
+    originals is how context and expand read an original, and None for a board that has no such lookup.
+    replies is how a published reply is verified, and None for a board on which none can be. reference is
+    reference(thread, parent): the identity under which a reply to parent is kept for a local join, never a URL
+    to fetch. It raises ValueError for ids that are not the board's, and is None for a board that has no such
+    identity.
+
+    The last three are how its threads are read. rooted: a reply that names no parent answers the root of its
+    thread. parents_since_discovery: a row with no discovery was stored before the reply targets of the board
+    were kept, so only a fetched original says what it answers. parent_is_membership: a parent_id that an inbox
+    holds for the board was made from thread membership and is no reply target, so a local read does not use it.
     """
     name: str
     coverage: str
@@ -75,8 +116,11 @@ class Board:
     subscriptions: bool = True
     since_v1: bool = False
     originals: Originals | None = None
+    replies: Replies | None = None
+    reference: Callable | None = None
     rooted: bool = True
     parents_since_discovery: bool = False
+    parent_is_membership: bool = False
 
 
 def validate(batch):

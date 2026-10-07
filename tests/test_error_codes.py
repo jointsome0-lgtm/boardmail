@@ -16,10 +16,10 @@ BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet c
          'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
          'errors.py: error',                                     # the code that a call names with error=
          'providers.py: code',                                   # a Colony sign-in code
+         "providers.py: error or 'reply_' + status",             # reply_deleted, reply_missing or a lookup error
          'transport.py: about.large',                            # what a board calls an answer over its size cap
          'transport.py: about.late',                             # what a board calls an answer that is late
-         'transport.py: self.refused',                           # what a board calls a redirect
-         "verification.py: error or 'reply_' + status"}          # reply_deleted, reply_missing or a lookup error
+         'transport.py: self.refused'}                           # what a board calls a redirect
 
 
 def stored():

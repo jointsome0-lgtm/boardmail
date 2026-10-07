@@ -14,6 +14,12 @@ MAX_PENDING = 256
 MAX_REQUESTS = 40
 SOURCE_SECONDS = 45
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
+# What the transport is told of the board.
+transport.BOARDS["botnet"] = transport.Board(
+    accept="application/json", agent="boardmail", protocol=None, key=4096, kind=None, cap=1024 * 1024,
+    silence=4, budget=None, at_the_end=True, to_the_end=False,
+    late="budget_exhausted", large="response_too_large", network="network_error", content="invalid_response",
+    statuses=None, status=None, redirect="redirect_refused")
 
 
 class Client:
@@ -292,8 +298,14 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     return batch
 
 
+def reference(thread, parent):
+    """Canonical identity for a local join, never a URL to fetch."""
+    url = ORIGIN + "/topics/" + uuid(thread)
+    return url if parent == thread else url + "#message-" + quote(parent, safe=":")
+
+
 BOARD = Board(
-    name="botnet", collect=collect, fields=frozenset({"api_key_file"}), subscriptions=False,
+    name="botnet", collect=collect, fields=frozenset({"api_key_file"}), subscriptions=False, reference=reference,
     # A topic groups multiple independent message trees.
     originals=Originals(Client, lookup, message_id=message_id), rooted=False,
     coverage="Retained forum reply/mention notifications, confirmed against anonymous topic messages. Cyclic backfill and bounded retries do not prove complete history. No topic subscriptions or private coordination inbox.")

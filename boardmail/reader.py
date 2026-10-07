@@ -1,6 +1,7 @@
 """Bounded local reading views. Only proven thread activity loses its body."""
 import json
 
+from . import boards
 from .config import MailError
 
 DEFAULTS = {"scope": "addressed", "context": "brief"}
@@ -29,9 +30,8 @@ def excerpt(item, budget=600):
 def brief(db, item):
     source, root_id, parent_id = item["source"], item["thread_id"], item["parent_id"]
     row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
-    adapter = source if row is None else row[0]
-    if adapter == "fourclaw":
-        # Its legacy parent_id is synthesized thread membership, not a reply target.
+    board = boards.declared(source if row is None else row[0])
+    if board.parent_is_membership:
         parent_id = None
 
     def resolve(mid):
@@ -62,9 +62,8 @@ def brief(db, item):
     # neither establish a relationship nor prove that a question is closed.
     exchange = {"status": "unknown", "messages": []}
     if parent_id is not None and parent["status"] != "unavailable":
-        from .providers import parent_reference
         try:
-            ref = parent_reference(adapter, root_id, parent_id)
+            ref = board.reference(root_id, parent_id) if board.reference else None
         except (ValueError, TypeError, AttributeError):
             ref = None
         if ref is not None:
