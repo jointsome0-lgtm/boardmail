@@ -12,7 +12,8 @@ import tempfile
 import unittest
 
 from boardmail import cli
-from boardmail.adapters import Batch, collect_all
+from boardmail.adapters import Batch
+from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, uid

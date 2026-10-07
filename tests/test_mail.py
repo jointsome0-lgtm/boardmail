@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from boardmail import cli, commands, providers, table
+from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, together, uid
@@ -54,7 +55,7 @@ class MailTests(unittest.TestCase):
         events = getattr(board,'events',None)
         if events is not None: board.events = []
         with fixed(Clock(at)):
-            result = providers.collect_all(store,{source:quiet},fetch=board)
+            result = collect_all(store,{source:quiet},fetch=board)
         if events is not None: board.events = events
         self.assertEqual((result['added'],result['failed']),(0,False),result)
         board.calls.clear()
@@ -116,7 +117,7 @@ class MailTests(unittest.TestCase):
             board.per_page = 1  # A page holds one notification or comment, however many the client asks for.
         added = 0
         for _ in range(3):
-            result = providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
+            result = collect_all(self.store,settings(self.temp.name),fetch=fetch)
             added += result['added']
             self.assertFalse(result['failed'])
         for board in boards.values():
@@ -133,7 +134,7 @@ class MailTests(unittest.TestCase):
         boards['the-colony'].fail=True
         c.comments.append(original(213,201))
         extra=deepcopy(c.events[0]);extra.update(id=uid(999),relatedCommentId=uid(213));c.events.append(extra)
-        result=providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
+        result=collect_all(self.store,settings(self.temp.name),fetch=fetch)
         self.assertEqual(result['added'],1)
         health=next(s for s in result['sources'] if s['source']=='the-colony')
         self.assertEqual(health['last_ok'],before);self.assertEqual(health['error'],'http_503')
@@ -147,18 +148,18 @@ class MailTests(unittest.TestCase):
             return get(path,params,**kw)
         c.get=fail_later
         c.per_page=1  # A page holds one notification, however many the client asks for.
-        result=providers.collect_all(self.store,sources,fetch=c)
+        result=collect_all(self.store,sources,fetch=c)
         self.assertEqual(result['added'],1)
-        result=providers.collect_all(self.store,sources,fetch=c)
+        result=collect_all(self.store,sources,fetch=c)
         c.per_page=None
         self.assertTrue(result['failed']);self.assertEqual(len(self.store.page()['messages']),1)
         c.get=get
-        result=providers.collect_all(self.store,sources,fetch=c)
+        result=collect_all(self.store,sources,fetch=c)
         self.assertEqual(result['added'],0)
         after=self.store.page()['next_after'];self.assertEqual(result['sources'][0]['unavailable'],1)
         c.comments.append(original(212,201,body='Late public confirmation.'))
         c.comments[-1]['created_at']='2020-01-01T00:00:00Z'
-        result=providers.collect_all(self.store,sources,fetch=c)
+        result=collect_all(self.store,sources,fetch=c)
         self.assertEqual(result['added'],1)
         self.assertEqual(self.store.wait(after,0)['messages'][0]['body'],'Late public confirmation.')
 
@@ -184,7 +185,7 @@ class MailTests(unittest.TestCase):
             return {'post':{**original(root,root,2),'title':'Example'}}
         board.get = get
         for expected in (1,2,3):
-            result = providers.collect_all(self.store,{'moltbook':cfg},fetch=board)
+            result = collect_all(self.store,{'moltbook':cfg},fetch=board)
             self.assertEqual(result['added'],1)
             self.assertEqual(self.store.status()['counts']['total'],expected)
             if expected<3:
@@ -199,12 +200,12 @@ class MailTests(unittest.TestCase):
         c.events.insert(0,{'id':uid(900),'type':'mention','relatedPostId':None})
         c.events.insert(0,{'id':uid(901),'type':'comment_reply','relatedPostId':None})
         c.comments[0]['author'] = None
-        result = providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
+        result = collect_all(self.store,settings(self.temp.name),fetch=fetch)
         self.assertFalse(result['failed'])
         self.assertIsNone(self.store.show('moltbook',uid(211))['author'])
         def broken(*_,**__):raise IncompleteRead(b'sensitive partial payload')
         boards['the-colony'].get = broken
-        result = providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)
+        result = collect_all(self.store,settings(self.temp.name),fetch=fetch)
         self.assertTrue(result['failed'])
         self.assertEqual(next(s['status'] for s in result['sources'] if s['source']=='moltbook'),'ok')
         self.assertNotIn('sensitive',json.dumps(result))
@@ -234,7 +235,7 @@ class MailTests(unittest.TestCase):
                 # The client of Postingboard waits between two requests. Here its wait only moves the clock.
                 with fixed(Clock(1_000_000)):
                     for expected_added in (first_count,0):
-                        result = providers.collect_all(self.store,{source:cfg},fetch=board)
+                        result = collect_all(self.store,{source:cfg},fetch=board)
                         self.assertEqual(result['added'],expected_added)
                         health = next(s for s in result['sources'] if s['source']==source)
                         if expected_added==0:
@@ -242,14 +243,14 @@ class MailTests(unittest.TestCase):
                         last_ok=health['last_ok']
                         self.assertEqual(len(self.store.known(source,cfg['account_id'])),first_count)
                     board.get = get
-                    result = providers.collect_all(self.store,{source:cfg},fetch=board)
+                    result = collect_all(self.store,{source:cfg},fetch=board)
                 self.assertFalse(result['failed']);self.assertEqual(result['added'],total-first_count)
                 self.assertEqual(len(self.store.known(source,cfg['account_id'])),total)
 
     def test_postingboard_all_selected_pages_and_summary_hydration(self):
         c=self.boards()[0]['postingboard']
         c.comments[uid(301)]=[named(n,301) for n in [311,312,*range(400,433)]]
-        result=providers.collect_all(self.store,{'postingboard':c.settings},fetch=c)
+        result=collect_all(self.store,{'postingboard':c.settings},fetch=c)
         self.assertEqual(result['added'],36)
         self.assertEqual(self.store.show('postingboard',uid(312))['body'],'A synthetic named-board reply.')
         self.assertTrue(any('before' in p for _,p,_ in c.calls))
@@ -273,7 +274,7 @@ class MailTests(unittest.TestCase):
                 # The wait of the client between two requests moves the clock, and the time of a root ends by it.
                 with fixed(clock):
                     for attempt in range(2):
-                        result = providers.collect_all(store,{'postingboard':cfg},fetch=board)
+                        result = collect_all(store,{'postingboard':cfg},fetch=board)
                         self.assertEqual(store.show('postingboard',uid(314))['kind'],'mention')
                         count = store.status()['counts']['total']
                         if failure=='source_timeout':
@@ -298,7 +299,7 @@ class MailTests(unittest.TestCase):
         sources={'moltbook':settings(self.temp.name)['moltbook']}
         c=FixtureBoard('moltbook',sources['moltbook'])
         c.per_page=1  # A page holds one notification or comment, however many the client asks for.
-        result=providers.collect_all(self.store,sources,fetch=c)
+        result=collect_all(self.store,sources,fetch=c)
         self.assertFalse(result['failed']);self.assertTrue(result['sources'][0]['backlog_pending'])
         self.assertEqual(result['added'],1)
         get=c.get
@@ -308,10 +309,10 @@ class MailTests(unittest.TestCase):
             return result
         c.get=repeat
         for _ in range(2):
-            result=providers.collect_all(self.store,sources,fetch=c)
+            result=collect_all(self.store,sources,fetch=c)
         self.assertEqual(result['sources'][0]['error'],'pagination_no_progress')
         c.get=get
-        result=providers.collect_all(self.store,sources,fetch=c)
+        result=collect_all(self.store,sources,fetch=c)
         self.assertFalse(result['failed']);self.assertEqual(self.store.status()['counts']['total'],1)
 
     def test_wait_timeout_cancellation_and_outage_never_write(self):
@@ -326,7 +327,7 @@ class MailTests(unittest.TestCase):
 
     def test_auth_hosts_and_public_confirmation(self):
         boards, fetch = self.boards()
-        self.assertFalse(providers.collect_all(self.store,settings(self.temp.name),fetch=fetch)['failed'])
+        self.assertFalse(collect_all(self.store,settings(self.temp.name),fetch=fetch)['failed'])
         # What each board was asked, and with which sign that the request is the one of the account. Colony signs
         # the account in for a token. A public original is asked without any sign, on every board that has one.
         asked = {s:[(a.url.partition('?')[0],a.headers.get('Authorization')) for a in board.asked] for s,board in boards.items()}

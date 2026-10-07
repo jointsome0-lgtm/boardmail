@@ -8,7 +8,8 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 from boardmail import config, providers
-from boardmail.adapters import collect_all, next_action
+from boardmail.boards import collect_all
+from boardmail.errors import next_action
 from examples.fixtures import FakeBoard, FixtureBoard, settings, together, uid
 from kit import Clock, fixed, new_inbox
 

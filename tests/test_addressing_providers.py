@@ -11,7 +11,7 @@ import unittest
 from urllib.error import URLError
 from uuid import UUID
 
-from boardmail import addressing, commands, config, providers
+from boardmail import addressing, boards, commands, config, providers
 from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
@@ -343,7 +343,7 @@ class PostingboardTests(unittest.TestCase):
             store = new_inbox(path)
             commands.execute(store, "subscribe", sources={"postingboard": board.settings}, source="postingboard", thread=uid(302))
             def collect():
-                return providers.collect_all(Store(path), {"postingboard": board.settings}, fetch=board)
+                return boards.collect_all(Store(path), {"postingboard": board.settings}, fetch=board)
             self.assertEqual(collect()["added"], 7)
             self.assertEqual(Store(path).show("postingboard", uid(323))["addressing"], "direct")
             for action in ("read", "needs_reply", "replied"):

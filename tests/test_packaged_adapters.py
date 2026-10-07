@@ -7,8 +7,7 @@ import tempfile
 import unittest
 
 from boardmail import providers
-from boardmail.adapters import collect_all
-from boardmail.boards import BOARDS
+from boardmail.boards import BOARDS, collect_all
 from boardmail.config import load
 from kit import mark, new_inbox
 import test_botnet

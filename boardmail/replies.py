@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from . import schema
+from . import boards, schema
 from .config import MailError, identifier
 
 MAX_BODY_BYTES = 65536
@@ -125,6 +125,29 @@ def pending(db, after=0, limit=PAGE_SIZE):
                      'arguments': {'after': next_after, 'limit': limit}} if more else None}
 
 
+def check_source(db, source, settings, writing=False):
+    """Used before fetching and again inside the confirmation transaction."""
+    row = db.execute('SELECT * FROM sources WHERE source=?', (source,)).fetchone()
+    if row is None:
+        raise MailError('source_not_found')
+    if row['account_id'] != settings['account_id']:
+        raise MailError('account_mismatch')
+    if writing:
+        # No stand-ins on a connection that writes: the file may have no pause column and no adapter_state.
+        row = schema.whole('sources', row)
+    if row['paused']:
+        raise MailError('source_paused')
+    previous = None
+    if not writing or schema.has(db, 'adapter_state'):
+        previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
+    # Schema v1 had three fixed source names and no adapter aliases or state table.
+    expected = previous['adapter'] if previous else source if boards.declared(source).since_v1 else None
+    if expected is None:
+        raise MailError('reply_adapter_identity_unknown')
+    if expected != boards.owner(source, settings):
+        raise MailError('adapter_mismatch')
+
+
 def execute(store, action, source, message_id, *, body=None, key=None, readback_body=None, ref=None, replace_key=None,
             verification=None, settings=None):
     """One SQLite transaction binds each transition to a saved incoming and key."""
@@ -154,9 +177,8 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         row = db.execute('SELECT * FROM messages WHERE source=? AND id=?', (source, message_id)).fetchone()
         if row is None:
             raise MailError('message_not_found')
-        message = store._message(row, db, writing)
+        message = store.record(row, db, writing)
         if verification is not None:
-            from .verification import check_source
             check_source(db, source, settings, writing)
             if (action != 'confirm' or verification['thread_id'] != message['thread_id']
                     or verification['target_id'] != message_id):

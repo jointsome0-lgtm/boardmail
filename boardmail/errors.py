@@ -95,7 +95,7 @@ CODES = {
     'http_401': Entry('check_config_and_credentials'),
     'http_403': Entry('check_config_and_credentials'),
     'http_429': Entry('wait_before_collecting_again'),
-    # Another collector saved the source first, from adapters.collect_all.
+    # Another collector saved the source first, from boards.collect_all.
     'collection_conflict': Entry(),
     # A local file or database failure, from commands and the MCP start.
     'local_state_error': Entry('inspect_database_do_not_delete'),

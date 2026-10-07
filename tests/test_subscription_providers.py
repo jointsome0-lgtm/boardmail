@@ -19,7 +19,8 @@ from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
 from boardmail import addressing, commands, providers, subscriptions
-from boardmail.adapters import Batch, collect_all, validate
+from boardmail.adapters import Batch, validate
+from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, status, uid
