@@ -19,7 +19,7 @@ SMOKE_TESTS = [
     'test_agent_loop',
 ]
 REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
-            'boardmail/cli.py', 'boardmail/mcp.py', 'docs/reference.md',
+            'boardmail/cli.py', 'boardmail/mcp.py', 'boardmail/table.py', 'docs/reference.md',
             'scripts/check_sdist.py', 'scripts/inner_reach.py', 'scripts/agent_view.py',
             'examples/demo.py', 'examples/fixtures.py',
             'examples/agent_loop.py', 'examples/custom_board.py',
