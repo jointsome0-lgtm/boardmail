@@ -6,50 +6,53 @@ import unittest
 from urllib.error import HTTPError
 
 from boardmail import commands, providers
-from boardmail.adapters import Batch
 from boardmail.store import Store
-from examples.fixtures import FakeBoard, FixtureBoard, original, uid
-from kit import Clock, fixed
-from test_clawdchat import Board as ClawdChat, original as clawd_original
-from test_mail import mail
+from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
+from kit import Clock, fixed, mark
+from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 
 
 class PublicContextTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'mail.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = Store(self.path); commands.execute(self.store, 'init')
 
     def setup_source(self, adapter):
+        """The invented board has a comment under a post of the account, the answer of the account to it, and a
+        reply to that answer. The comment and the reply are the mail of the account. After the pass the reply
+        gets another text on the board."""
         self.adapter, self.source = adapter, 'alias-' + adapter
-        self.cfg = {'account_id': uid(1), 'adapter': adapter, 'api_key_file': Path('absent.key')}
         if adapter == 'moltbook':
+            self.cfg = {'account_id': uid(1), 'adapter': adapter, 'api_key_file': settings(self.temp.name)[adapter]['api_key_file']}
             self.client = FixtureBoard(adapter, self.cfg)
-            self.root, self.parent, self.target = uid(201), uid(211), uid(212)
+            self.root, self.parent, self.target, self.answered = uid(201), uid(211), uid(212), uid(209)
             self.parent_raw = original(211, 201, 1, body='Our published answer.')
-            self.target_raw = {**original(212, 201, body='Current reply.'), 'parent_id': self.parent}
+            self.target_raw = {**original(212, 201, body='Saved reply.'), 'parent_id': self.parent}
             self.parent_raw['replies'] = [self.target_raw]
             self.client.comments = [original(209, 201), self.parent_raw]
+            self.client.events = [{'id': uid(n + 1000), 'type': kind, 'relatedPostId': self.root, 'relatedCommentId': uid(n),
+                                   'isRead': True} for n, kind in ((209, 'post_comment'), (212, 'comment_reply'))]
         else:
+            self.cfg = {'account_id': uid(1), 'adapter': adapter, 'api_key_file': key_file(self)}
             self.client = ClawdChat()
-            self.root, self.parent, self.target = uid(100), uid(11), uid(12)
+            self.root, self.parent, self.target, self.answered = uid(100), uid(11), uid(12), uid(900)
             self.parent_raw = clawd_original(11, content='Our published answer.', author={'id': uid(1), 'name': 'owner'})
-            self.target_raw = clawd_original(12, content='Current reply.', parent_id=self.parent)
-            self.client.originals = {self.root: clawd_original(100, title='Thread'),
+            self.target_raw = clawd_original(12, content='Saved reply.', parent_id=self.parent)
+            self.client.originals = {self.root: clawd_original(100, title='Thread'), self.answered: clawd_original(900),
                                     self.parent: self.parent_raw, self.target: self.target_raw}
-        self.store.prepare_collection()
-        self.store.save_collection(self.source, uid(1), adapter, 0, Batch())
-        self.store.save(self.source, uid(1), [
-            {**mail(900), 'thread_id': self.root},
-            {**mail(902), 'id': self.target, 'thread_id': self.root,
-             'parent_id': self.parent, 'body': 'Saved reply.'}])
+            self.client.events = [clawd_event(900), clawd_event(12, 'reply')]
+        result, code = commands.execute(self.store, 'collect', sources={self.source: self.cfg}, fetch=self.client)
+        self.assertEqual((code, result['added']), (0, 2))
+        self.target_raw['content'] = 'Current reply.'
+        self.client.calls.clear()
         self.ref = providers.parent_reference(adapter, self.root, self.parent)
-        self.store.mark(self.source, uid(900), 'replied', ref=self.ref)
-        self.store.mark(self.source, self.target, 'needs_reply')
+        mark(self.store, self.source, self.answered, 'replied', ref=self.ref)
+        mark(self.store, self.source, self.target, 'needs_reply')
 
     def context(self, *, local=False):
-        """The context command with the invented board in the place of the transport. There is no key file for
-        a client to read: both boards give an original to anyone."""
+        """The context command with the invented board in the place of the transport. Both boards give an
+        original to anyone, and fail the test when a request for one carries the key of the account."""
         before = len(self.client.asked)
         result = commands.execute(self.store, 'context', source=self.source, id=self.target,
                                   sources={self.source: self.cfg}, local=local, fetch=self.client)
@@ -71,11 +74,12 @@ class PublicContextTests(unittest.TestCase):
                 self.assertIs(result['target']['differs_from_saved'], True)
                 self.assertTrue(result['target']['message']['needs_reply'])
                 self.assertEqual(result['previous_exchange']['status'], 'linked')
-                self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [uid(900)])
+                self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [self.answered])
                 self.assertTrue(all(not auth and 'notifications' not in path for path, _, auth in self.client.calls))
                 self.assertEqual(self.path.read_bytes(), before)
                 for paused in (False, True):
-                    self.store.set_paused(self.source, paused); self.client.calls.clear()
+                    commands.execute(self.store, 'pause' if paused else 'resume', source=self.source)
+                    self.client.calls.clear()
                     result, code = self.context(local=not paused)
                     self.assertEqual((code, result['fetched'], result['previous_exchange']['status']), (1, False, 'linked'))
                     self.assertEqual(self.client.calls, [])
@@ -86,7 +90,7 @@ class PublicContextTests(unittest.TestCase):
                 self.setup_source(adapter)
                 for ref in (providers.parent_reference(adapter, self.root, self.root), self.ref + '/',
                             self.ref.replace(self.parent, uid(999))):
-                    self.store.mark(self.source, uid(900), 'replied', ref=ref)
+                    mark(self.store, self.source, self.answered, 'replied', ref=ref)
                     result, _ = self.context(local=True)
                     self.assertEqual(result['previous_exchange']['status'], 'unmatched')
 
@@ -180,12 +184,17 @@ class PublicContextTests(unittest.TestCase):
 
     def test_conflicting_stored_root_is_rejected_locally_and_after_lookup_failure(self):
         source = 'clawdchat'
-        cfg = {'account_id': uid(1), 'adapter': source}
-        target = dict(mail(10), parent_id=uid(100))
-        self.store.save(source, uid(1), [target, dict(mail(100), thread_id=uid(999))])
+        cfg = {'account_id': uid(1), 'adapter': source, 'api_key_file': key_file(self)}
+        # The board has a comment that names its post as what it answers, and under another post a comment with
+        # the id of that post.
+        board = ClawdChat()
+        board.originals = {uid(10): clawd_original(10, parent_id=uid(100)),
+                           uid(100): clawd_original(100, post_id=uid(999), post={'id': uid(999), 'title': 'Another thread'})}
+        board.events = [clawd_event(10), {**clawd_event(100), 'post_id': uid(999)}]
+        self.assertEqual(commands.execute(self.store, 'collect', sources={source: cfg}, fetch=board)[0]['added'], 2)
+        self.assertEqual(self.store.show(source, uid(100))['thread_id'], uid(999))
         for action in ('read', 'needs_reply', 'replied'):
-            self.store.mark(source, uid(10), action,
-                            ref='https://example.invalid/reply' if action == 'replied' else None)
+            mark(self.store, source, uid(10), action, ref='https://example.invalid/reply' if action == 'replied' else None)
         saved = self.store.show(source, uid(10))
         brief = self.store.page(context='brief')['messages'][0]['brief']
         self.assertEqual(brief['root']['reason'], 'thread_mismatch')
@@ -209,8 +218,16 @@ class PublicContextTests(unittest.TestCase):
 
     def test_current_originals_replace_conflicting_stored_relatives(self):
         self.setup_source('clawdchat')
-        self.store.save(self.source, uid(1), [
-            dict(mail(100), thread_id=uid(999)), dict(mail(11), thread_id=uid(999))])
+        # An earlier pass got two comments under another post, with the ids that the post and the answer of the
+        # account now have on the board.
+        now = dict(self.client.originals)
+        for n in (100, 11):
+            self.client.originals[uid(n)] = clawd_original(n, post_id=uid(999), post={'id': uid(999), 'title': 'Another thread'})
+            self.client.events.append({**clawd_event(n), 'post_id': uid(999)})
+        result, code = commands.execute(self.store, 'collect', sources={self.source: self.cfg}, fetch=self.client)
+        self.assertEqual((code, result['added']), (0, 2))
+        self.client.originals = now
+        self.client.calls.clear()
         saved = self.store.show(self.source, self.target)
         before = self.path.read_bytes()
         result, code = self.context()
@@ -225,17 +242,28 @@ class PublicContextTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_matching_local_fourclaw_anchor_and_botnet_absent_parent_stay_available(self):
-        self.store.save('fourclaw', 'reader', [mail(100),
-                        dict(mail(10), parent_id=uid(100)), mail(11)])
-        self.store.save('botnet', 'reader', [mail(100), dict(mail(20), id='opaque:message-20')])
+        import test_botnet as botnet
+        from test_fourclaw import THREAD, page, post, threads
+        # 4claw: a thread that names the account where it opens and in a reply. Its page shows no reply targets,
+        # and the reply is taken to answer the opening post, which is in the inbox.
+        fourclaw = threads({THREAD: page(replies=[post('Other', '@Reader a reply.')], opening='@Reader an opening.')})
+        result, code = commands.execute(self.store, 'collect', fetch=fourclaw,
+                                        sources={'fourclaw': {'account_id': 'Reader', 'watched_threads': [THREAD]}})
+        self.assertEqual((code, result['added']), (0, 2))
+        # Botnet: a message that answers no other message. Its topic is no message, so the inbox does not have it.
+        board = botnet.Board()
+        board.add(20, parentMessageId=None)
+        result, code = commands.execute(self.store, 'collect', fetch=board,
+                                        sources={'botnet': {'account_id': botnet.OWNER, 'api_key_file': botnet.key_file(self)}})
+        self.assertEqual((code, result['added']), (0, 1))
         before = self.path.read_bytes()
         board = FakeBoard([])  # It has no answer, and it is asked nothing.
-        for mid in (uid(10), uid(11)):
-            result, code = commands.execute(self.store, 'context', source='fourclaw', id=mid, local=True, fetch=board)
-            self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, uid(100)))
-        result, code = commands.execute(self.store, 'context', source='botnet', id='opaque:message-20', local=True,
-                                        fetch=board)
-        self.assertEqual((code, result['complete'], result['parent']['status']), (0, True, 'none'))
+        reply = next(m['id'] for m in self.store.page(source='fourclaw')['messages'] if m['id'] != THREAD)
+        result, code = commands.execute(self.store, 'context', source='fourclaw', id=reply, local=True, fetch=board)
+        self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, THREAD))
+        result, code = commands.execute(self.store, 'context', source='botnet', id=botnet.mid(20), local=True, fetch=board)
+        self.assertEqual((result['parent']['status'], result['root']['status'], result['complete'], code),
+                         ('none', 'unknown', False, 1))
         self.assertEqual(board.asked, [])
         self.assertEqual(self.path.read_bytes(), before)
 

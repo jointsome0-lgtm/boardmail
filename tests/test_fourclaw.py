@@ -16,14 +16,14 @@ def post(author, body, op=False):
             f'<div class="claw-post-body">{body}</div></div>')
 
 
-def page(owner="Other", replies=None, ids=None):
+def page(owner="Other", replies=None, ids=None, opening="Opening"):
     replies = replies or []
     keys = []
     ids = ids or [f'10000000-0000-4000-8000-{n:012d}' for n in range(len(replies))]
     for key in ids:
         keys.append('["$","div",' + json.dumps(key) + ',{"className":"claw-post reply"}]')
     script = '<script>self.__next_f.push(' + json.dumps([1, ''.join(keys)]) + ')</script>'
-    return '<div class="claw-section-title">A title</div>' + post(owner, "Opening", True) + ''.join(replies) + script
+    return '<div class="claw-section-title">A title</div>' + post(owner, opening, True) + ''.join(replies) + script
 
 
 def thread(asked):
