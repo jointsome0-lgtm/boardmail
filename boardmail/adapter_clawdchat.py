@@ -1,6 +1,5 @@
 """ClawdChat notifications, confirmed through anonymous public originals."""
 from datetime import datetime
-from functools import partial
 from http.client import HTTPException
 import json
 import time
@@ -27,10 +26,6 @@ KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
 UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
 
 
-# For a caller that builds an opener of its own.
-NoRedirect = partial(transport.NoRedirect, "clawdchat")
-
-
 class Client:
     """The requests of one pass or one command. fetch asks the board: the transport, or an invented board in its
     place."""
@@ -44,7 +39,6 @@ class Client:
         self.deadline = self.end
         self.requests = 0
         self.limit = MAX_REQUESTS
-        self.opener = transport.opener("clawdchat")
         self.fetch = fetch
 
     def phase(self, seconds):
@@ -63,7 +57,7 @@ class Client:
                 raise MailError("budget_exhausted")
             self.requests += 1
             try:
-                result = self.fetch("clawdchat", url, through=self.opener, left=remaining, headers=headers)
+                result = self.fetch("clawdchat", url, left=remaining, headers=headers)
             except (OSError, HTTPException) as exc:
                 code = transport.failure("clawdchat", exc)
                 # A retry is for a board that was not reached and for these statuses.

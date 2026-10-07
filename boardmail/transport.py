@@ -105,11 +105,6 @@ class NoRedirect(HTTPRedirectHandler):
     http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
-def opener(board):
-    """What sends the requests of a board. A client that sends more than one keeps it."""
-    return build_opener(NoRedirect(board))
-
-
 def key(board, file):
     """The key of an account as its file gives it, without the spaces and line breaks around it. Where the file
     cannot be read, or holds no key that the board takes, a MailError says that the credentials are not there."""
@@ -129,13 +124,13 @@ def key(board, file):
     return key
 
 
-def fetch(board, url, *, through=None, left=None, headers=None, body=None):
+def fetch(board, url, *, left=None, headers=None, body=None):
     """The answer of a board to a request for this URL: text where an answer must be a page, and what the JSON
     says everywhere else.
 
-    through is the opener of a client that keeps one. left is the seconds that the client has left for this
-    request, where the board has no time budget of its own. headers are sent with the headers of the board.
-    A body is sent as JSON, and the request is then a POST. Without one it is a GET.
+    left is the seconds that the client has left for this request, where the board has no time budget of its
+    own. headers are sent with the headers of the board. A body is sent as JSON, and the request is then a POST.
+    Without one it is a GET.
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
     that cannot be read, and a MailError with the code of the board for an answer that is too large or late."""
@@ -155,7 +150,7 @@ def fetch(board, url, *, through=None, left=None, headers=None, body=None):
         if now > end or about.at_the_end and now == end:
             raise MailError(about.late)
 
-    with (opener(board) if through is None else through).open(request, timeout=min(about.silence, left)) as answer:
+    with build_opener(NoRedirect(board)).open(request, timeout=min(about.silence, left)) as answer:
         if about.kind and answer.headers.get_content_type() != about.kind:
             raise ValueError('The answer is not ' + about.kind)
         content = bytearray()

@@ -12,7 +12,7 @@ import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from boardmail.providers import collect_all
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, settings
+from examples.fixtures import FixtureBoard, settings, together
 
 
 def run_cli(db, *args, wait=False):
@@ -29,11 +29,12 @@ def main():
     parser.add_argument("--outage",action="store_true")
     args = parser.parse_args()
     if args.collect:
-        def factory(source,config):
-            client = FixtureClient(source,config)
-            client.fail = args.outage and source=="the-colony"
-            return client
-        print(json.dumps(collect_all(Store(args.collect),settings(),client_factory=factory)))
+        # The clients of the three boards ask invented boards. Postingboard goes first: its client waits between
+        # two requests, and the mail of the other two then arrives right after its own.
+        sources = dict(reversed(settings(args.collect.parent).items()))
+        boards = {source:FixtureBoard(source,config) for source,config in sources.items()}
+        boards["the-colony"].fail = args.outage
+        print(json.dumps(collect_all(Store(args.collect),sources,fetch=together(boards))))
         return
     with tempfile.TemporaryDirectory(prefix="boardmail-demo-") as directory:
         db = Path(directory)/"mail.sqlite3"

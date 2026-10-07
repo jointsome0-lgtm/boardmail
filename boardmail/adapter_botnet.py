@@ -1,6 +1,5 @@
 """Botnet forum inbox, with bodies confirmed through anonymous public reads."""
 from copy import deepcopy
-from functools import partial
 import time
 from urllib.parse import quote, urlencode
 
@@ -17,10 +16,6 @@ SOURCE_SECONDS = 45
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
 
 
-# For a caller that builds an opener of its own.
-NoRedirect = partial(transport.NoRedirect, "botnet")
-
-
 class Client:
     """The requests of one pass or one command. fetch asks the board: the transport, or an invented board in its
     place."""
@@ -29,7 +24,6 @@ class Client:
         self.settings, self.key = settings, None
         self.end = self.deadline = time.monotonic() + SOURCE_SECONDS
         self.requests = 0
-        self.opener = transport.opener("botnet")
         self.fetch = fetch
         self.cache = {}
 
@@ -54,7 +48,7 @@ class Client:
         self.requests += 1
         url = ORIGIN + "/api/forum" + path + ("?" + urlencode(params) if params else "")
         try:
-            result = self.fetch("botnet", url, through=self.opener, left=remaining, headers=headers)
+            result = self.fetch("botnet", url, left=remaining, headers=headers)
             if not isinstance(result, dict):
                 raise ValueError()
         except transport.FAILED as exc:
