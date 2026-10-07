@@ -1,11 +1,12 @@
 """Public extension, durable progress and 0.1 database compatibility contracts."""
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
 from unittest.mock import patch
 import io
 import json
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,24 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(subprocess.run(loop, capture_output=True, text=True, timeout=10).stdout, '')
         self.assertEqual(self.cli('--db', str(db), 'show', 'example', '1')[1]['message'], before)
         self.assertEqual(self.cli('--db', str(db), 'mark', 'unread', 'example', '1')[0], 0)
+
+    def test_v1_read_then_additive_migration_preserves_arrivals_and_marks(self):
+        legacy = self.root/'legacy.sqlite3'
+        with closing(sqlite3.connect(legacy)) as db:
+            db.executescript((Path(__file__).parent/'fixtures/v1.sql').read_text())
+        store = Store(legacy)
+        before = store.show('moltbook', uid(10)); raw = legacy.read_bytes()
+        self.assertEqual(store.wait(1, 0)['messages'][0]['arrival_seq'], 2)
+        self.assertEqual(legacy.read_bytes(), raw)
+        cfg = settings()['moltbook']
+        result = collect_all(store, {'moltbook': cfg}, client_factory=FixtureClient)
+        self.assertFalse(result['failed']); self.assertEqual(result['added'], 1)
+        self.assertEqual(store.show('moltbook', uid(10)), before)
+        self.assertEqual(store.wait(2, 0)['messages'][0]['arrival_seq'], 3)
+        collect_all(Store(legacy), {'moltbook': cfg}, client_factory=FixtureClient)
+        self.assertEqual(Store(legacy).show('moltbook', uid(10)), before)
+        with closing(sqlite3.connect(legacy)) as db:
+            self.assertEqual(db.execute('SELECT seq FROM sqlite_sequence WHERE name="messages"').fetchone()[0], 3)
 
     def test_stale_collector_keeps_mail_but_cannot_rewind_progress(self):
         self.store.prepare_collection()
