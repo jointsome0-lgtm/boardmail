@@ -29,6 +29,8 @@ class Store:
                 schema.check_version(db)
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             with db:
+                if not write:
+                    schema.stand_in(db)
                 yield db
         finally:
             db.close()
@@ -54,8 +56,8 @@ class Store:
 
     def is_paused(self, source):
         with self.connect() as db:
-            row = db.execute("SELECT * FROM sources WHERE source=?", (source,)).fetchone()
-            return bool(dict(row).get("paused", False)) if row else False
+            row = db.execute("SELECT paused FROM sources WHERE source=?", (source,)).fetchone()
+            return bool(row[0]) if row else False
 
     def set_paused(self, source, paused, settings=None):
         with self.connect(write=True) as db:
@@ -64,7 +66,7 @@ class Store:
                 raise MailError("source_not_found")
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
-            previous = bool(dict(row).get("paused", False)) if row else False
+            previous = bool(schema.whole("sources", row)["paused"]) if row else False
             schema.add_pause(db)
             if row is None:
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
@@ -85,8 +87,6 @@ class Store:
 
     @staticmethod
     def _subscriptions(db, source=None):
-        if not schema.has(db, "subscriptions"):
-            return []
         return [dict(row) for row in db.execute(
             "SELECT source,thread_id AS thread,subscribed_at FROM subscriptions" +
             (" WHERE source=?" if source is not None else "") + " ORDER BY source,thread_id",
@@ -228,12 +228,10 @@ class Store:
     def _health(db, stale_after=STALE_AFTER):
         result = []
         now = time.time()
-        progress = {}
-        if schema.version(db) >= 2:
-            progress = {r[0]: (r[1], bool(r[2])) for r in db.execute("SELECT source,adapter,backlog_pending FROM adapter_state")}
+        progress = {r[0]: (r[1], bool(r[2])) for r in db.execute("SELECT source,adapter,backlog_pending FROM adapter_state")}
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
-            value["paused"] = bool(value.get("paused", False))
+            value["paused"] = bool(value["paused"])
             # Age of the last successful poll; it proves nothing about a consumer.
             elapsed = None if value["last_ok"] is None else max(0.0, now - value["last_ok"])
             value["last_ok_age"] = None if elapsed is None else int(elapsed)
@@ -250,12 +248,11 @@ class Store:
         return result
 
     @staticmethod
-    def _message(row, db):
-        item = dict(row)
+    def _message(row, db, writing=False):
+        # A connection that writes has no stand-ins, so the row and the tags come by way of the schema module.
+        item = schema.whole("messages", row) if writing else dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
-        item.setdefault("discovery", None)
-        item.setdefault("addressing", None)
-        item['tags'] = tags.names(db, item['source'], item['thread_id'])
+        item['tags'] = tags.names(db, item['source'], item['thread_id'], writing)
         return item
 
     def settings(self, *, scope=None, context=None, reset=False):
@@ -264,16 +261,14 @@ class Store:
             raise MailError("invalid_arguments")
         write = reset or scope is not None or context is not None
         with self.connect(write=write) as db:
-            exists = schema.has(db, "reader_settings")
-            if write and not exists:
-                schema.add(db, "reader_settings")
-            if reset:
-                db.execute("DELETE FROM reader_settings")
             if write:
+                schema.add(db, "reader_settings")
+                if reset:
+                    db.execute("DELETE FROM reader_settings")
                 for key, value in (("scope", scope), ("context", context)):
                     if value is not None:
                         db.execute("INSERT INTO reader_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
-            saved = dict(db.execute("SELECT key,value FROM reader_settings")) if exists or write else {}
+            saved = dict(db.execute("SELECT key,value FROM reader_settings"))
             if any(key not in reader.CHOICES or value not in reader.CHOICES[key] for key, value in saved.items()):
                 raise MailError("invalid_settings")
             return {**reader.DEFAULTS, **saved,
@@ -316,9 +311,7 @@ class Store:
 
     def adapter(self, source):
         with self.connect() as db:
-            row = None
-            if schema.version(db) >= 2:
-                row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
+            row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
             return row[0] if row else source
 
     def find(self, source, message_id):

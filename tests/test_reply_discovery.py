@@ -38,26 +38,6 @@ class ReplyDiscoveryTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         return json.loads(run.stdout)
 
-    def test_no_table_and_legacy_databases_remain_unchanged(self):
-        for version in (None, 1, 2):
-            with self.subTest(version=version):
-                if version is not None:
-                    self.path.unlink()
-                    with closing(sqlite3.connect(self.path)) as db:
-                        db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
-                    if version == 2:
-                        self.store.prepare_collection()
-                before = self.path.read_bytes()
-                status = self.cli('status')
-                page = self.cli('reply', 'list')
-                self.assertEqual(status['reply_attempts'],
-                                 {k: page[k] for k in ('counts', 'items', 'has_more', 'next_after', 'next')})
-                self.assertEqual(page['counts'], {'prepared': 0, 'unknown': 0, 'confirmed': 0})
-                self.assertEqual(page['items'], [])
-                self.assertFalse(page['has_more']); self.assertIsNone(page['next'])
-                self.assertEqual(page['next_after'], 0)
-                self.assertEqual(self.path.read_bytes(), before)
-
     def test_status_routes_survive_replied_and_pages_cover_multiple_sources(self):
         expected = []
         for n in range(45):

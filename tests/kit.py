@@ -1,5 +1,5 @@
-"""What a story test stands on: invented boards at the network edge, a fixed clock and fixed keys, and both
-entry points.
+"""What a story test stands on: invented boards at the network edge, a fixed clock and fixed keys, both entry
+points, and a look at each connection to the inbox file.
 
 A story is a function that takes one argument, step, and calls it once for each command, in the order an agent
 would. told() runs a story through the CLI entry point or through MCP tool calls and returns what each step gave.
@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import sqlite3
 import sys
 import time
 from typing import NamedTuple
@@ -140,6 +141,40 @@ def fixed(clock):
 
     with patch('time.time', clock), patch('time.monotonic', monotonic), patch('os.urandom', urandom):
         yield
+
+
+class Closed(NamedTuple):
+    """One connection to the inbox file as it was when it closed."""
+    writes: bool      # it was opened to write
+    stand_ins: tuple  # the names of its temporary tables and views
+    memory: bool      # what is temporary stays in memory
+
+
+@contextmanager
+def connections():
+    """Every SQLite connection that a package module opens inside the with block, in the order they closed.
+
+    A temporary table or view belongs to its connection and is gone when the connection closes, so this looks
+    at that moment. A connection that the test opens itself is not looked at.
+    """
+    closed, real = [], sqlite3.connect
+
+    class Watched(sqlite3.Connection):
+        def close(self):
+            names = self.execute("SELECT name FROM sqlite_temp_master WHERE type IN ('table','view') ORDER BY name")
+            closed.append(Closed(self.writes, tuple(row[0] for row in names),
+                                 self.execute('PRAGMA temp_store').fetchone()[0] == 2))
+            super().close()
+
+    def connect(database, *args, **kwargs):
+        if not sys._getframe(1).f_globals.get('__name__', '').startswith('boardmail.'):
+            return real(database, *args, **kwargs)
+        db = real(database, *args, factory=Watched, **kwargs)
+        db.writes = 'mode=ro' not in str(database)
+        return db
+
+    with patch('sqlite3.connect', connect):
+        yield closed
 
 
 class Moltbook:

@@ -29,7 +29,7 @@ class SchemaGuardTests(unittest.TestCase):
         # If it found none of them there, the test above would say nothing.
         texts = '\n'.join(found(PACKAGE / 'schema.py'))
         for kind in ('CREATE TABLE', 'CREATE INDEX', 'ALTER TABLE', 'PRAGMA user_version', 'PRAGMA table_info',
-                     'sqlite_master'):
+                     'sqlite_master', 'CREATE TEMP TABLE', 'CREATE TEMP VIEW', 'PRAGMA temp_store'):
             self.assertIn(kind, texts)
 
 
