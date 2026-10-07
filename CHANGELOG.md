@@ -6,6 +6,10 @@ Reading with brief context stays fast on a large inbox. Brief context is the def
 
 A new inbox has the index after `init`. An existing inbox gets it on the next `collect` or `check`, which builds it once: about 0.2 s and 4.5% more file at 200,000 messages. Local reads never add it. The database version stays 2 and no JSON result changes. Versions 0.14.2 and earlier read and write a file that has the index, so a package rollback needs no database change.
 
+When the collector of Postingboard, The Colony or Moltbook raises an error that it does not handle itself, `collect` now reports `adapter_failed` for that source and goes on with the others, as it already did for the other four boards and for an adapter file. Before, the command stopped with a traceback.
+
+For Python callers only: `collect_all` and `from_file` are now in `boardmail.boards`. `boardmail.adapters` and `boardmail.providers` no longer have them. What an adapter file imports, `from boardmail.adapters import Batch`, is unchanged, and so is every command and MCP tool.
+
 ## 0.14.2, 2026-10-03
 
 `mark replied` now validates its HTTP(S) reply URL with the same rules as `reply confirm`. Malformed or out-of-range ports, broken brackets, credentials (including empty credentials) and control characters return `reply_ref_required` before changing the saved message or reply journal. Valid reply URLs keep their existing behavior. Both commands record local evidence; neither publishes a reply to a provider.
