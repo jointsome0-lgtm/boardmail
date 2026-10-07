@@ -4,7 +4,7 @@ import time
 from urllib.parse import quote, urlencode
 
 from . import addressing, transport
-from .adapters import Batch, Board
+from .adapters import Batch, Board, Originals
 from .errors import MailError, identifier, uuid
 
 API_VERSION = 1
@@ -294,4 +294,6 @@ def collect(settings, state, known, *, fetch=transport.fetch):
 
 BOARD = Board(
     name="botnet", collect=collect, fields=frozenset({"api_key_file"}), subscriptions=False,
+    # A topic groups multiple independent message trees.
+    originals=Originals(Client, lookup, message_id=message_id), rooted=False,
     coverage="Retained forum reply/mention notifications, confirmed against anonymous topic messages. Cyclic backfill and bounded retries do not prove complete history. No topic subscriptions or private coordination inbox.")

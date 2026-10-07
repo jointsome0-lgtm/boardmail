@@ -10,7 +10,7 @@ import runpy
 from urllib.parse import urlsplit
 
 from . import transport
-from .errors import MailError, identifier, next_action
+from .errors import MailError, identifier, next_action, uuid
 
 
 @dataclass
@@ -29,6 +29,27 @@ class Batch:
 
 
 @dataclass(frozen=True)
+class Originals:
+    """How a command reads the originals of a board that lets it.
+
+    client(settings, fetch=...) is the client of one command. find(client, mid, root) reads one original through
+    it and gives its status, an error code and the message. message_id takes an id that the board can be asked
+    for and raises ValueError for any other.
+
+    The rest is how find is called. keeps: it also takes originals=, a dict of the command where it keeps what
+    it has read. root_as_thread: a root that the inbox holds is asked for with itself as the thread, so that no
+    comment is probed for. comment_by_thread: a comment that the inbox holds is asked for with its thread, where
+    that is the only way to it.
+    """
+    client: Callable
+    find: Callable
+    message_id: Callable = uuid
+    keeps: bool = False
+    root_as_thread: bool = False
+    comment_by_thread: bool = False
+
+
+@dataclass(frozen=True)
 class Board:
     """What a board that ships with the package says of itself in its own module. boards.py lists them, and the
     core asks that list instead of comparing names.
@@ -38,6 +59,11 @@ class Board:
     takes an account id of the board and raises ValueError for any other value. configure, if the board has
     one, holds its settings to its own rules in place and raises ValueError where they do not fit. since_v1
     says that an inbox of schema v1, which has no adapter rows, holds the board under its own name.
+
+    originals is how context and expand read an original, and None for a board that has no such lookup. The
+    last two are how its threads are read. rooted: a reply that names no parent answers the root of its thread.
+    parents_since_discovery: a row with no discovery was stored before the reply targets of the board were
+    kept, so only a fetched original says what it answers.
     """
     name: str
     coverage: str
@@ -48,6 +74,9 @@ class Board:
     configure: Callable | None = None
     subscriptions: bool = True
     since_v1: bool = False
+    originals: Originals | None = None
+    rooted: bool = True
+    parents_since_discovery: bool = False
 
 
 def validate(batch):

@@ -8,7 +8,6 @@ from . import boards, config, providers, replies, table, tags, transport, verifi
 from .config import MailError
 from .errors import exit_code, next_action
 
-LOOKUP_ADAPTERS = ("postingboard", "the-colony", "moltbook", "clawdchat", "botnet")
 LOCAL_FAILURES = (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError)
 # The function that runs each command of the command table.
 HANDLERS = {}
@@ -291,7 +290,7 @@ def run_reply_verify(store, *, sources, fetch, source, id, key, ref):
 def remote_settings(store, source, sources, local):
     """Settings enabling a remote lookup, or None for a local read."""
     settings = None if local or not sources or store.is_paused(source) else sources.get(source)
-    return settings if settings and boards.owner(source, settings) in LOOKUP_ADAPTERS else None
+    return settings if settings and boards.declared(boards.owner(source, settings)).originals else None
 
 
 def element(status, message=None, *, origin=None, error=None, id=None):
@@ -333,41 +332,27 @@ class CachedClient:
 class Lookup:
     """Original lookups for one command through a single client and budget.
 
-    fetch asks the board: the transport, or an invented board in its place. The client of the board is handed
-    it."""
+    about is what the board declares of its originals. fetch asks the board: the transport, or an invented
+    board in its place. The client of the board is handed it."""
 
-    def __init__(self, adapter, settings, fetch=transport.fetch):
-        self.adapter = adapter
-        if adapter == "clawdchat":
-            from . import adapter_clawdchat
-            client = adapter_clawdchat.Client(settings, fetch=fetch)
-            self.lookup = adapter_clawdchat.lookup
-        elif adapter == "botnet":
-            from . import adapter_botnet
-            client = adapter_botnet.Client(settings, fetch=fetch)
-            self.lookup = adapter_botnet.lookup
-        else:
-            client = providers.Client(adapter, settings, fetch=fetch)
-            self.lookup = {"postingboard": providers.postingboard_lookup, "the-colony": providers.colony_lookup,
-                           "moltbook": providers.moltbook_lookup}[adapter]
-        self.client = CachedClient(client)
-        self.originals = {}
+    def __init__(self, about, settings, fetch=transport.fetch):
+        self.about = about
+        self.client = CachedClient(about.client(settings, fetch=fetch))
+        self.kept = {"originals": {}} if about.keeps else {}
 
-    def __call__(self, mid, root=None):
-        if self.adapter == "moltbook":
-            return self.lookup(self.client, mid, root, originals=self.originals)
-        return self.lookup(self.client, mid, root)
+    def __call__(self, mid, root=None, stored=None):
+        """The original of a message. stored is the row that the inbox holds for it, if it holds one."""
+        # Where a board exposes comments through their thread, the inbox knows it. Known roots need no comment probe.
+        if root is None and stored and (self.about.root_as_thread if stored["thread_id"] == mid
+                                        else self.about.comment_by_thread):
+            root = stored["thread_id"]
+        return self.about.find(self.client, mid, root, **self.kept)
 
 
-def resolve(store, source, adapter, lookup, mid, root=None):
+def resolve(store, source, lookup, mid, root=None):
     """Element plus the relationships to trust: a fetched original outranks a stored row."""
     stored = store.find(source, mid)
-    # Moltbook exposes comments through their thread. Known roots need no comment probe.
-    lookup_root = root
-    if root is None and stored and (adapter == "moltbook" or
-            adapter in ("the-colony", "clawdchat") and stored["thread_id"] == mid):
-        lookup_root = stored["thread_id"]
-    remote = lookup(mid, lookup_root) if lookup is not None else ("unknown", None, None)
+    remote = lookup(mid, root, stored) if lookup is not None else ("unknown", None, None)
     if remote[2] is not None:
         remote = (remote[0], remote[1], {"source": source, **remote[2]})
     if root is not None:
@@ -397,16 +382,17 @@ def resolve(store, source, adapter, lookup, mid, root=None):
     return found, remote[2], True
 
 
-def parent_of(resolver, adapter, relations, root, authoritative):
-    """The immediate parent element implied by trusted relationships; the root itself when a reply names none."""
+def parent_of(resolver, board, relations, root, authoritative):
+    """The immediate parent element implied by trusted relationships; the root itself when a reply names none.
+    board is what the board of the source declares."""
     root_id = relations["thread_id"]
     parent_id = relations["parent_id"]
-    if parent_id is None and adapter == "botnet":
-        return element("none")  # A topic groups multiple independent message trees.
+    if parent_id is None and not board.rooted:
+        return element("none")  # A thread of the board groups multiple independent message trees.
     if parent_id is None and root_id != relations["id"]:
         # A reply attaches to the root unless the board recorded a reply target.
         # Rows stored before reply targets were kept cannot say which; only a fetch can.
-        recorded = authoritative or adapter != "postingboard" or relations.get("discovery") is not None
+        recorded = authoritative or not board.parents_since_discovery or relations.get("discovery") is not None
         if not recorded:
             return element("unknown")
         parent_id = root_id
@@ -425,20 +411,18 @@ def context(store, source, message_id, settings, *, fetch=transport.fetch):
     supported originals when configured. Nothing is marked, locally or remotely."""
     lookup = None
     adapter = boards.owner(source, settings) if settings is not None else store.adapter(source)
+    board = boards.declared(adapter)
     if settings is not None:
-        kind = config.uuid
-        if adapter == "botnet":
-            from .adapter_botnet import message_id as kind
-        config.converted(kind, message_id, error="invalid_message_id")
-        lookup = Lookup(adapter, settings, fetch)
-    resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
+        config.converted(board.originals.message_id, message_id, error="invalid_message_id")
+        lookup = Lookup(board.originals, settings, fetch)
+    resolver = lambda mid, root=None: resolve(store, source, lookup, mid, root)
     target, relations, authoritative = resolver(message_id)
     if relations is None:
         root = parent = element("unknown")
     else:
         root_id = relations["thread_id"]
         root = target if root_id == message_id else resolver(root_id, root_id)[0]
-        parent = parent_of(resolver, adapter, relations, root, authoritative)
+        parent = parent_of(resolver, board, relations, root, authoritative)
     complete = target["status"] == "available" and root["status"] == "available" and parent["status"] in ("available", "none")
     exchange = previous_exchange(store, source, adapter, target, parent, relations)
     return {"event": "context", "source": source, "id": message_id, "fetched": lookup is not None,
@@ -459,12 +443,13 @@ def expand(store, source, thread, after, through, limit, settings, *, fetch=tran
     same_as_root reference after its availability was counted. Marks stay
     unchanged; an empty page fetches nothing. Context can lie outside the interval."""
     adapter = boards.owner(source, settings) if settings is not None else store.adapter(source)
+    board = boards.declared(adapter)
     if settings is not None:
         config.converted(config.uuid, thread, error="invalid_arguments")
     page = store.page(after, limit, through=through, source=source, thread=thread, scope="all", context="none")
     rows = page["messages"]
-    lookup = Lookup(adapter, settings, fetch) if settings is not None and rows else None
-    resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
+    lookup = Lookup(board.originals, settings, fetch) if settings is not None and rows else None
+    resolver = lambda mid, root=None: resolve(store, source, lookup, mid, root)
     root = resolver(thread, thread) if rows else (element("unknown", id=thread), None, True)
     items, complete, exhausted = [], current(root[0]) if rows else True, False
     for row in rows:
@@ -477,7 +462,7 @@ def expand(store, source, thread, after, through, limit, settings, *, fetch=tran
             relations, authoritative = None, True
             parent = element("unknown")
         else:
-            parent = parent_of(resolver, adapter, relations, root[0], authoritative)
+            parent = parent_of(resolver, board, relations, root[0], authoritative)
         exchange = previous_exchange(store, source, adapter, target, parent, relations)
         done = current(target) and current(root[0]) and (parent["status"] == "none" or current(parent))
         exhausted = exhausted or "budget_exhausted" in (target["error"], parent["error"])

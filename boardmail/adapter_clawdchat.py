@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 
 from boardmail import addressing, subscriptions, transport
-from boardmail.adapters import Batch, Board
+from boardmail.adapters import Batch, Board, Originals
 from boardmail.errors import MailError, uuid
 
 API_VERSION = 1
@@ -572,4 +572,5 @@ def _subscribed(client, selected, batch, seen, mention):
 
 BOARD = Board(
     name="clawdchat", collect=collect, fields=frozenset({"api_key_file", "mention_aliases"}),
+    originals=Originals(Client, lookup, root_as_thread=True),
     coverage="Retained reply/mention notifications and bounded comment-tree scans in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.")
