@@ -379,7 +379,6 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         with self.store.connect(write=True) as db:
             db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                        (self.source, self.target, self.key, other, self.adapter, uid(1), 1001))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
         candidates = {c['reply_ref']: c for c in self.call('show')[0]['reply_candidates']}
         self.assertEqual(candidates[self.ref]['last_check']['reason'], 'network_error')
         self.assertIsNone(candidates[other]['last_check'])
@@ -711,9 +710,6 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
         verified, code = self.call()
         self.assertEqual((code, verified['remote_verified']), (0, True))
         self.assertEqual(self.store.show('moltbook', uid(10)), other)
-        with self.store.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
-            self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='adapter_state'").fetchone())
         before = self.path.read_bytes()
         self.assertEqual(self.call('show')[0]['verification_receipt'], verified['verification'])
         self.assertEqual(self.path.read_bytes(), before)

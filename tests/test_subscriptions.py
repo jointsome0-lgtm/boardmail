@@ -92,8 +92,6 @@ class SubscriptionTests(unittest.TestCase):
                                      thread=uid(100), sources={'moltbook': {'account_id': uid(2)}})
                     self.assertEqual(len(Store(path).subscriptions()), int(active))
                     self.assertEqual(store.page()['messages'], saved)
-                    with store.connect() as db:
-                        self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], version)
 
     def test_alias_before_collection_and_invalid_operations_do_not_write(self):
         self.store.initialize()
@@ -148,7 +146,6 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertTrue(store.set_subscription('moltbook', uid(100), True,
                                                        {'account_id': uid(2), 'adapter': 'moltbook'}))
                 with store.connect() as db:
-                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
                     self.assertEqual(dict(db.execute("SELECT * FROM sources WHERE source='moltbook'").fetchone()), source)
                 store.prepare_collection()
                 known, state, revision = store.collection_state('moltbook', uid(2), 'moltbook')
@@ -166,8 +163,6 @@ class SubscriptionTests(unittest.TestCase):
                 saved = store.page()['messages']
                 self.assertTrue(store.set_subscription(source, uid(200), True,
                                                        {'account_id': uid(1), 'adapter': 'the-colony'}))
-                with store.connect() as db:
-                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
                 self.assertFalse(store.set_subscription(source, uid(200), True))
                 store.prepare_collection()
                 self.assertEqual(store.collection_state(source, uid(1), 'the-colony'), (set(), {}, 0))

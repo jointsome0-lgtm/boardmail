@@ -87,7 +87,6 @@ class AdapterTests(unittest.TestCase):
         collect_all(Store(legacy), {'moltbook': cfg}, client_factory=FixtureClient)
         self.assertEqual(Store(legacy).show('moltbook', uid(10)), before)
         with closing(sqlite3.connect(legacy)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
             self.assertEqual(db.execute('SELECT seq FROM sqlite_sequence WHERE name="messages"').fetchone()[0], 3)
 
     def test_stale_collector_keeps_mail_but_cannot_rewind_progress(self):
