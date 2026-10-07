@@ -37,15 +37,12 @@ def input_schema(command):
 
 
 def passed(command, arguments):
-    """What the command function is given for the arguments that a tool was called with."""
-    given = {}
-    for argument in command.arguments:
-        if argument.name in arguments:
-            given[argument.parameter or argument.name] = arguments[argument.name]
-        elif 'default' in (argument.tool_kind or {}):
-            # The command function has the defaults of the command line. Where a tool has its own, the tool passes it.
-            given[argument.parameter or argument.name] = argument.tool_kind['default']
-    return given
+    """What a command is given for the arguments that its tool was called with."""
+    # An argument that is left out gets the default of the command table, which is the one of the command line.
+    # Where a tool has a default of its own, the tool passes it.
+    own = {argument.name: argument.tool_kind['default'] for argument in command.arguments
+           if 'default' in (argument.tool_kind or {})}
+    return {**own, **arguments}
 
 
 def create_server(store, sources=None):
@@ -72,19 +69,18 @@ def create_server(store, sources=None):
         if tool is None or not Draft202012Validator(tool.input_schema).is_valid(arguments):
             result, code = commands.error_result("invalid_arguments")
         else:
-            command = params.name.removeprefix("boardmail_")
-            arguments = passed(table.COMMANDS[command], arguments)
+            command = table.COMMANDS[params.name.removeprefix("boardmail_")]
             cancelled = threading.Event()
-            invoke = partial(commands.outcome, partial(commands.execute, store, command,
-                             sources=sources, cancelled=cancelled, **arguments))
+            invoke = partial(commands.outcome, partial(commands.execute, store, command.name,
+                             sources=sources, cancelled=cancelled, **passed(command, arguments)))
             def operation():
-                if command in ("collect", "check"):
+                if command.collects:
                     # Hold this in the worker even if the caller disconnects.
                     with collection_lock:
                         return invoke()
                 return invoke()
             try:
-                result, code = await anyio.to_thread.run_sync(operation, abandon_on_cancel=command == "wait")
+                result, code = await anyio.to_thread.run_sync(operation, abandon_on_cancel=command.waits)
             finally:
                 cancelled.set()
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=True))],

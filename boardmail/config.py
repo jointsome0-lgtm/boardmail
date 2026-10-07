@@ -50,6 +50,17 @@ def identifier(value):
     return value
 
 
+def converted(convert, *values, error=None, otherwise=None):
+    """convert(*values). Where convert does not take them, the error code is raised if there is one, and
+    otherwise is the answer if there is none."""
+    try:
+        return convert(*values)
+    except (ValueError, TypeError, AttributeError):
+        if error is None:
+            return otherwise
+        raise MailError(error) from None
+
+
 def path_from(value, base):
     path = Path(value).expanduser()
     return path if path.is_absolute() else base / path

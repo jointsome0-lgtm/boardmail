@@ -1,16 +1,19 @@
 """Shared CLI/MCP commands and safe, transport-independent results."""
 from copy import deepcopy
 import errno
-import math
+from functools import wraps
 import sqlite3
 
-from . import config, providers, reader, replies, tags, verification
+from . import config, providers, replies, table, tags, verification
 from .config import MailError
 from .errors import exit_code, next_action
 
 LOOKUP_ADAPTERS = ("postingboard", "the-colony", "moltbook", "clawdchat", "botnet")
-EXPAND_LIMIT = 20
 LOCAL_FAILURES = (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError)
+# The function that runs each command of the command table.
+HANDLERS = {}
+# What providers.parent_reference is given that it cannot make a reference from.
+NO_REFERENCE = object()
 
 
 def error_result(error):
@@ -40,12 +43,7 @@ def local_state_result(exc, source=None, message_id=None):
                 reason = "permission_denied"
     if reason is not None:
         result["reason"] = reason
-    try:
-        config.identifier(source)
-        config.identifier(message_id)
-    except (ValueError, TypeError, AttributeError):
-        pass
-    else:
+    if all(config.converted(config.identifier, value) for value in (source, message_id)):
         result["recovery"] = {"command": "reply show", "tool": "boardmail_reply_show",
                               "arguments": {"source": source, "id": message_id}, "read_only": True}
         result["send_allowed"] = False
@@ -65,136 +63,224 @@ def outcome(operation):
     return result, code
 
 
-def execute(store, command, *, sources=None, after=0, limit=None, unread=False, timeout=1800, source=None,
-            id=None, action=None, ref=None, cancelled=None, require_fresh=False, stale_after=None, local=False,
-            scope=None, context_mode=None, reset=False, through=None, thread=None,
-            body=None, key=None, readback_body=None, replace_key=None, tag=None, untagged=False):
-    if type(untagged) is not bool or tag is not None and untagged:
-        raise MailError('invalid_arguments')
-    if command in ('tags', 'tag_add', 'tag_remove', 'tag_show'):
-        if untagged:
-            raise MailError('invalid_arguments')
-        return tags.execute(store, 'list' if command == 'tags' else command.removeprefix('tag_'),
-                            tag=tag, source=source, thread=thread, id=id)
-    if tag is not None or untagged:
-        if command != 'list':
-            raise MailError('invalid_arguments')
-        if tag is not None:
-            tags.validate_name(tag)
-    if command == 'reply_list':
-        with store.connect() as db:
-            return {'event': 'reply_attempts', **replies.pending(db, after, replies.PAGE_SIZE if limit is None else limit),
-                    'collection_performed': False, 'publication_performed': False}, 0
-    if command.startswith('reply_'):
+def execute(store, name, /, *, sources=None, cancelled=None, **given):
+    """Run a command of the command table with what an entry point was given for its arguments."""
+    command = table.COMMANDS.get(name)
+    if command is None:
+        raise MailError("invalid_arguments")
+    arguments = table.checked(command, given)
+    if command.sources:
+        arguments["sources"] = sources
+    if command.waits:
+        arguments["cancelled"] = cancelled
+    return HANDLERS[name](store, **arguments)
+
+
+def handles(name):
+    """Mark the function that runs a command. It is called with the store and with every argument of the command
+    by name, as table.checked() leaves them. It gets sources or cancelled as well where the entry of the command
+    says so. It returns the result and the exit code."""
+    def keep(function):
+        HANDLERS[name] = function
+        return function
+    return keep
+
+
+@handles("init")
+def run_init(store, *, sources):
+    store.initialize(sources)
+    return {"event": "initialized", **store.status()}, 0
+
+
+@handles("collect")
+def run_collect(store, *, sources):
+    if sources is None:
+        raise MailError("config_missing")
+    result = providers.collect_all(store, sources)
+    return result, 1 if result["failed"] else 0
+
+
+@handles("settings")
+def run_settings(store, *, scope, context, reset):
+    settings = store.settings(scope=scope, context=context, reset=reset)
+    return {"event": "settings", "settings": settings, "applies_to": ["check", "list", "wait"],
+            "consumer": "one_per_database", "next_action": "check_or_list"}, 0
+
+
+def follow(store, sources, source, thread, subscribed):
+    changed = store.set_subscription(source, thread, subscribed, (sources or {}).get(source))
+    return {"event": "subscribed" if subscribed else "unsubscribed", "source": source,
+            "thread": thread, "subscribed": subscribed, "changed": changed,
+            "history": "available", "collection_performed": False,
+            "next_action": "collect_then_read_messages_and_thread_activity" if subscribed else "read_saved_mail_or_collect"}, 0
+
+
+@handles("subscribe")
+def run_subscribe(store, *, sources, source, thread):
+    return follow(store, sources, source, thread, True)
+
+
+@handles("unsubscribe")
+def run_unsubscribe(store, *, sources, source, thread):
+    return follow(store, sources, source, thread, False)
+
+
+@handles("subscriptions")
+def run_subscriptions(store, *, source):
+    return {"event": "subscriptions", "subscriptions": store.subscriptions(source),
+            "history": "available", "collection_performed": False,
+            "next_action": "subscribe_or_collect"}, 0
+
+
+@handles("tags")
+def run_tags(store):
+    return tags.execute(store, "list")
+
+
+@handles("tag_add")
+def run_tag_add(store, *, tag, source, thread, id):
+    return tags.execute(store, "add", tag=tag, source=source, thread=thread, id=id)
+
+
+@handles("tag_remove")
+def run_tag_remove(store, *, tag, source, thread, id):
+    return tags.execute(store, "remove", tag=tag, source=source, thread=thread, id=id)
+
+
+@handles("tag_show")
+def run_tag_show(store, *, tag):
+    return tags.execute(store, "show", tag=tag)
+
+
+def pause(store, sources, source, paused):
+    changed = store.set_paused(source, paused, (sources or {}).get(source))
+    return {"event": "paused" if paused else "resumed", "source": source,
+            "paused": paused, "changed": changed, "collection_performed": False}, 0
+
+
+@handles("pause")
+def run_pause(store, *, sources, source):
+    return pause(store, sources, source, True)
+
+
+@handles("resume")
+def run_resume(store, *, sources, source):
+    return pause(store, sources, source, False)
+
+
+@handles("status")
+def run_status(store, *, require_fresh, stale_after):
+    result = {"event": "status", **store.status(stale_after), "freshness_required": bool(require_fresh)}
+    # Reading unknown, error or stale state is itself a success unless freshness was required.
+    return result, 1 if require_fresh and not result["fresh"] else 0
+
+
+def reading(store, scope, context):
+    """How check, list and wait show a page: as the inbox has saved it, unless the call says otherwise."""
+    settings = store.settings()
+    return {"scope": scope or settings["scope"], "context": context or settings["context"]}
+
+
+@handles("check")
+def run_check(store, *, sources, after, limit, scope, context):
+    shown = reading(store, scope, context)
+    if sources is None:
+        raise MailError("config_missing")
+    result = providers.collect_all(store, sources)
+    return {"event": "messages", **store.page(after, limit, **shown), "collection_performed": True,
+            "collection": {key: result[key] for key in ("added", "failed", "errors")}}, 1 if result["failed"] else 0
+
+
+@handles("list")
+def run_list(store, *, after, limit, scope, context, unread, through, source, thread, tag, untagged):
+    shown = reading(store, scope, context)
+    return {"event": "messages", **store.page(after, limit, unread=unread, through=through,
+            source=source, thread=thread, tag=tag, untagged=untagged, **shown), "collection_performed": False}, 0
+
+
+@handles("wait")
+def run_wait(store, *, cancelled, after, limit, scope, context, timeout):
+    shown = reading(store, scope, context)
+    if not table.fits(table.TIMEOUT, timeout):
+        raise MailError("invalid_arguments")
+    result = store.wait(after, timeout, limit, cancelled=cancelled, **shown)
+    result["collection_performed"] = False
+    return result, {"messages": 0, "timeout": 3, "cancelled": 4}[result["event"]]
+
+
+def message(store, source, message_id, event):
+    result, _ = replies.execute(store, 'show', source, message_id)
+    return {'event': event, 'message': result['message'],
+            'reply_attempt': replies.summary(source, message_id, result['reply'])}, 0
+
+
+@handles("show")
+def run_show(store, *, source, id):
+    return message(store, source, id, 'message')
+
+
+@handles("mark")
+def run_mark(store, *, action, ref, source, id):
+    store.mark(source, id, action.replace("-", "_"), ref=ref)
+    return message(store, source, id, 'marked')
+
+
+@handles("context")
+def run_context(store, *, sources, source, id, local):
+    return context(store, source, id, remote_settings(store, source, sources, local))
+
+
+@handles("expand")
+def run_expand(store, *, sources, source, thread, through, after, limit, local):
+    return expand(store, source, thread, after, through, limit, remote_settings(store, source, sources, local))
+
+
+@handles("reply_list")
+def run_reply_list(store, *, after, limit):
+    with store.connect() as db:
+        return {'event': 'reply_attempts', **replies.pending(db, after, limit),
+                'collection_performed': False, 'publication_performed': False}, 0
+
+
+def journal(function):
+    """A reply command: where the inbox file fails it, the result names the read that recovers the attempt."""
+    @wraps(function)
+    def run(store, *, source, id, **more):
         try:
-            if command == 'reply_verify':
-                if any(value is not None for value in (body, readback_body, replace_key)) or local:
-                    raise MailError('invalid_arguments')
-                return verification.execute(store, sources, source, id, key=key, ref=ref)
-            return replies.execute(store, command.removeprefix('reply_'), source, id, body=body,
-                                   key=key, readback_body=readback_body, ref=ref, replace_key=replace_key)
+            return function(store, source=source, id=id, **more)
         except LOCAL_FAILURES as exc:
             return local_state_result(exc, source, id)
-    if limit is None:
-        limit = EXPAND_LIMIT if command == "expand" else 100
-    if command in ("subscribe", "unsubscribe", "subscriptions"):
-        if source is not None:
-            try:
-                config.identifier(source)
-            except (ValueError, TypeError, AttributeError):
-                raise MailError("invalid_arguments") from None
-        if command == "subscriptions":
-            return {"event": "subscriptions", "subscriptions": store.subscriptions(source),
-                    "history": "available", "collection_performed": False,
-                    "next_action": "subscribe_or_collect"}, 0
-        if source is None:
-            raise MailError("invalid_arguments")
-        try:
-            thread = config.uuid(thread)
-        except (ValueError, TypeError, AttributeError):
-            raise MailError("invalid_thread_id") from None
-        subscribed = command == "subscribe"
-        changed = store.set_subscription(source, thread, subscribed, (sources or {}).get(source))
-        return {"event": "subscribed" if subscribed else "unsubscribed", "source": source,
-                "thread": thread, "subscribed": subscribed, "changed": changed,
-                "history": "available", "collection_performed": False,
-                "next_action": "collect_then_read_messages_and_thread_activity" if subscribed else "read_saved_mail_or_collect"}, 0
-    if command == "expand":
-        if (type(after) is not int or type(through) is not int or type(limit) is not int
-                or not 0 <= after <= through <= 2**63-1 or not 1 <= limit <= 100):
-            raise MailError("invalid_arguments")
-        for value in (source, thread):
-            try:
-                config.identifier(value)
-            except (ValueError, TypeError, AttributeError):
-                raise MailError("invalid_arguments") from None
-        return expand(store, source, thread, after, through, limit, remote_settings(store, source, sources, local))
-    if command in ("check", "list", "wait"):
-        if type(after) is not int or not 0 <= after <= 2**63-1 or type(limit) is not int or not 1 <= limit <= 500:
-            raise MailError("invalid_arguments")
-        reader.validate_options(scope, context_mode)
-        if through is not None and (command != "list" or type(through) is not int or not after <= through <= 2**63-1):
-            raise MailError("invalid_arguments")
-        if command == "list":
-            if thread is not None and source is None:
-                raise MailError("invalid_arguments")
-            for value in (source, thread):
-                if value is not None:
-                    try:
-                        config.identifier(value)
-                    except (ValueError, TypeError, AttributeError):
-                        raise MailError("invalid_arguments") from None
-        settings = store.settings()
-        reading = {"scope": scope or settings["scope"], "context": context_mode or settings["context"]}
-    if command == "settings":
-        settings = store.settings(scope=scope, context=context_mode, reset=reset)
-        return {"event": "settings", "settings": settings, "applies_to": ["check", "list", "wait"],
-                "consumer": "one_per_database", "next_action": "check_or_list"}, 0
-    if command == "init":
-        store.initialize(sources)
-        return {"event": "initialized", **store.status()}, 0
-    if command in ("pause", "resume"):
-        paused = command == "pause"
-        changed = store.set_paused(source, paused, (sources or {}).get(source))
-        return {"event": "paused" if paused else "resumed", "source": source,
-                "paused": paused, "changed": changed, "collection_performed": False}, 0
-    if command in ("collect", "check"):
-        if sources is None:
-            raise MailError("config_missing")
-        result = providers.collect_all(store, sources)
-        if command == "check":
-            return {"event": "messages", **store.page(after, limit, **reading), "collection_performed": True,
-                    "collection": {key: result[key] for key in ("added", "failed", "errors")}}, 1 if result["failed"] else 0
-        return result, 1 if result["failed"] else 0
-    if command == "status":
-        if stale_after is not None and (type(stale_after) is not int or not 0 <= stale_after <= 2**31-1):
-            raise MailError("invalid_arguments")
-        result = {"event": "status", **store.status(stale_after), "freshness_required": bool(require_fresh)}
-        # Reading unknown, error or stale state is itself a success unless freshness was required.
-        return result, 1 if require_fresh and not result["fresh"] else 0
-    if command == "list":
-        return {"event": "messages", **store.page(after, limit, unread=unread, through=through,
-                source=source, thread=thread, tag=tag, untagged=untagged, **reading), "collection_performed": False}, 0
-    if command == "wait":
-        if not math.isfinite(timeout) or timeout < 0:
-            raise MailError("invalid_arguments")
-        result = store.wait(after, timeout, limit, cancelled=cancelled, **reading)
-        result["collection_performed"] = False
-        return result, {"messages": 0, "timeout": 3, "cancelled": 4}[result["event"]]
-    if command not in ("mark", "show", "context"):
-        raise MailError("invalid_arguments")
-    try:
-        message_id = config.identifier(id)
-    except (ValueError, TypeError, AttributeError):
-        raise MailError("invalid_message_id") from None
-    if command == "context":
-        return context(store, source, message_id, remote_settings(store, source, sources, local))
-    if command == "mark":
-        store.mark(source, message_id, action.replace("-", "_"), ref=ref)
-    result, _ = replies.execute(store, 'show', source, message_id)
-    return {'event': 'marked' if command == 'mark' else 'message',
-            'message': result['message'],
-            'reply_attempt': replies.summary(source, message_id, result['reply'])}, 0
+    return run
+
+
+@handles("reply_prepare")
+@journal
+def run_reply_prepare(store, *, source, id, body, replace_key):
+    return replies.execute(store, 'prepare', source, id, body=body, replace_key=replace_key)
+
+
+@handles("reply_begin")
+@journal
+def run_reply_begin(store, *, source, id, key):
+    return replies.execute(store, 'begin', source, id, key=key)
+
+
+@handles("reply_show")
+@journal
+def run_reply_show(store, *, source, id):
+    return replies.execute(store, 'show', source, id)
+
+
+@handles("reply_confirm")
+@journal
+def run_reply_confirm(store, *, source, id, key, ref, readback_body):
+    return replies.execute(store, 'confirm', source, id, key=key, ref=ref, readback_body=readback_body)
+
+
+@handles("reply_verify")
+@journal
+def run_reply_verify(store, *, sources, source, id, key, ref):
+    return verification.execute(store, sources, source, id, key=key, ref=ref)
 
 
 def remote_settings(store, source, sources, local):
@@ -332,14 +418,10 @@ def context(store, source, message_id, settings, *, client_factory=None):
     lookup = None
     adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
     if settings is not None:
-        try:
-            if adapter == "botnet":
-                from .adapter_botnet import message_id as botnet_message_id
-                botnet_message_id(message_id)
-            else:
-                config.uuid(message_id)
-        except (ValueError, TypeError, AttributeError):
-            raise MailError("invalid_message_id") from None
+        kind = config.uuid
+        if adapter == "botnet":
+            from .adapter_botnet import message_id as kind
+        config.converted(kind, message_id, error="invalid_message_id")
         lookup = Lookup(adapter, settings, client_factory)
     resolver = lambda mid, root=None: resolve(store, source, adapter, lookup, mid, root)
     target, relations, authoritative = resolver(message_id)
@@ -370,10 +452,7 @@ def expand(store, source, thread, after, through, limit, settings, *, client_fac
     unchanged; an empty page fetches nothing. Context can lie outside the interval."""
     adapter = settings.get("adapter", source) if settings is not None else store.adapter(source)
     if settings is not None:
-        try:
-            config.uuid(thread)
-        except (ValueError, TypeError, AttributeError):
-            raise MailError("invalid_arguments") from None
+        config.converted(config.uuid, thread, error="invalid_arguments")
     page = store.page(after, limit, through=through, source=source, thread=thread, scope="all", context="none")
     rows = page["messages"]
     lookup = Lookup(adapter, settings, client_factory) if settings is not None and rows else None
@@ -418,12 +497,11 @@ def previous_exchange(store, source, adapter, target, parent, relations):
     elif parent["error"] == "invalid_response":
         result["reason"] = "parent_invalid"
     else:
-        try:
-            ref = providers.parent_reference(adapter, relations["thread_id"], parent["id"])
-        except (ValueError, TypeError, AttributeError):
+        ref = config.converted(providers.parent_reference, adapter, relations["thread_id"], parent["id"],
+                               otherwise=NO_REFERENCE)
+        if ref is NO_REFERENCE:
             result["reason"] = "parent_invalid"
-            return result
-        if ref is None:
+        elif ref is None:
             result["reason"] = "unsupported_source"
         else:
             result["reply_ref"] = ref

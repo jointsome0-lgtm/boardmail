@@ -1,5 +1,6 @@
 """Mail, pagination, replay and wait contracts. All provider data is invented."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stdout
 from copy import deepcopy
 from http.client import IncompleteRead
 from urllib.error import HTTPError
@@ -17,7 +18,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import providers
+from boardmail import cli, providers, table
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, settings, uid
@@ -378,6 +379,48 @@ class CLITests(unittest.TestCase):
         self.assertEqual((code, result['error']), (2, 'database_exists'))
         self.assertEqual(self.db.read_bytes(), before)
         self.assertFalse((config.parent/'configured.sqlite3').exists())
+
+    def test_which_commands_read_the_config_when_db_names_the_inbox(self):
+        home = Path(self.temp.name)
+        broken = home/'broken.json'
+        usual = home/'.config/boardmail/config.json'
+        usual.parent.mkdir(parents=True)
+        for config in (broken, usual):
+            config.write_text('{broken')
+
+        def reading(*before, named=True, local=False):
+            """The commands that read a config when they are typed after these words: they say that it is broken."""
+            found = set()
+            for name, command in table.COMMANDS.items():
+                group = name.partition('_')[0]
+                words = [group, name.removeprefix(group + '_')] if group in table.GROUPS else [name]
+                for argument in command.arguments:
+                    if argument.required:
+                        # A word that the parser takes for it. What it names need not be there.
+                        option = argument.typed.split()[0]
+                        word = argument.kind['enum'][0] if 'enum' in argument.kind else '1'
+                        words += [option, word] if option.startswith('-') else [word]
+                    elif local and argument.name == 'local':
+                        words.append('--local')
+                # An inbox of its own, so that no command finds the one that init has made.
+                inbox = ['--db', str(home/(name + '.sqlite3'))] if named else []
+                printed = io.StringIO()
+                with redirect_stdout(printed):
+                    cli.main([*before, *inbox, *words])
+                if json.loads(printed.getvalue()).get('error') == 'invalid_config':
+                    found.add(name)
+            return found
+
+        needed = {'collect', 'check', 'reply_verify'}
+        used = {'init', 'subscribe', 'unsubscribe', 'pause', 'resume', 'context', 'expand'}
+        with patch.dict(os.environ, {'HOME': str(home), 'USERPROFILE': str(home)}):
+            # Without --db the config says where the inbox is.
+            self.assertEqual(reading(named=False), set(table.COMMANDS))
+            # With --db, a command that cannot run without the sources reads the config where it usually is.
+            self.assertEqual(reading(), needed)
+            # A command that only uses the sources reads the config that --config names, unless it is told --local.
+            self.assertEqual(reading('--config', str(broken)), needed | used)
+            self.assertEqual(reading('--config', str(broken), local=True), needed | used - {'context', 'expand'})
 
     def test_missing_state_config_bad_input_and_zero_timeout(self):
         self.assertEqual(self.invoke('wait','--timeout','0'),(5,{'event':'error','error':'database_missing','next_action':'run_init','history_complete':False}))

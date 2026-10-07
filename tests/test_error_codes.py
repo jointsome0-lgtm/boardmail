@@ -14,6 +14,7 @@ UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 # The raises that build their code at run time. The stored table has rows for what they build.
 BUILT = {"adapter_botnet.py: 'http_' + str(code)",       # an HTTP status
          "adapter_clawdchat.py: 'http_' + str(code)",    # an HTTP status
+         'config.py: error',                             # the code that a call names with error=
          'providers.py: code',                           # a Colony sign-in code
          "verification.py: error or 'reply_' + status"}  # reply_deleted, reply_missing or a Moltbook lookup error
 
@@ -29,11 +30,18 @@ def modules():
 
 
 def raised():
-    """(the codes the package raises as literals, each raise that builds its code as 'module: expression')"""
+    """(the codes the package raises as literals, each raise that builds its code as 'module: expression')
+
+    A code that a call names with error= counts as a literal: config.converted() raises it, and so does the
+    command table for an argument."""
     literal, built = set(), set()
     for name, tree in modules():
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and getattr(node.func, 'id', getattr(node.func, 'attr', None)) == 'MailError':
+            if not isinstance(node, ast.Call):
+                continue
+            literal.update(named.value.value for named in node.keywords
+                           if named.arg == 'error' and isinstance(named.value, ast.Constant))
+            if getattr(node.func, 'id', getattr(node.func, 'attr', None)) == 'MailError':
                 code, = node.args
                 if isinstance(code, ast.Constant):
                     literal.add(code.value)
