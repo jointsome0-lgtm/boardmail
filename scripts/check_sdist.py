@@ -35,6 +35,7 @@ REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
             'tests/test_story_reply.py', 'tests/story_reply.txt',
             'tests/test_story_older.py', 'tests/story_older.txt',
             'tests/test_file_shape.py', 'tests/file_shape.txt', 'tests/test_schema_guard.py',
+            'tests/test_argument_errors.py', 'tests/argument_errors_cli.txt', 'tests/argument_errors_mcp.txt',
             'tests/fixtures/v1.sql']
 GUARD = '''import socket
 import sys
