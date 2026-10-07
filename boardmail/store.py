@@ -8,25 +8,9 @@ import time
 
 from .config import COVERAGE, LEGACY_ADAPTERS, SUBSCRIPTION_ADAPTERS, MailError
 from .errors import next_action
-from . import reader, replies, tags
+from . import reader, replies, schema, tags
 
 STALE_AFTER = 540
-SCHEMA_VERSION = 2
-
-PROGRESS_SCHEMA = """CREATE TABLE IF NOT EXISTS adapter_state (
-    source TEXT PRIMARY KEY, adapter TEXT NOT NULL, revision INTEGER NOT NULL,
-    state TEXT NOT NULL, backlog_pending INTEGER NOT NULL DEFAULT 0)"""
-
-ORIGINALS_SCHEMA = """CREATE TABLE IF NOT EXISTS originals (
-    source TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL,
-    fetched_at INTEGER NOT NULL, PRIMARY KEY (source,id))"""
-
-SUBSCRIPTIONS_SCHEMA = """CREATE TABLE IF NOT EXISTS subscriptions (
-    source TEXT NOT NULL, thread_id TEXT NOT NULL, subscribed_at INTEGER NOT NULL,
-    PRIMARY KEY (source,thread_id))"""
-
-# Brief context looks up one reply reference for each message it shows.
-REPLY_INDEX = "CREATE INDEX IF NOT EXISTS messages_reply_ref ON messages (source,reply_ref)"
 
 
 class Store:
@@ -41,8 +25,8 @@ class Store:
         db = sqlite3.connect(str(self.path) if create else uri, uri=not create, timeout=5)
         db.row_factory = sqlite3.Row
         try:
-            if not create and db.execute("PRAGMA user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
-                raise MailError("unsupported_database")
+            if not create:
+                schema.check_version(db)
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             with db:
                 yield db
@@ -56,24 +40,7 @@ class Store:
         except FileExistsError:
             raise MailError("database_exists") from None
         with self.connect(write=True, create=True) as db:
-            db.execute("""CREATE TABLE messages (
-                arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT NOT NULL, id TEXT NOT NULL, thread_id TEXT NOT NULL,
-                parent_id TEXT, provider_seq INTEGER, kind TEXT NOT NULL,
-                author TEXT, title TEXT NOT NULL, body TEXT NOT NULL, url TEXT NOT NULL,
-                created_at INTEGER NOT NULL, arrived_at INTEGER NOT NULL,
-                read_at INTEGER, needs_reply INTEGER NOT NULL DEFAULT 0,
-                replied_at INTEGER, reply_ref TEXT, discovery TEXT, addressing TEXT, UNIQUE(source, id))""")
-            db.execute(REPLY_INDEX)
-            db.execute("""CREATE TABLE sources (
-                source TEXT PRIMARY KEY, account_id TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'unknown', last_checked INTEGER,
-                last_ok INTEGER, error TEXT, unavailable INTEGER NOT NULL DEFAULT 0,
-                paused INTEGER NOT NULL DEFAULT 0)""")
-            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-            db.execute(PROGRESS_SCHEMA)
-            db.execute(ORIGINALS_SCHEMA)
-            db.execute(SUBSCRIPTIONS_SCHEMA)
+            schema.create(db)
             for source, settings in (sources or {}).items():
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
@@ -98,9 +65,7 @@ class Store:
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
             previous = bool(dict(row).get("paused", False)) if row else False
-            if "paused" not in {r[1] for r in db.execute("PRAGMA table_info(sources)")}:
-                # Local readers keep supporting older databases without writing.
-                db.execute("ALTER TABLE sources ADD COLUMN paused INTEGER NOT NULL DEFAULT 0")
+            schema.add_pause(db)
             if row is None:
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
@@ -110,26 +75,17 @@ class Store:
 
     def prepare_collection(self):
         with self.connect(write=True) as db:
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            db.execute(PROGRESS_SCHEMA)
+            version = schema.version(db)
+            schema.add(db, "adapter_state")
             if version == 1:
                 for source in COVERAGE:
                     db.execute("""INSERT OR IGNORE INTO adapter_state
                         SELECT source,source,0,'{}',0 FROM sources WHERE source=?""", (source,))
-            if "discovery" not in self._columns(db):
-                # Additive and nullable: earlier 0.2.0+ readers still open this file.
-                db.execute("ALTER TABLE messages ADD COLUMN discovery TEXT")
-            if "addressing" not in self._columns(db):
-                db.execute("ALTER TABLE messages ADD COLUMN addressing TEXT")
-            # An index changes no row and no version: 0.14.2 and earlier still read and write this file.
-            db.execute(REPLY_INDEX)
-            db.execute(ORIGINALS_SCHEMA)
-            db.execute(SUBSCRIPTIONS_SCHEMA)
-            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            schema.upgrade(db)
 
     @staticmethod
     def _subscriptions(db, source=None):
-        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscriptions'").fetchone():
+        if not schema.has(db, "subscriptions"):
             return []
         return [dict(row) for row in db.execute(
             "SELECT source,thread_id AS thread,subscribed_at FROM subscriptions" +
@@ -148,14 +104,14 @@ class Store:
             if row is None and settings is None:
                 raise MailError("source_not_found")
             progress = None
-            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='adapter_state'").fetchone():
+            if schema.has(db, "adapter_state"):
                 progress = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
                 adapter = str(settings.get("adapter", source))
                 previous_adapter = progress["adapter"] if progress is not None else None
                 if (previous_adapter is None and row is not None and source in LEGACY_ADAPTERS
-                        and db.execute("PRAGMA user_version").fetchone()[0] == 1):
+                        and schema.version(db) == 1):
                     # Version 1 used fixed source names before adapter bindings existed.
                     previous_adapter = source
                 if previous_adapter is not None and previous_adapter != adapter:
@@ -170,18 +126,14 @@ class Store:
                 if row is None:
                     db.execute("INSERT INTO sources (source,account_id) VALUES (?,?)", (source, settings["account_id"]))
                 # Keep aliases usable by a later --db-only command before collection.
-                db.execute(PROGRESS_SCHEMA)
+                schema.add(db, "adapter_state")
                 db.execute("INSERT OR IGNORE INTO adapter_state VALUES (?,?,0,'{}',0)", (source, adapter))
-                db.execute(SUBSCRIPTIONS_SCHEMA)
+                schema.add(db, "subscriptions")
                 return bool(db.execute("INSERT OR IGNORE INTO subscriptions VALUES (?,?,?)",
                                        (source, thread, int(time.time()))).rowcount)
-            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscriptions'").fetchone():
+            if not schema.has(db, "subscriptions"):
                 return False
             return bool(db.execute("DELETE FROM subscriptions WHERE source=? AND thread_id=?", (source, thread)).rowcount)
-
-    @staticmethod
-    def _columns(db):
-        return {r[1] for r in db.execute("PRAGMA table_info(messages)")}
 
     def collection_state(self, source, account_id, adapter):
         with self.connect() as db:
@@ -277,7 +229,7 @@ class Store:
         result = []
         now = time.time()
         progress = {}
-        if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+        if schema.version(db) >= 2:
             progress = {r[0]: (r[1], bool(r[2])) for r in db.execute("SELECT source,adapter,backlog_pending FROM adapter_state")}
         for row in db.execute("SELECT * FROM sources ORDER BY source"):
             value = dict(row)
@@ -312,9 +264,9 @@ class Store:
             raise MailError("invalid_arguments")
         write = reset or scope is not None or context is not None
         with self.connect(write=write) as db:
-            exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reader_settings'").fetchone()
+            exists = schema.has(db, "reader_settings")
             if write and not exists:
-                db.execute("CREATE TABLE reader_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                schema.add(db, "reader_settings")
             if reset:
                 db.execute("DELETE FROM reader_settings")
             if write:
@@ -365,7 +317,7 @@ class Store:
     def adapter(self, source):
         with self.connect() as db:
             row = None
-            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+            if schema.version(db) >= 2:
                 row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
             return row[0] if row else source
 

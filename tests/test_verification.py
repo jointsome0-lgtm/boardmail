@@ -10,7 +10,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import adapter_clawdchat, cli, commands, providers, replies, verification
+from boardmail import adapter_clawdchat, cli, commands, providers, replies, schema, verification
 from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import FixtureClient, named, original, uid
@@ -303,7 +303,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
     def test_diagnostic_write_failure_preserves_provider_failure_and_saved_candidate(self):
         self.setup_source('postingboard')
         with self.store.connect(write=True) as db:
-            db.execute(replies.CHECK_SCHEMA)
+            schema.add(db, 'reply_candidate_checks')
             db.execute("CREATE TRIGGER fail_check BEFORE INSERT ON reply_candidate_checks "
                        "BEGIN SELECT RAISE(ABORT, 'private database detail'); END")
         with patch.object(verification, 'read', side_effect=TimeoutError()) as read:
@@ -367,7 +367,7 @@ with patch.object(verification, 'read', side_effect=lambda *args: os._exit(73)):
     def test_legacy_candidates_have_no_diagnostic_and_keep_positional_writes(self):
         self.setup_source('postingboard')
         with self.store.connect(write=True) as db:
-            db.execute(replies.CANDIDATE_SCHEMA)
+            schema.add(db, 'reply_candidates')
             db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                        (self.source, self.target, self.key, self.ref, self.adapter, uid(1), 1000))
         before = self.path.read_bytes()

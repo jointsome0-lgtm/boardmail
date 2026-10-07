@@ -35,3 +35,5 @@ After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover 
 `tests/file_shape.txt` says what an inbox file has after each command: its version number, tables, columns and indexes. `tests/test_file_shape.py` runs each command once on a fresh copy of three files: a new inbox, the bundled version-1 file, and that file after its first collect. The test suite fails when a file then differs from the stored table, when a command that only reads changes a byte of a file, and when a command has no row. A new command needs a row there. What a command does to the shape of the file belongs in this table and not in another test.
 
 After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_file_shape.py'` and review the difference.
+
+`boardmail/schema.py` holds every statement that gives the file a table, a column or an index, and every question about what the file has: its version number, whether it has a table, which columns a table has. Another module calls it. `tests/test_schema_guard.py` fails when another module of the package writes such a statement or asks such a question itself.

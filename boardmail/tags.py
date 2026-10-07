@@ -3,12 +3,10 @@ import json
 import re
 import time
 
+from . import schema
 from .config import MailError, identifier
 
 NAME_PATTERN = r"[a-z0-9][a-z0-9_-]{0,63}"
-SCHEMA = """CREATE TABLE IF NOT EXISTS thread_tags (
-    tag TEXT NOT NULL, source TEXT NOT NULL, thread_id TEXT NOT NULL,
-    tagged_at INTEGER NOT NULL, PRIMARY KEY (tag,source,thread_id))"""
 
 
 def validate_name(tag):
@@ -17,7 +15,7 @@ def validate_name(tag):
 
 
 def exists(db):
-    return bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_tags'").fetchone())
+    return schema.has(db, 'thread_tags')
 
 
 def names(db, source, thread):
@@ -79,7 +77,7 @@ def metadata(db, source, thread):
                       (source, thread, thread)).fetchone()
     if root is not None:
         candidates.append(('stored_root', dict(root)))
-    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='originals'").fetchone():
+    if schema.has(db, 'originals'):
         row = db.execute('SELECT value FROM originals WHERE source=? AND id=?', (source, thread)).fetchone()
         if row is not None:
             original = json.loads(row[0])
@@ -157,8 +155,7 @@ def execute(store, action, *, tag=None, source=None, thread=None, id=None):
             thread = row[0]
         changed = False
         if action == 'add':
-            db.execute(SCHEMA)
-            db.execute('CREATE INDEX IF NOT EXISTS thread_tags_membership ON thread_tags(source,thread_id,tag)')
+            schema.add(db, 'thread_tags')
             changed = bool(db.execute('INSERT OR IGNORE INTO thread_tags VALUES (?,?,?,?)',
                                      (tag, source, thread, int(time.time()))).rowcount)
         elif exists(db):
