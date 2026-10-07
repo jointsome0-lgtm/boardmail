@@ -23,9 +23,9 @@ def imported(node):
 
 
 def read(source, own, modules):
-    """(modules imported at the top, imports inside a function, private names of another module) of one source."""
+    """(modules imported anywhere, imports inside a function, private names of another module) of one source."""
     tree = ast.parse(source)
-    top = set().union(*(imported(node) for node in tree.body)) & modules - {own}
+    top = set().union(*(imported(node) for node in ast.walk(tree))) & modules - {own}
     inside = sorted(f'line {node.lineno}' for scope in ast.walk(tree) if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
                     for node in ast.walk(scope) if imported(node))
     private = []
@@ -83,7 +83,8 @@ class ImportGraphTests(unittest.TestCase):
                                     'def call(store):\n    from .two import other\n    return two._inner, store._row, self._own, row._replace(a=1)\n',
                                     'one', modules)
         self.assertEqual((top, inside, private), ({'two', 'three'}, ['line 4'], ['_hidden', 'store._row', 'two._inner']))
-        self.assertEqual(read('import boardmail.two\nfrom boardmail import three\nimport json\n', 'one', modules)[0], {'two', 'three'})
+        self.assertEqual(read('import boardmail.two\ntry:\n    from boardmail import three\nexcept ImportError:\n    pass\nimport json\n',
+                              'one', modules)[0], {'two', 'three'})
         self.assertIsNone(cycle({'one': {'two', 'three'}, 'two': {'three'}, 'three': set()}))
         self.assertEqual(cycle({'one': {'two'}, 'two': {'three'}, 'three': {'one'}}), ['one', 'two', 'three', 'one'])
 
