@@ -56,10 +56,6 @@ class _Page(HTMLParser):
             self.post[field] += data
 
 
-def _fetch(thread):
-    return transport.fetch("fourclaw", f"{HOST}/t/{thread}")
-
-
 def _messages(html, thread, account, aliases, originals=None, subscribed=False):
     """Personal mail on one public page. ``originals`` also receives the root
     and this account's own replies, already fetched, for the local cache.
@@ -110,8 +106,10 @@ def _messages(html, thread, account, aliases, originals=None, subscribed=False):
     return result
 
 
-def collect(settings, state, known):
-    """One round-robin window, including failures, with constant-size progress."""
+def collect(settings, state, known, *, fetch=transport.fetch):
+    """One round-robin window, including failures, with constant-size progress.
+
+    fetch asks the board: the transport, or an invented board in its place."""
     try:
         account = settings["account_id"]
         threads = settings.get("watched_threads", [])  # Missing or empty for a subscription-only setup.
@@ -139,7 +137,8 @@ def collect(settings, state, known):
         thread = threads[(offset + step) % len(threads)]
         try:
             originals = []
-            messages = _messages(_fetch(thread), thread, account, aliases, originals, subscribed=thread in selected)
+            html = fetch("fourclaw", f"{HOST}/t/{thread}")
+            messages = _messages(html, thread, account, aliases, originals, subscribed=thread in selected)
             if thread not in configured:
                 for message in messages:
                     message["discovery"] = "subscription"

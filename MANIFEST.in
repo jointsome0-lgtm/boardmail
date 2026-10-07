@@ -2,6 +2,7 @@ include AGENT_GUIDE.md
 include scripts/check_sdist.py
 include scripts/agent_view.py
 include scripts/inner_reach.py
+include scripts/line_coverage.py
 recursive-include docs *.md
 recursive-include examples *.py *.json
 recursive-include tests *.py *.sql *.txt

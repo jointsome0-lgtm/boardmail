@@ -8,6 +8,9 @@ another module.
 
 What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
 it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
+
+fetch() is also where a test stands in for a board. A board module that takes it as an argument is handed
+FakeBoard of examples/fixtures.py instead, which answers with invented data and sends nothing.
 """
 from http.client import HTTPException
 import json

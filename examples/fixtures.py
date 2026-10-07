@@ -1,13 +1,64 @@
 """Invented API responses for offline examples/tests. Never contacts a board."""
 from copy import deepcopy
 from pathlib import Path
+from typing import NamedTuple
 from urllib.error import HTTPError
+from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID
 import io
 
 
 def uid(n):
     return str(UUID(int=n))
+
+
+def status(code, body=b""):
+    """An answer of a FakeBoard: an HTTP status that is no success, with what the board says about it."""
+    return HTTPError("https://board.example.invalid", code, "An invented status", {}, io.BytesIO(body))
+
+
+class Asked(NamedTuple):
+    """One request as a FakeBoard got it."""
+    board: str     # the name of the board under which the client asked
+    url: str
+    headers: dict  # what the client sent besides the headers of the board
+    body: object   # what a POST carried, or None
+    left: object   # the seconds that the client said it had left, or None
+
+    @property
+    def params(self):
+        """The query of the URL. Each value is text, as a board gets it."""
+        return dict(parse_qsl(urlsplit(self.url).query))
+
+
+class FakeBoard:
+    """An invented board at the transport seam. A board module takes it where it would take
+    boardmail.transport.fetch, and no request leaves the process.
+
+    answers is what the board says. It is a function of the request, an Asked, or it is the answers themselves,
+    which are then given out one by one in the order of the requests. An answer is what fetch() returns: what the
+    JSON of the board says, or the text of its page. An answer that is an exception is raised, as fetch() raises
+    it: status(503) for a status that is no success, an OSError for a board that is not reached, a ValueError for
+    an answer that cannot be read.
+
+    asked has every request so far."""
+    def __init__(self, answers):
+        self.answers = answers if callable(answers) else iter(answers)
+        self.asked = []
+
+    def __call__(self, board, url, *, through=None, left=None, headers=None, body=None):
+        request = Asked(board, url, dict(headers or {}), body, left)
+        self.asked.append(request)
+        if callable(self.answers):
+            answer = self.answers(request)
+        else:
+            try:
+                answer = next(self.answers)
+            except StopIteration:
+                raise AssertionError("The board has no answer left for " + url) from None
+        if isinstance(answer, BaseException):
+            raise answer
+        return deepcopy(answer)
 
 
 def settings():

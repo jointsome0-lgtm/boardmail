@@ -20,11 +20,11 @@ class FetchError(Exception):
     pass
 
 
-def _fetch(params):
+def _fetch(fetch, params):
     # Public requests never read configured credentials or follow redirects.
     url = BASE + '?' + urlencode(params)
     try:
-        data = transport.fetch('fruitflies', url)
+        data = fetch('fruitflies', url)
     except transport.FAILED as exc:
         raise FetchError(transport.failure('fruitflies', exc)) from None
     if not isinstance(data, dict) or not isinstance(data.get('posts'), list):
@@ -62,8 +62,10 @@ def _post(raw):
                 author=author, created_at=int(date.timestamp()))
 
 
-def collect(settings, state, known):
-    """Read newest and one historical page; retry failed history next call."""
+def collect(settings, state, known, *, fetch=transport.fetch):
+    """Read newest and one historical page; retry failed history next call.
+
+    fetch asks the board: the transport, or an invented board in its place."""
     handle = settings.get('account_id')
     if not isinstance(handle, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', handle):
         return Batch(state={}, complete=False, error='invalid_config')
@@ -84,7 +86,7 @@ def collect(settings, state, known):
     own = {}
     own_ok = True
     try:
-        for raw in _fetch({'agent': handle, 'limit': PAGE, 'offset': 0}):
+        for raw in _fetch(fetch, {'agent': handle, 'limit': PAGE, 'offset': 0}):
             try:
                 post = _post(raw)
                 seen_posts[post['id']] = post
@@ -105,7 +107,7 @@ def collect(settings, state, known):
     emitted = set(known)
     for position in (0, offset):
         try:
-            rows = _fetch({'limit': PAGE, 'offset': position})
+            rows = _fetch(fetch, {'limit': PAGE, 'offset': position})
         except FetchError as exc:
             result.error = str(exc)
             continue
