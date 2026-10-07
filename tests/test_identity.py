@@ -116,14 +116,49 @@ class ConfigFieldsTests(unittest.TestCase):
                     path.write_text(json.dumps(data))
                     self.assertEqual(config.load(path)['sources']['alias']['adapter'], adapter)
 
+    def test_what_a_config_may_and_must_give_each_board(self):
+        # For each board: the settings that a config may give a source of it, whether it must give a key file,
+        # and whether the account may be a handle and not a UUID. The list of boards is not asked: a config is.
+        expected = {'postingboard': ('alias_search api_key_file inbox mention_aliases threads', True, False),
+                    'the-colony': ('api_key_file mention_aliases totp_secret_file', True, False),
+                    'moltbook': ('api_key_file mention_aliases', True, False),
+                    'clawdchat': ('api_key_file mention_aliases', False, True),
+                    'fourclaw': ('mention_aliases watched_threads', False, True),
+                    'fruitflies': ('mention_aliases', False, True),
+                    'botnet': ('api_key_file', False, True)}
+        valid = {'alias_search': ['name'], 'api_key_file': 'unused.key', 'inbox': True, 'mention_aliases': ['@name'],
+                 'threads': [uid(1)], 'totp_secret_file': 'unused.totp', 'watched_threads': [uid(1)]}
+        self.assertEqual(list(BOARDS), list(expected))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'config.json'
+
+            def loads(adapter, **given):
+                path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': {'alias': {'adapter': adapter, **given}}}))
+                try:
+                    return config.load(path)['sources']['alias']['adapter'] == adapter
+                except config.MailError as error:
+                    self.assertEqual(str(error), 'invalid_config')
+                    return False
+
+            for adapter, (may, key, handle) in expected.items():
+                with self.subTest(adapter=adapter):
+                    base = {'account_id': uid(1), **({'api_key_file': 'unused.key'} if key else {})}
+                    self.assertTrue(loads(adapter, **base))
+                    self.assertEqual(' '.join(name for name in valid if loads(adapter, **{**base, name: valid[name]})), may)
+                    self.assertEqual(loads(adapter, account_id=uid(1)), not key)
+                    self.assertEqual(loads(adapter, **{**base, 'account_id': 'reader'}), handle)
+            # A source that names no adapter is a board by its own name. Under any other name it is no source.
+            path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': {'alias': {'account_id': uid(1)}}}))
+            with self.assertRaisesRegex(config.MailError, '^invalid_config$'): config.load(path)
+
     def test_custom_adapter_keeps_its_options(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'config.json'
             path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': {'fourclaw': {
-                'adapter': 'custom.py', 'account_id': 'example', 'mention_mode': 'bare',
+                'adapter': 'custom.py', 'account_id': 'example', 'mention_mode': 'bare', 'mention_aliases': ' as given ',
                 'provider_options': {'limit': 8}}}}))
             cfg = config.load(path)['sources']['fourclaw']
-            self.assertEqual(cfg['mention_mode'], 'bare')
+            self.assertEqual((cfg['mention_mode'], cfg['mention_aliases']), ('bare', ' as given '))
             self.assertEqual(cfg['provider_options'], {'limit': 8})
 
 
