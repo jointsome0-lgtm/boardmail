@@ -1,10 +1,11 @@
 """Inbox discovery beyond watched roots, thread context and freshness checks. All data is invented."""
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from copy import deepcopy
 from urllib.error import HTTPError
 import io
 import json
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,7 @@ from boardmail import cli, commands, config, providers
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, settings, uid
-from kit import Clock, Network, edge, fixed
+from kit import Clock, Network, arrive, edge, fixed, mark
 from test_mail import mail
 
 
@@ -26,7 +27,7 @@ class DiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'inbox.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = Store(self.path); commands.execute(self.store, 'init')
         self.cfg = {**settings(self.temp.name)['postingboard'], 'inbox': True, 'alias_search': []}
         self.fixture = FixtureBoard('postingboard', self.cfg)
         # The client waits between two requests, and a pass has its time. Here a wait only moves the clock.
@@ -75,7 +76,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self.state()['inbox_after'], 754)
         self.assertEqual(self.store.show('postingboard', uid(501))['body'],
                          '@sample-agent please confirm.')
-        self.store.mark('postingboard', uid(501), 'read')
+        mark(self.store, 'postingboard', uid(501), 'read')
         saved = self.store.show('postingboard', uid(501))
         afters.clear()
         self.assertEqual(self.collect(cfg)['added'], 0)
@@ -123,7 +124,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual((result['added'], result['failed'], self.state()['inbox_after']),
                          (1, False, 753))
         self.assertTrue(result['sources'][0]['backlog_pending'])
-        self.store.mark('postingboard', uid(501), 'read')
+        mark(self.store, 'postingboard', uid(501), 'read')
         saved = self.store.show('postingboard', uid(501))
         result = self.collect(cfg)
         self.assertEqual((afters, result['added'], result['failed']), ([0, 753], 1, False))
@@ -168,7 +169,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual((message['thread_id'], message['kind'], message['discovery'], message['provider_seq']),
                          (uid(500), 'mention', 'inbox:mention', 501))
         self.assertEqual(message['body'], '@sample-agent please confirm.')
-        self.store.mark('postingboard', uid(501), 'read')
+        mark(self.store, 'postingboard', uid(501), 'read')
         self.assertEqual(set(self.state()['pending']), {uid(502)})  # A local mark cancels no discovery work.
         slow.clear(); self.fixture.get = get
         self.assertEqual(self.collect()['added'], 1)
@@ -238,7 +239,7 @@ class DiscoveryTests(unittest.TestCase):
         found = self.store.show('postingboard', uid(399))
         self.assertEqual((found['kind'], found['discovery'], found['thread_id']), ('mention', 'inbox:mention', uid(301)))
         self.assertEqual(self.state()['pending'], {})
-        self.store.mark('postingboard', uid(399), 'read'); self.fixture.get = get
+        mark(self.store, 'postingboard', uid(399), 'read'); self.fixture.get = get
         self.assertEqual(self.collect(cfg)['added'], 0)
         self.assertEqual(self.store.show('postingboard', uid(399)), {**found, 'read_at': self.store.show('postingboard', uid(399))['read_at']})
 
@@ -269,8 +270,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual([m['id'] for m in self.store.page()['messages']], [uid(399)],
                          'Unrelated foreign-root replies remain excluded')
         for action in ('read', 'needs_reply', 'replied'):
-            self.store.mark('postingboard', uid(399), action,
-                            ref='https://example.invalid/reply' if action == 'replied' else None)
+            mark(self.store, 'postingboard', uid(399), action,
+                 ref='https://example.invalid/reply' if action == 'replied' else None)
         saved = self.store.show('postingboard', uid(399))
         self.store = Store(self.path)
         self.fixture.get = get
@@ -360,13 +361,25 @@ class ContextTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'inbox.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = Store(self.path); commands.execute(self.store, 'init')
         self.cfg = settings(self.temp.name)['postingboard']
         self.fixture = FixtureBoard('postingboard', self.cfg)
         self.clock = Clock(1_000_000)
         self.fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, body='A parent comment.'),
                                uid(602): named(602, 600, reply_to=601, body='@sample-agent nested reply.')}
-        self.store.save('postingboard', self.cfg['account_id'], [{**mail(602), 'thread_id': uid(600), 'parent_id': uid(601)}])
+        self.arrives(602)
+        self.assertEqual(self.store.show('postingboard', uid(602))['parent_id'], uid(601))
+
+    def arrives(self, *numbers, store=None, **watching):
+        """A pass in which the inbox of the invented Postingboard tells the account of these posts, which become
+        its mail. The pass watches no thread unless the call names some."""
+        self.fixture.inbox += [(len(self.fixture.inbox) + 1, self.fixture.others[uid(n)], ['mention']) for n in numbers]
+        sources = {'postingboard': {**self.cfg, 'inbox': True, 'threads': [], 'alias_search': [], **watching}}
+        with fixed(self.clock):
+            result, code = commands.execute(store or self.store, 'collect', sources=sources, fetch=self.fixture)
+        self.assertEqual((code, result['failed']), (0, False), result)
+        self.fixture.calls.clear()
+        return result['added']
 
     def context(self, mid, cfg=None):
         # The client waits between two requests to Postingboard. With the clock fixed, the wait only moves it.
@@ -374,14 +387,16 @@ class ContextTests(unittest.TestCase):
             return commands.context(self.store, 'postingboard', mid, cfg, fetch=self.fixture)
 
     def test_saved_root_compares_text_exactly_without_changing_snapshot_or_marks(self):
-        saved = {**mail(610), 'thread_id': uid(610), 'title': 'Original title', 'body': 'Cafe\u0301\r\n'}
-        self.store.save('postingboard', self.cfg['account_id'], [saved])
+        saved = {'title': 'Original title', 'body': 'Cafe\u0301\r\n'}
+        current = self.fixture.others[uid(610)] = {**named(610, 610), **saved}
+        self.arrives(610)
         for action in ('read', 'needs_reply', 'replied'):
-            self.store.mark('postingboard', uid(610), action, ref='https://example.invalid/reply' if action == 'replied' else None)
+            mark(self.store, 'postingboard', uid(610), action, ref='https://example.invalid/reply' if action == 'replied' else None)
         snapshot = self.store.show('postingboard', uid(610))
+        self.assertEqual({field: snapshot[field] for field in saved}, saved)
         before = self.path.read_bytes()
-        # Different author, URL and timestamps do not change the text comparison.
-        current = self.fixture.others[uid(610)] = {**named(610, 610), 'title': saved['title'], 'body': saved['body']}
+        # Another author and another time do not change the text comparison.
+        current.update(author='another-writer', created_at=current['created_at'] + 60)
         cases = [('Original title', 'Cafe\u0301\r\n', False), ('Renamed', 'Cafe\u0301\r\n', True),
                  ('Original title', 'Cafe\u0301\n', True), ('Original title', 'Caf\u00e9\r\n', True)]
         for title, body, differs in cases:
@@ -401,11 +416,10 @@ class ContextTests(unittest.TestCase):
                 self.assertEqual(self.path.read_bytes(), before)
 
     def test_reply_label_is_not_an_edit_and_thread_rename_belongs_to_root(self):
+        # The reply is saved under the title of its thread. The board has no title for a reply.
         current = self.fixture.others[uid(602)]
-        current.update(title='', body='Synthetic text')
-        self.store.save('postingboard', self.cfg['account_id'], [
-            {**mail(n), 'thread_id': uid(600), 'title': self.fixture.others[uid(n)]['title'],
-             'body': self.fixture.others[uid(n)]['body']} for n in (600, 601)])
+        current['title'] = ''
+        self.assertEqual(self.arrives(600, 601), 2)
         self.fixture.others[uid(600)]['title'] = 'Renamed thread'
         before = self.path.read_bytes()
         result, code = self.context(uid(602), self.cfg)
@@ -418,7 +432,7 @@ class ContextTests(unittest.TestCase):
         current['body'] = 'Edited reply'
         result, code = self.context(uid(602), self.cfg)
         self.assertEqual((code, result['target']['message']['body'], result['target']['current_message']['body']),
-                         (0, 'Synthetic text', 'Edited reply'))
+                         (0, '@sample-agent nested reply.', 'Edited reply'))
         self.assertIs(result['target']['differs_from_saved'], True)
         self.assertEqual(self.path.read_bytes(), before)
 
@@ -482,19 +496,33 @@ class ContextTests(unittest.TestCase):
 
     def test_fetched_relationships_outrank_legacy_local_rows(self):
         self.fixture.roots[uid(900)] = named(900, 900)
-        self.fixture.comments[uid(900)] = [named(901, 900, body='Parent.'), named(902, 900, reply_to=901)]
-        self.store.save('postingboard', self.cfg['account_id'], [{**mail(902), 'thread_id': uid(900)}])
+        self.fixture.comments[uid(900)] = [named(901, 900, body='Parent.'), named(902, 900, reply_to=901),
+                                           named(903, 900, body='@sample-agent, a comment under the post.')]
+        # A file that an older release left. Its row of Postingboard is from before reply targets were kept. No
+        # release writes such a row today, so the test writes it as that release did.
+        legacy = {**mail(902), 'thread_id': uid(900)}
+        self.store = Store(Path(self.temp.name)/'older.sqlite3')
+        with closing(sqlite3.connect(self.store.path)) as db:
+            db.executescript((Path(__file__).parent/'fixtures/v1.sql').read_text())
+            with db:
+                db.execute("INSERT INTO sources (source,account_id) VALUES ('postingboard',?)", (self.cfg['account_id'],))
+                db.execute("INSERT INTO messages (source,id,thread_id,kind,author,title,body,url,created_at,arrived_at) "
+                           "VALUES ('postingboard',:id,:thread_id,:kind,:author,:title,:body,:url,:created_at,200)", legacy)
         result, code = self.context(uid(902), self.cfg)
         self.assertEqual((code, result['parent']['id'], result['parent']['message']['body'], result['root']['status']), (0, uid(901), 'Parent.', 'available'))
         # Offline, a row stored before reply targets were kept cannot name its parent.
         result, code = self.context(uid(902), None)
         self.assertEqual((code, result['parent']['status'], result['parent']['id']), (1, 'unknown', None))
-        self.store.prepare_collection()  # Rows with a discovery value exist only after the collector's migration.
-        self.store.save('postingboard', self.cfg['account_id'], [{**mail(903), 'thread_id': uid(900), 'discovery': 'thread'}])
+        # A row of today says how it was found. The pass that brings the file up to date watches the thread and
+        # finds a comment that names the account and answers no other comment. The inbox of the board is empty.
+        self.fixture.inbox.clear()
+        self.assertEqual(self.arrives(store=self.store, threads=[uid(900)]), 1)
+        self.assertEqual(self.store.show('postingboard', uid(903))['discovery'], 'thread')
         result, code = self.context(uid(903), None)
         self.assertEqual((code, result['parent']['id'], result['parent']['status']), (1, uid(900), 'unknown'))
-        self.store.save('moltbook', uid(2), [{**mail(904), 'thread_id': uid(900)}, {**mail(900), 'thread_id': uid(900)}])
-        result, code = commands.context(self.store, 'moltbook', uid(904), None)
+        # A row of another adapter answers the post where it names no other target.
+        arrive(self.store, 'custom', uid(2), [{**mail(904), 'thread_id': uid(900)}, {**mail(900), 'thread_id': uid(900)}])
+        result, code = commands.context(self.store, 'custom', uid(904), None)
         self.assertEqual((code, result['parent']['id'], result['parent']['origin']), (0, uid(900), 'local'))
         self.assertIsNone(result['target']['current_message'])
         self.assertIsNone(result['target']['differs_from_saved'])
@@ -512,8 +540,12 @@ class ContextTests(unittest.TestCase):
 
     def test_cli_context_with_explicit_config_keeps_the_database_override(self):
         root = Path(self.temp.name)
-        self.store.save('postingboard', self.cfg['account_id'], [mail(603)])
-        self.store.mark('postingboard', uid(603), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        # Another message, which the account answered with the comment that the nested reply answers. The board
+        # then gets another text for the nested reply.
+        self.fixture.others[uid(603)] = named(603, 600)
+        self.arrives(603)
+        mark(self.store, 'postingboard', uid(603), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
+        self.fixture.others[uid(602)]['body'] = '@sample-agent nested reply, edited.'
         before = self.path.read_bytes()  # The key of the account is in the folder already, in example.key.
         (root/'config.json').write_text(json.dumps({'database': 'other.sqlite3', 'sources': {'postingboard': {
             'account_id': self.cfg['account_id'], 'api_key_file': 'example.key', 'threads': [uid(600)]}}}))
@@ -525,7 +557,8 @@ class ContextTests(unittest.TestCase):
             return code, json.loads(out.getvalue())
         code, result = run()
         self.assertEqual((code, result['fetched'], result['parent']['status'], result['target']['origin']), (0, True, 'available', 'local'))
-        self.assertEqual(result['target']['current_message']['body'], '@sample-agent nested reply.')
+        self.assertEqual((result['target']['message']['body'], result['target']['current_message']['body']),
+                         ('@sample-agent nested reply.', '@sample-agent nested reply, edited.'))
         self.assertIs(result['target']['differs_from_saved'], True)
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         self.assertEqual([m['id'] for m in result['previous_exchange']['messages']], [uid(603)])
@@ -537,7 +570,7 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_cli_context_reads_local_records_offline(self):
-        self.store.save('postingboard', self.cfg['account_id'], [{**mail(600), 'thread_id': uid(600), 'kind': 'reply_to_post'}])
+        self.arrives(600)
         command = [sys.executable, '-m', 'boardmail', '--db', str(self.path), 'context', 'postingboard']
         for mid, expected in ((uid(602), (1, 'unknown', 'available')), (uid(600), (0, 'none', 'available'))):
             run = subprocess.run([*command, mid], capture_output=True, text=True, timeout=10)
@@ -552,7 +585,7 @@ class FreshnessTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'inbox.sqlite3'
-        self.store = Store(self.path); self.store.initialize()
+        self.store = Store(self.path); commands.execute(self.store, 'init')
 
     def status(self, *args):
         run = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path), 'status', *args],
@@ -563,7 +596,8 @@ class FreshnessTests(unittest.TestCase):
         code, result = self.status()
         self.assertEqual((code, result['fresh'], result['stale_after'], result['sources']), (0, False, 540, []))
         self.assertEqual(self.status('--require-fresh')[0], 1)
-        self.store.save('moltbook', uid(2), [], now=1000)
+        with fixed(Clock(1000)):
+            arrive(self.store, 'moltbook', uid(2))  # A pass long ago that went well.
         code, result = self.status('--require-fresh')
         source = result['sources'][0]
         self.assertEqual((code, result['event'], source['status'], source['stale_after']), (1, 'status', 'stale', 540))
@@ -571,23 +605,22 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(self.status()[0], 0)  # Reading stale state is still a successful read.
         code, result = self.status('--require-fresh', '--stale-after', str(2**31-1))
         self.assertEqual((code, result['fresh'], result['sources'][0]['status'], result['stale_after']), (0, True, 'ok', 2**31-1))
-        self.store.save('moltbook', uid(2), [])
+        arrive(self.store, 'moltbook', uid(2))
         code, result = self.status('--require-fresh', '--stale-after', '5')
         self.assertEqual((code, result['sources'][0]['last_ok_age'] >= 0), (0, True))
         # Backlog is a separate fact and never changes freshness.
-        self.store.prepare_collection()
-        with self.store.connect(write=True) as db:
-            db.execute("INSERT INTO adapter_state VALUES ('moltbook','moltbook',1,'{}',1)")
+        arrive(self.store, 'moltbook', uid(2), complete=False)
         code, result = self.status('--require-fresh')
         self.assertEqual((code, result['fresh'], result['sources'][0]['backlog_pending']), (0, True, True))
-        self.store.failure('moltbook', uid(2), 'http_503')
+        arrive(self.store, 'moltbook', uid(2), error='http_503')
         code, result = self.status('--require-fresh')
         self.assertEqual((code, result['sources'][0]['status'], result['sources'][0]['error']), (1, 'error', 'http_503'))
         self.assertEqual(self.status()[0], 0)
         self.assertEqual(self.status('--stale-after', '-1')[1]['error'], 'invalid_arguments')
 
     def test_stale_boundary_uses_exact_elapsed_time(self):
-        self.store.save('moltbook', uid(2), [], now=100)
+        with fixed(Clock(100)):
+            arrive(self.store, 'moltbook', uid(2))
         for now, expected in ((640.0, 'ok'), (640.5, 'stale')):
             with fixed(Clock(now)):
                 source = self.store.status()['sources'][0]

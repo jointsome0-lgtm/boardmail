@@ -1,7 +1,9 @@
 """Consumer preferences, lossless scope changes, and bounded local context."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import json
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -12,7 +14,8 @@ from boardmail import commands
 from boardmail.adapters import Batch, validate
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FakeBoard, settings, uid
+from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
+from kit import DESCRIBED, arrive, mark, notify
 from test_mail import mail
 
 
@@ -22,7 +25,7 @@ class ReadingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'inbox.sqlite3'
         self.store = Store(self.path)
-        self.store.initialize()
+        commands.execute(self.store, 'init')
 
     def run_command(self, command='list', **options):
         result, code = commands.execute(self.store, command, **options)
@@ -30,7 +33,15 @@ class ReadingTests(unittest.TestCase):
         return result
 
     def save(self, *kinds):
-        return self.store.save('moltbook', uid(2), [dict(mail(10+i), addressing=kind) for i, kind in enumerate(kinds)])
+        return arrive(self.store, 'moltbook', uid(2), [dict(mail(10+i), addressing=kind) for i, kind in enumerate(kinds)])
+
+    def colony(self):
+        """An invented Colony that has no comment yet, and the settings of its source. A pass over it gives each
+        comment as the board has it alone, so the inbox has a message and not what the message answers."""
+        cfg = settings(self.temp.name)['the-colony']
+        board = FixtureBoard('the-colony', cfg)
+        board.comments, board.events = [], []
+        return board, {'the-colony': cfg}
 
     def test_defaults_readonly_persistence_override_reset_and_other_database(self):
         before = self.path.read_bytes()
@@ -38,9 +49,9 @@ class ReadingTests(unittest.TestCase):
             'scope': 'addressed', 'context': 'brief', 'origin': {'scope': 'default', 'context': 'default'}})
         self.assertEqual(self.path.read_bytes(), before)
         other = Store(Path(self.temp.name) / 'other.sqlite3')
-        other.initialize()
+        commands.execute(other, 'init')
         with ThreadPoolExecutor(2) as pool:
-            list(pool.map(lambda opts: self.store.settings(**opts), [{'scope': 'all'}, {'context': 'none'}]))
+            list(pool.map(lambda opts: self.run_command('settings', **opts), [{'scope': 'all'}, {'context': 'none'}]))
         self.assertEqual(self.run_command()['reading'], {'scope': 'all', 'context': 'none'})
         self.assertEqual(self.run_command(scope='addressed')['reading'], {'scope': 'addressed', 'context': 'none'})
         self.assertEqual(self.store.settings()['scope'], 'all')
@@ -58,8 +69,9 @@ class ReadingTests(unittest.TestCase):
             self.assertEqual((result['error'], code), ('invalid_arguments', 2))
         self.assertEqual(board.asked, [])
         self.assertEqual(self.path.read_bytes(), before)
-        self.store.settings(scope='all')
-        with self.store.connect(write=True) as db:
+        self.run_command('settings', scope='all')
+        # No command saves a value like this one. The file has it from somewhere else.
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE reader_settings SET value='invalid' WHERE key='scope'")
         result, _ = commands.outcome(lambda: commands.execute(self.store, 'list'))
         self.assertEqual(result['next_action'], 'run_settings_reset')
@@ -86,13 +98,13 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(self.store.status()['counts']['unread'], 6)
 
     def test_interleaved_summaries_follow_first_arrival_and_share_the_page_checkpoint(self):
-        self.store.save('moltbook', uid(2), [dict(mail(9), addressing='direct')])
-        self.store.save('moltbook', uid(2), [dict(mail(10, created=900), addressing='thread')])
-        self.store.save('moltbook', uid(2), [dict(mail(11, created=800), addressing='direct')])
-        self.store.save('the-colony', uid(1), [dict(mail(10, created=700),
-                                                  thread_id=uid(200), addressing='thread')])
-        self.store.save('moltbook', uid(2), [dict(mail(12, created=600), addressing='thread')])
-        self.store.save('moltbook', uid(2), [dict(mail(13, created=500), addressing='direct')])
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(9), addressing='direct')])
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(10, created=900), addressing='thread')])
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(11, created=800), addressing='direct')])
+        arrive(self.store, 'the-colony', uid(1), [dict(mail(10, created=700),
+                                                       thread_id=uid(200), addressing='thread')])
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(12, created=600), addressing='thread')])
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(13, created=500), addressing='direct')])
         page = self.run_command(after=1, limit=4)
         self.assertEqual([m['arrival_seq'] for m in page['messages']], [3])
         self.assertEqual([(s['source'], s['first_seq'], s['last_seq'], s['count'])
@@ -117,9 +129,9 @@ class ReadingTests(unittest.TestCase):
     def test_summary_replay_survives_marks_new_arrivals_and_source_id_collisions(self):
         self.save('thread', 'thread', 'direct')
         summary = self.run_command(limit=2, unread=True)['thread_activity'][0]
-        self.store.mark('moltbook', uid(10), 'read')
-        self.store.save('moltbook', uid(2), [dict(mail(99), addressing='thread')])
-        self.store.save('the-colony', uid(1), [dict(mail(10), addressing='thread')])
+        mark(self.store, 'moltbook', uid(10), 'read')
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(99), addressing='thread')])
+        arrive(self.store, 'the-colony', uid(1), [dict(mail(10), addressing='thread')])
         replay = self.run_command(**summary['replay']['arguments'])
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10), uid(11)])
         self.assertFalse(replay['more'])
@@ -149,9 +161,7 @@ class ReadingTests(unittest.TestCase):
         root = dict(mail(100), body='r' * 5000)
         parent = dict(mail(90), body='our public parent')
         incoming = dict(mail(10), parent_id=uid(90), addressing='direct')
-        batch = Batch(messages=[incoming], originals=[root, parent])
-        validate(batch)
-        self.store.save_collection('moltbook', uid(2), 'moltbook', 0, batch)
+        arrive(self.store, 'moltbook', uid(2), [incoming], originals=[root, parent])
         self.assertEqual(self.store.status()['counts']['total'], 1)
         before = self.path.read_bytes()
         board = FakeBoard([])  # It has no answer, and it is asked nothing.
@@ -169,24 +179,32 @@ class ReadingTests(unittest.TestCase):
 
     def test_missing_context_and_exact_previous_exchange_are_visible_and_bounded(self):
         from boardmail.providers import parent_reference
-        self.store.save('moltbook', uid(2), [mail(20), mail(21), mail(22)])
-        ref = parent_reference('moltbook', uid(100), uid(90))
+        # Three comments under a post of the account, which answers them with one comment of its own. A fourth
+        # comment then answers that one.
+        board, sources = self.colony()
         for n in (20, 21, 22):
-            self.store.mark('moltbook', uid(n), 'replied', ref=ref)
-        self.store.save('moltbook', uid(2), [dict(mail(10), addressing='direct', parent_id=uid(90))])
+            notify(board, original(n, 101, colony=True))
+        self.run_command('collect', sources=sources, fetch=board)
+        ref = parent_reference('the-colony', uid(101), uid(90))
+        for n in (20, 21, 22):
+            mark(self.store, 'the-colony', uid(n), 'replied', ref=ref)
+        notify(board, {**original(10, 101, colony=True), 'parent_id': uid(90)}, 'reply_to_comment')
+        self.run_command('collect', sources=sources, fetch=board)
         brief = self.run_command(after=3)['messages'][0]['brief']
         self.assertEqual(brief['parent']['status'], 'not_available_locally')
         self.assertEqual(brief['previous_exchange']['status'], 'linked')
         self.assertEqual(len(brief['previous_exchange']['messages']), 2)
         self.assertTrue(brief['previous_exchange']['more'])
-        self.assertEqual(brief['expand']['arguments'], {'source': 'moltbook', 'id': uid(10)})
+        self.assertEqual(brief['expand']['arguments'], {'source': 'the-colony', 'id': uid(10)})
 
     def test_stale_collector_keeps_newer_cache_but_retains_unique_arrivals(self):
         root = dict(mail(100), body='new context')
-        self.store.save_collection('moltbook', uid(2), 'moltbook', 0, Batch(originals=[root]))
-        stale = Batch(messages=[dict(mail(10), parent_id=uid(100), addressing='direct')],
-                      originals=[dict(root, body='stale context')])
-        self.assertEqual(self.store.save_collection('moltbook', uid(2), 'moltbook', 0, stale), (1, True))
+        # A pass gives a message and old context. While it is under way, another pass gives newer context and is
+        # saved first.
+        stale = arrive(self.store, 'moltbook', uid(2), [dict(mail(10), parent_id=uid(100), addressing='direct')],
+                       originals=[dict(root, body='stale context')],
+                       meanwhile=lambda: arrive(self.store, 'moltbook', uid(2), originals=[root]))
+        self.assertEqual((stale['added'], [error['error'] for error in stale['errors']]), (1, ['collection_conflict']))
         result = self.run_command()['messages'][0]
         self.assertEqual(result['brief']['root']['body'], 'new context')
         self.assertEqual(result['brief']['parent']['status'], 'same_as_root')
@@ -195,29 +213,32 @@ class ReadingTests(unittest.TestCase):
         for existing_progress in (False, True):
             with self.subTest(existing_progress=existing_progress):
                 store = Store(Path(self.temp.name) / f'cache-{existing_progress}.sqlite3')
-                store.initialize()
+                commands.execute(store, 'init')
                 if existing_progress:
-                    store.save_collection('moltbook', uid(2), 'moltbook', 0,
-                                          Batch(state={'cursor': 'saved'}))
-                store.save('moltbook', uid(2), [mail(20)])
+                    arrive(store, 'moltbook', uid(2), state={'cursor': 'saved'})
+                arrive(store, 'moltbook', uid(2), [mail(20)])
                 for action in ('read', 'needs_reply'):
-                    store.mark('moltbook', uid(20), action)
-                store.mark('moltbook', uid(20), 'replied', ref='https://example.invalid/reply')
+                    mark(store, 'moltbook', uid(20), action)
+                mark(store, 'moltbook', uid(20), 'replied', ref='https://example.invalid/reply')
                 saved = store.show('moltbook', uid(20))
-                _, state, revision = store.collection_state('moltbook', uid(2), 'moltbook')
+                _, state, revision = store.collection_state('moltbook', uid(2), str(DESCRIBED))
+                self.assertEqual(state, {'cursor': 'saved'} if existing_progress else {})
                 root = dict(mail(100), body='new context')
-                partial = Batch(originals=[root], state=state, complete=False, error='source_timeout')
-                validate(partial)
-                self.assertEqual(store.save_collection('moltbook', uid(2), 'moltbook', revision, partial),
-                                 (0, False))
-                self.assertEqual(store.collection_state('moltbook', uid(2), 'moltbook')[2], revision + 1)
 
-                stale = Batch(messages=[mail(20), dict(mail(10), parent_id=uid(100), addressing='direct')],
-                              originals=[dict(root, body='stale context')], state={'cursor': 'stale'})
-                validate(stale)
-                self.assertEqual(store.save_collection('moltbook', uid(2), 'moltbook', revision, stale),
-                                 (1, True))
-                _, current_state, current_revision = store.collection_state('moltbook', uid(2), 'moltbook')
+                def partial():
+                    # A pass that fails after it got newer context, and keeps the progress that it found.
+                    result = arrive(store, 'moltbook', uid(2), originals=[root], complete=False, error='source_timeout')
+                    self.assertEqual((result['added'], [error['error'] for error in result['errors']]),
+                                     (0, ['source_timeout']))
+                    self.assertEqual(store.collection_state('moltbook', uid(2), str(DESCRIBED))[2], revision + 1)
+
+                # A pass gives a saved message, a new one, old context and progress of its own. While it is under
+                # way, the failing pass is saved first.
+                stale = arrive(store, 'moltbook', uid(2), [mail(20), dict(mail(10), parent_id=uid(100), addressing='direct')],
+                               originals=[dict(root, body='stale context')], state={'cursor': 'stale'}, meanwhile=partial)
+                self.assertEqual((stale['added'], [error['error'] for error in stale['errors']]),
+                                 (1, ['collection_conflict']))
+                _, current_state, current_revision = store.collection_state('moltbook', uid(2), str(DESCRIBED))
                 self.assertEqual((current_state, current_revision), (state, revision + 1))
                 self.assertEqual(store.show('moltbook', uid(20)), saved)
                 incoming = next(m for m in store.page(context='brief')['messages'] if m['id'] == uid(10))
@@ -234,26 +255,33 @@ class ReadingTests(unittest.TestCase):
 
     def test_conflicting_parent_cannot_supply_context_or_previous_exchange(self):
         from boardmail.providers import parent_reference
-        self.store.save('moltbook', uid(2), [dict(mail(90), thread_id=uid(99)), mail(20)])
-        self.store.mark('moltbook', uid(20), 'replied', ref=parent_reference('moltbook', uid(100), uid(90)))
-        self.store.save('moltbook', uid(2), [dict(mail(10), parent_id=uid(90), addressing='direct')])
+        # The board says of a comment under one post that it answers a comment under another post.
+        board, sources = self.colony()
+        notify(board, original(90, 99, colony=True))
+        notify(board, original(20, 101, colony=True))
+        self.run_command('collect', sources=sources, fetch=board)
+        mark(self.store, 'the-colony', uid(20), 'replied', ref=parent_reference('the-colony', uid(101), uid(90)))
+        notify(board, {**original(10, 101, colony=True), 'parent_id': uid(90)}, 'reply_to_comment')
+        self.run_command('collect', sources=sources, fetch=board)
         brief = self.run_command(after=2)['messages'][0]['brief']
         self.assertEqual(brief['parent'], {'id': uid(90), 'status': 'unavailable', 'reason': 'thread_mismatch'})
         self.assertEqual(brief['previous_exchange'], {'status': 'unknown', 'messages': []})
 
     def test_fourclaw_synthesized_parent_remains_unknown_in_brief(self):
-        self.store.save('fourclaw', 'reader', [dict(mail(10), parent_id=uid(100), addressing='thread')])
-        brief = self.run_command(scope='all')['messages'][0]['brief']
-        self.assertEqual(brief['parent'], {'id': None, 'status': 'unknown'})
+        from test_fourclaw import THREAD, page, post, threads
+        # A reply in a thread that the account opened. The adapter gives the thread as what it answers.
+        board = threads({THREAD: page('Reader', [post('Other', 'A reply in the thread.')])})
+        self.run_command('collect', sources={'fourclaw': {'account_id': 'Reader', 'watched_threads': [THREAD]}},
+                         fetch=board)
+        message = self.run_command(scope='all')['messages'][0]
+        self.assertEqual((message['parent_id'], message['addressing']), (THREAD, 'thread'))
+        self.assertEqual(message['brief']['parent'], {'id': None, 'status': 'unknown'})
 
     def test_fruitflies_reply_to_our_answer_keeps_that_answer_as_context(self):
-        from boardmail import adapter_fruitflies as fruit
         from test_fruitflies import feed, post
         board = feed([post(2, 'our answer', author='alice', parent=1, kind='answer')],
                      [post(3, 'follow-up', parent=2, kind='answer')], [])
-        batch = fruit.collect({'account_id': 'alice'}, {}, frozenset(), fetch=board)
-        validate(batch)
-        self.store.save_collection('fly', 'alice', 'fruitflies', 0, batch)
+        self.run_command('collect', sources={'fly': {'account_id': 'alice', 'adapter': 'fruitflies'}}, fetch=board)
         brief = self.run_command()['messages'][0]['brief']
         self.assertEqual(brief['root']['body'], 'our answer')
         self.assertEqual(brief['root']['status'], 'cached')

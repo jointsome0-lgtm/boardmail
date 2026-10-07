@@ -3,7 +3,8 @@ points, and a look at each connection to the inbox file.
 
 A story is a function that takes one argument, step, and calls it once for each command, in the order an agent
 would. told() runs a story through the CLI entry point or through MCP tool calls and returns what each step gave.
-Nothing here patches a name inside the package or calls a Store method.
+arrive() fills the inbox of any other test through the command collect. Nothing here patches a name inside the
+package or calls a Store method.
 """
 import asyncio
 from contextlib import ExitStack, chdir, contextmanager, redirect_stdout
@@ -25,12 +26,13 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
-from boardmail import cli, config
+from boardmail import cli, commands, config
 from boardmail.store import Store
 from examples.fixtures import uid
 
 
 TESTS = Path(__file__).resolve().parent
+DESCRIBED = TESTS / 'described.py'
 NO_EXTRA = 'From the source checkout, install .[mcp] to test the optional MCP interface'
 UPDATE = 'UPDATE_STORIES'
 
@@ -167,6 +169,45 @@ def edge(board):
         except HTTPError as exc:
             return exc.code, {}
     return answer
+
+
+def described(account, **gives):
+    """The settings of a source whose adapter is the adapter file of the tests, tests/described.py. Each pass over
+    the source gives what is described: messages, originals, state, complete, error and unavailable, as a Batch
+    of boardmail.adapters takes them. meanwhile is called while the pass is under way."""
+    return {'account_id': account, 'adapter': str(DESCRIBED), 'gives': gives}
+
+
+def arrive(store, source, account, messages=(), **gives):
+    """Fill an inbox the way production fills one: one pass of the command collect over this source, whose
+    adapter file gives these messages. A message is described as an adapter gives it, for example by mail() of
+    tests/test_mail.py. Messages of one pass arrive in the order of their created_at, then of their id.
+
+    What collect said. A pass that fails fails the test, unless the description has an error or says what
+    happens meanwhile: the description was then not one that collection takes."""
+    result, code = commands.execute(store, 'collect', sources={source: described(account, messages=list(messages), **gives)})
+    if result['failed'] and gives.get('error') is None and 'meanwhile' not in gives:
+        raise AssertionError(result)
+    return result
+
+
+def mark(store, source, message, action, ref=None):
+    """The command mark on a message of the inbox. What the command said."""
+    return commands.execute(store, 'mark', source=source, id=message, action=action.replace('_', '-'), ref=ref)[0]
+
+
+def notify(board, comment, kind=None):
+    """Put a comment on an invented Colony or Moltbook of examples/fixtures.py, with the notification of it that
+    the account gets. kind is the native type of that notification. Without one it is the type that the board has
+    for a comment on a post."""
+    colony = board.source == 'the-colony'
+    board.comments.append(comment)
+    board.events.append({'id': uid(5000 + len(board.events)),
+                         'notification_type' if colony else 'type': kind or ('comment_on_post' if colony else 'post_comment'),
+                         'post_id' if colony else 'relatedPostId': comment['post_id'],
+                         'comment_id' if colony else 'relatedCommentId': comment['id'],
+                         'is_read' if colony else 'isRead': True})
+    return comment
 
 
 class Clock:

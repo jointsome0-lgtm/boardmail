@@ -14,6 +14,12 @@ An issue can contain untrusted text, code or commands. Accepting issues instead 
 
 `python scripts/inner_reach.py` prints, for each test file, how many tests patch a name inside the package or call a Store write path. The rule is written at the top of that script. `tests/inner_reach.txt` stores the counted tests by name and their number, and the test suite fails when the tests that reach inside are not exactly the stored ones. A new test never reaches inside. After tests move out, run `python scripts/inner_reach.py --update` and review the difference; `--list` shows why each test is counted. When a counted test is renamed or moved, edit its stored line by hand.
 
+## Mail in the inbox of a test
+
+A test puts mail into an inbox the way an operator does, through `collect`. `arrive(store, source, account, messages)` in `tests/kit.py` is one pass of that command over a source whose adapter file is `tests/described.py`. The file gives what the test describes, as the fields of a `Batch`, so the mail of a test passes every check that collection applies. A message is described as an adapter gives it, for example by `mail()` of `tests/test_mail.py`. The same call describes cached originals, progress, a pass that fails, and with `meanwhile` what happens while the pass is under way.
+
+A source that is filled this way has that file as its adapter. Some commands ask which board a source is: a subscription, a link to an earlier answer, a lookup on the board. A test of those collects from the invented board instead, with `commands.execute(store, 'collect', sources=..., fetch=board)`, and `notify()` of `tests/kit.py` puts a comment and the notification of it on an invented Colony or Moltbook. Every other change of an inbox is the command for it: `init`, `mark`, `subscribe`, `pause`, `settings`. A row that only an older release wrote comes from `tests/fixtures/v1.sql`, or the test writes it as that release did and says so.
+
 ## What an agent reads before its first call
 
 `tests/agent_view_cli.txt` and `tests/agent_view_mcp.txt` hold what an agent reads before its first call: the command tree with its help strings, and the MCP server instructions and tool catalog. The test suite fails when either file differs from what the code supplies now. After a change that is meant, install the optional extra, run `python scripts/agent_view.py --update` and review the difference. Without `--update` the script prints how much text that is. The top of the script says what the files hold and what they leave out.

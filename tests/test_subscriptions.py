@@ -17,8 +17,7 @@ from boardmail import commands, config
 from boardmail.adapters import Batch, collect_all
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, original, settings, together, uid
-from kit import Clock, fixed
-from test_mail import mail
+from kit import Clock, fixed, mark
 from test_subscription_providers import ThreadBoard
 
 
@@ -35,14 +34,27 @@ class SubscriptionTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=10)
         return result.returncode, json.loads(result.stdout)
 
+    def follow(self, store, source, thread, settings=None, *, subscribed=True):
+        """The command subscribe or unsubscribe, with the settings of the source if the call has a config. Whether
+        it changed anything."""
+        result, _ = commands.execute(store, 'subscribe' if subscribed else 'unsubscribe', source=source, thread=thread,
+                                     sources={source: settings} if settings else None)
+        return result['changed']
+
     def test_all_boards_cli_persistence_idempotence_and_saved_marks(self):
         sources = {source: {'account_id': uid(n)} for n, source in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
-        self.store.initialize(sources)
-        self.store.save('postingboard', uid(1), [mail(10)])
+        commands.execute(self.store, 'init', sources=sources)
+        # The invented Postingboard has mail for the account before any thread is selected. Its client waits
+        # between two requests, so the clock is fixed for a pass and a wait only moves it.
+        watching = {'postingboard': {**settings(self.root)['postingboard'], **sources['postingboard']}}
+        board, clock = FixtureBoard('postingboard', watching['postingboard']), Clock(1790000000)
+        with fixed(clock):
+            self.assertEqual(collect_all(self.store, watching, fetch=board)['failed'], False)
+        message = self.store.page()['messages'][0]['id']
         for action in ('read', 'needs_reply'):
-            self.store.mark('postingboard', uid(10), action)
-        self.store.mark('postingboard', uid(10), 'replied', ref='https://example.invalid/reply')
-        saved = self.store.show('postingboard', uid(10))
+            mark(self.store, 'postingboard', message, action)
+        mark(self.store, 'postingboard', message, 'replied', ref='https://example.invalid/reply')
+        saved = self.store.show('postingboard', message)
         thread = 'abcdef00-0000-0000-0000-000000000100'
         for source in sources:
             for changed in (True, False):
@@ -64,10 +76,13 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual((result['event'], result['subscribed'], result['changed']),
                              ('unsubscribed', False, changed))
         self.assertEqual(len(self.store.subscriptions()), 5)
-        self.assertEqual(self.store.show('postingboard', uid(10)), saved)
+        self.assertEqual(self.store.show('postingboard', message), saved)
         self.cli('subscribe', 'postingboard', thread)
-        self.assertEqual(self.store.save('postingboard', uid(1), [mail(10)]), 0)
-        self.assertEqual(self.store.show('postingboard', uid(10)), saved)
+        with fixed(clock):
+            again = collect_all(self.store, watching, fetch=board)
+        self.assertEqual((again['added'], again['failed']), (0, False))
+        self.assertIn('/v1/posts/' + thread, [path for path, _, _ in board.calls])
+        self.assertEqual(self.store.show('postingboard', message), saved)
 
     def test_old_databases_read_without_migration_and_explicit_selection_preserves_mail(self):
         for version in (1, 2):
@@ -77,8 +92,9 @@ class SubscriptionTests(unittest.TestCase):
                     db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
                 store = Store(path)
                 if version == 2:
-                    store.prepare_collection()
-                    with store.connect(write=True) as db:
+                    commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
+                    # No command takes the table away again. The file has lost it somewhere else.
+                    with closing(sqlite3.connect(path)) as db, db:
                         db.execute('DROP TABLE subscriptions')
                 saved = store.page()['messages']
                 before = path.read_bytes()
@@ -87,7 +103,7 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), before)
                 if version == 1:
                     with self.assertRaisesRegex(config.MailError, 'subscription_config_required'):
-                        store.set_subscription('moltbook', uid(100), True)
+                        self.follow(store, 'moltbook', uid(100))
                     self.assertEqual(path.read_bytes(), before)
                 for active in (False, True, True, False):
                     commands.execute(store, 'subscribe' if active else 'unsubscribe', source='moltbook',
@@ -96,7 +112,7 @@ class SubscriptionTests(unittest.TestCase):
                     self.assertEqual(store.page()['messages'], saved)
 
     def test_alias_before_collection_and_invalid_operations_do_not_write(self):
-        self.store.initialize()
+        commands.execute(self.store, 'init')
         cfg = self.root / 'config.json'
         cfg.write_text(json.dumps({'database': 'unused.sqlite3', 'sources': {
             'research': {'adapter': 'postingboard', 'account_id': uid(1), 'api_key_file': 'unused.key', 'threads': []},
@@ -132,8 +148,7 @@ class SubscriptionTests(unittest.TestCase):
                     db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
                 store = Store(path)
                 if earlier_alias:
-                    store.set_subscription('research', uid(200), True,
-                                           {'account_id': uid(3), 'adapter': 'postingboard'})
+                    self.follow(store, 'research', uid(200), {'account_id': uid(3), 'adapter': 'postingboard'})
                 saved = store.page()['messages']
                 with store.connect() as db:
                     source = dict(db.execute("SELECT * FROM sources WHERE source='moltbook'").fetchone())
@@ -145,11 +160,10 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertEqual(store.page()['messages'], saved)
                 self.assertEqual(store.subscriptions('moltbook'), [])
 
-                self.assertTrue(store.set_subscription('moltbook', uid(100), True,
-                                                       {'account_id': uid(2), 'adapter': 'moltbook'}))
+                self.assertTrue(self.follow(store, 'moltbook', uid(100), {'account_id': uid(2), 'adapter': 'moltbook'}))
                 with store.connect() as db:
                     self.assertEqual(dict(db.execute("SELECT * FROM sources WHERE source='moltbook'").fetchone()), source)
-                store.prepare_collection()
+                commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
                 known, state, revision = store.collection_state('moltbook', uid(2), 'moltbook')
                 self.assertEqual((known, state, revision), ({uid(10), uid(11)}, {}, 0))
                 self.assertEqual(store.page()['messages'], saved)
@@ -163,10 +177,9 @@ class SubscriptionTests(unittest.TestCase):
                     db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
                 store = Store(path)
                 saved = store.page()['messages']
-                self.assertTrue(store.set_subscription(source, uid(200), True,
-                                                       {'account_id': uid(1), 'adapter': 'the-colony'}))
-                self.assertFalse(store.set_subscription(source, uid(200), True))
-                store.prepare_collection()
+                self.assertTrue(self.follow(store, source, uid(200), {'account_id': uid(1), 'adapter': 'the-colony'}))
+                self.assertFalse(self.follow(store, source, uid(200)))
+                commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
                 self.assertEqual(store.collection_state(source, uid(1), 'the-colony'), (set(), {}, 0))
                 self.assertEqual(store.adapter('moltbook'), 'moltbook')
                 self.assertEqual(store.page()['messages'], saved)
@@ -176,10 +189,10 @@ class SubscriptionTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.path = self.root / f'{source}.sqlite3'
                 self.store = Store(self.path)
-                self.store.initialize()
+                commands.execute(self.store, 'init')
                 sources = {source: {'account_id': uid(1), 'adapter': 'the-colony',
                                     'api_key_file': str(self.root / 'unused.key')}}
-                self.store.set_paused(source, True, sources[source])
+                commands.execute(self.store, 'pause', source=source, sources=sources)
                 before = self.path.read_bytes()
                 code, result = self.cli('subscribe', source, uid(100))
                 self.assertEqual((code, result.get('error'), result.get('next_action')),
@@ -191,7 +204,7 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertEqual(self.cli('--config', cfg, 'subscribe', source, uid(100))[0], 0)
                 self.assertTrue(self.store.is_paused(source))
                 self.assertFalse(self.cli('subscribe', source, uid(100))[1]['changed'])
-                self.store.set_paused(source, False)
+                commands.execute(self.store, 'resume', source=source)
                 # The invented Colony is asked for the thread, under the adapter that the config names.
                 cfg = {**sources[source], 'api_key_file': settings(self.root)['the-colony']['api_key_file']}
                 board = ThreadBoard('the-colony', cfg)
@@ -205,9 +218,9 @@ class SubscriptionTests(unittest.TestCase):
         sources = {f'board{n}': {'account_id': uid(n), 'adapter': adapter, **({'api_key_file': key} if adapter in fused else {})}
                    for n, adapter in enumerate(config.SUBSCRIPTION_ADAPTERS, 1)}
         before = deepcopy(sources)
-        self.store.initialize(sources)
+        commands.execute(self.store, 'init', sources=sources)
         for source in sources:
-            self.store.set_subscription(source, uid(100), True)
+            self.follow(self.store, source, uid(100))
         # Postingboard, Colony and Moltbook are invented boards: the threads that a board is asked for are the
         # ones that its collector was handed. Each other board gets a collector that notes what it is handed.
         boards = {cfg['adapter']: (FixtureBoard if cfg['adapter'] == 'postingboard' else ThreadBoard)(cfg['adapter'], cfg)
@@ -231,9 +244,9 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual([threads(adapter) for adapter in fused], [[uid(100)]] * 3)
             self.assertEqual(seen, [(adapter, [uid(100)]) for adapter in config.SUBSCRIPTION_ADAPTERS[3:]])
             seen.clear()
-            self.store.set_subscription('board1', uid(100), False)
-            self.store.set_subscription('board2', uid(101), True)
-            self.store.set_paused('board3', True)
+            self.follow(self.store, 'board1', uid(100), subscribed=False)
+            self.follow(self.store, 'board2', uid(101))
+            commands.execute(self.store, 'pause', source='board3')
             self.assertFalse(collect_all(self.store, sources, fetch=together(boards))['failed'])
             self.assertEqual([threads(adapter) for adapter in fused[:2]], [[], [uid(100), uid(101)]])
         self.assertEqual(boards['moltbook'].calls, [])
@@ -241,20 +254,20 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(sources, before)
 
     def test_custom_adapter_keeps_its_own_settings(self):
-        sources = {'example': {'account_id': 'demo-agent', 'adapter': '/unused.py', 'subscriptions': 'custom-option'}}
-        self.store.initialize(sources)
-        received = []
-        def collect(cfg, state, known):
-            received.append(dict(cfg))
-            return Batch()
-        with patch('boardmail.adapters.runpy.run_path', return_value={'API_VERSION': 1, 'collect': collect}):
-            self.assertFalse(collect_all(self.store, sources)['failed'])
-        self.assertEqual(received, [sources['example']])
+        # The adapter file of an operator. It keeps what it is handed as its progress.
+        adapter = self.root / 'keeps.py'
+        adapter.write_text('from boardmail.adapters import Batch\nAPI_VERSION = 1\n\n\n'
+                           'def collect(settings, state, known):\n    return Batch(state={"handed": settings})\n')
+        sources = {'example': {'account_id': 'demo-agent', 'adapter': str(adapter), 'subscriptions': 'custom-option'}}
+        commands.execute(self.store, 'init', sources=sources)
+        self.assertFalse(collect_all(self.store, sources)['failed'])
+        self.assertEqual(self.store.collection_state('example', 'demo-agent', str(adapter))[1],
+                         {'handed': sources['example']})
 
     def test_unsubscribe_during_collection_keeps_pass_snapshot_without_resurrecting_selection(self):
         sources = {'moltbook': settings(self.root)['moltbook']}
-        self.store.initialize(sources)
-        self.store.set_subscription('moltbook', uid(100), True)
+        commands.execute(self.store, 'init', sources=sources)
+        self.follow(self.store, 'moltbook', uid(100))
         # The invented Moltbook has the thread, with one comment of another account under it.
         board = ThreadBoard('moltbook', sources['moltbook'])
         board.posts[uid(100)] = {**original(100, 100), 'title': 'Subscribed thread'}
@@ -283,17 +296,17 @@ class SubscriptionTests(unittest.TestCase):
             running = pool.submit(collect_all, self.store, sources, fetch=board)
             try:
                 self.assertTrue(entered.wait(5))
-                Store(self.path).set_subscription('moltbook', uid(100), False)
+                self.follow(Store(self.path), 'moltbook', uid(100), subscribed=False)
             finally:
                 finish.set()
             self.assertEqual(running.result(timeout=5)['added'], 1)
             self.assertEqual(self.store.subscriptions(), [])
             page, _ = commands.execute(self.store, 'list')
             self.assertEqual((page['messages'], page['thread_activity'][0]['count']), ([], 1))
-            self.store.mark('moltbook', uid(10), 'read')
+            mark(self.store, 'moltbook', uid(10), 'read')
             saved = self.store.show('moltbook', uid(10))
             self.assertEqual(collect_all(self.store, sources, fetch=board)['added'], 0)
-            self.store.set_subscription('moltbook', uid(100), True)
+            self.follow(self.store, 'moltbook', uid(100))
             self.assertEqual(collect_all(self.store, sources, fetch=board)['added'], 0)
             self.assertEqual(self.store.show('moltbook', uid(10)), saved)
         self.assertEqual(snapshots(), [[uid(100)], [], [uid(100)]])
