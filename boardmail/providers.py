@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 
 from . import addressing, subscriptions, transport
-from .adapters import Batch, Board
+from .adapters import Batch, Board, Originals
 from .adapters import collect_all  # Kept for existing Python callers of the 0.1 collector.
 from .errors import MailError, uuid
 
@@ -1026,17 +1026,21 @@ def postingboard_settings(settings):
     settings["threads"] = list(dict.fromkeys(uuid(t) for t in threads))
 
 
-def declaration(name, coverage, *fields, configure=None):
-    """What one of the three boards of this module declares. Each has an API key and a UUID for an account."""
+def declaration(name, coverage, find, *fields, configure=None, parents_since_discovery=False, **asked):
+    """What one of the three boards of this module declares. Each has an API key and a UUID for an account.
+    find reads an original of the board, and asked says how Originals calls it."""
     return Board(name=name, coverage=coverage, collect=partial(collect, name), account=uuid, configure=configure,
                  fields=frozenset(("api_key_file", "mention_aliases", *fields)), required=frozenset(("api_key_file",)),
-                 since_v1=True)
+                 since_v1=True, originals=Originals(partial(Client, name), find, **asked),
+                 parents_since_discovery=parents_since_discovery)
 
 
 BOARDS = (
     declaration("postingboard", "Configured roots, optional native Inbox/alias search, and activity in locally subscribed roots. Bounded backfill does not prove complete history.",
-                "threads", "inbox", "alias_search", configure=postingboard_settings),
+                postingboard_lookup, "threads", "inbox", "alias_search", configure=postingboard_settings,
+                parents_since_discovery=True),
     declaration("the-colony", "Retained reply/mention notifications and available comment pages in subscribed roots, confirmed against anonymous public originals. Retention is not guaranteed.",
-                "totp_secret_file"),
-    declaration("moltbook", "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional."),
+                colony_lookup, "totp_secret_file", root_as_thread=True),
+    declaration("moltbook", "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+                moltbook_lookup, keeps=True, root_as_thread=True, comment_by_thread=True),
 )
