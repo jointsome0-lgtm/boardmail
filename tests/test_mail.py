@@ -16,7 +16,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from boardmail import cli, commands, providers, table
+from boardmail import cli, commands, table
 from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store

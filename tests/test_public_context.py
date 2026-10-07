@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from urllib.error import HTTPError
 
-from boardmail import commands, providers
+from boardmail import adapter_moltbook, commands
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from boardmail import adapter_common
@@ -156,8 +156,8 @@ class PublicContextTests(unittest.TestCase):
             raise HTTPError('https://example.invalid', 404, '', {}, io.BytesIO())
         self.client.get = absent
         client = BOARDS['moltbook'].originals.client(self.cfg, fetch=self.client)
-        self.assertEqual(providers.moltbook_lookup(client, uid(999)), ('unknown', 'thread_unknown', None))
-        self.assertEqual(providers.moltbook_lookup(client, self.target, self.root), ('unavailable', 'thread_missing', None))
+        self.assertEqual(adapter_moltbook.moltbook_lookup(client, uid(999)), ('unknown', 'thread_unknown', None))
+        self.assertEqual(adapter_moltbook.moltbook_lookup(client, self.target, self.root), ('unavailable', 'thread_missing', None))
 
     def test_clawdchat_lookup_preserves_unavailable_and_malformed_parent_status(self):
         self.setup_source('clawdchat')

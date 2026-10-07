@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 import boardmail
-from boardmail import adapter_common, commands, errors, providers, transport
+from boardmail import adapter_colony, adapter_common, commands, errors, transport
 
 
 TESTS = Path(__file__).resolve().parent
@@ -16,7 +16,7 @@ BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet c
          'adapter_common.py: code',                              # the code of a refusal that a board explains: a Colony sign-in code
          'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
          'errors.py: error',                                     # the code that a call names with error=
-         "providers.py: error or 'reply_' + status",             # reply_deleted, reply_missing or a lookup error
+         "adapter_moltbook.py: error or 'reply_' + status",      # reply_deleted, reply_missing or a lookup error
          'transport.py: about.large',                            # what a board calls an answer over its size cap
          'transport.py: about.late',                             # what a board calls an answer that is late
          'transport.py: self.refused'}                           # what a board calls a redirect
@@ -73,7 +73,7 @@ class ErrorCodeTests(unittest.TestCase):
         literal, built = raised()
         self.assertEqual(literal - set(errors.CODES), set())
         self.assertEqual(built, BUILT)
-        self.assertEqual({code.lower() for code in providers.COLONY_AUTH_CODES} - set(errors.CODES), set())
+        self.assertEqual({code.lower() for code in adapter_colony.COLONY_AUTH_CODES} - set(errors.CODES), set())
         named = {code for about in transport.BOARDS.values()
                  for code in (about.late, about.large, about.network, about.content, about.status, about.redirect)}
         self.assertEqual(named - set(errors.CODES) - {None}, set())

@@ -83,7 +83,7 @@ CODES = {
 
     # The codes below are built at run time or reported without a raise, so no
     # raise holds them as a literal to search for.
-    # A Colony sign-in refusal, from providers.colony_auth_error.
+    # A Colony sign-in refusal, from adapter_colony.colony_auth_error.
     'auth_2fa_invalid': Entry('check_totp_secret_and_system_clock'),
     'auth_2fa_required': Entry('configure_colony_totp_secret_file'),
     'auth_agent_only': Entry('check_config_and_credentials'),

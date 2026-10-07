@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from urllib.parse import urlsplit
 
-from boardmail import boards, config, providers
+from boardmail import boards, config
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, settings, uid
