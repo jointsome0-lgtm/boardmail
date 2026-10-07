@@ -109,8 +109,6 @@ class PauseTests(unittest.TestCase):
                 store.set_paused('moltbook', True)
                 self.assertEqual(store.page()['messages'], messages)
                 self.assertTrue(Store(path).is_paused('moltbook'))
-                with closing(sqlite3.connect(path)) as db:
-                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], version)
                 store.set_paused('moltbook', False)
                 self.assertEqual(store.page()['messages'], messages)
 

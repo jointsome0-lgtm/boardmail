@@ -165,9 +165,6 @@ class ReadingTests(unittest.TestCase):
         store.prepare_collection()
         self.assertEqual(store.show('moltbook', uid(10))['reply_ref'], 'https://example.invalid/reply/old')
         self.assertEqual(store.page()['next_after'], 2)
-        with store.connect() as db:
-            self.assertIn('addressing', store._columns(db))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
 
     def test_brief_uses_fetched_public_originals_without_inbox_pollution_or_network(self):
         root = dict(mail(100), body='r' * 5000)

@@ -181,8 +181,6 @@ class TagTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
             self.tag('new', source='moltbook')
             self.assertEqual(self.rows(), saved)
-            with self.store.connect() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], version)
 
     def test_invalid_selections_and_filters_fail_without_writes_or_collection(self):
         before = self.path.read_bytes()

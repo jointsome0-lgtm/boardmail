@@ -29,3 +29,9 @@ A story is one offline session, told command by command in the order an agent wo
 `tests/kit.py` holds what a story stands on: invented board answers at the standard-library network edge, a fixed clock and fixed keys, and both entry points. A story patches no name inside the package and calls no Store method.
 
 After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_story*.py'` and review the difference. A changed result is a change an agent sees.
+
+## The inbox file
+
+`tests/file_shape.txt` says what an inbox file has after each command: its version number, tables, columns and indexes. `tests/test_file_shape.py` runs each command once on a fresh copy of three files: a new inbox, the bundled version-1 file, and that file after its first collect. The test suite fails when a file then differs from the stored table, when a command that only reads changes a byte of a file, and when a command has no row. A new command needs a row there. What a command does to the shape of the file belongs in this table and not in another test.
+
+After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_file_shape.py'` and review the difference.

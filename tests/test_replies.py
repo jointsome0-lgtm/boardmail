@@ -647,8 +647,6 @@ os._exit(79)
             self.assertEqual((code, result['error']), (2, error))
             self.assertNotIn(self.body, json.dumps(result))
             self.assertEqual(self.path.read_bytes(), before)
-        with self.store.connect() as db:
-            self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='reply_attempts'").fetchone())
         self.file.write_bytes(b'\xff')
         self.assertEqual(self.cli('prepare', '--body-file', self.file)[0]['error'], 'invalid_reply_body')
         self.assertEqual(self.path.read_bytes(), before)
@@ -690,8 +688,6 @@ os._exit(79)
                 result, _ = commands.execute(store, 'reply_prepare', source=target['source'], id=target['id'], body=self.body)
                 self.assertEqual(result['reply']['state'], 'prepared')
                 self.assertEqual(store.page()['messages'], messages)
-                with store.connect() as db:
-                    self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], version)
 
     def test_every_source_uses_the_same_local_protocol_even_when_paused(self):
         from boardmail.config import COVERAGE

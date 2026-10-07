@@ -256,8 +256,8 @@ def check_stored(test, name, text):
     stored = path.read_text(encoding='utf-8')
     if text != stored:
         changes = difflib.unified_diff(stored.splitlines(), text.splitlines(), 'stored', 'now', n=2, lineterm='')
-        test.fail(f'A result changed. If that is meant, run the stories with {UPDATE}=1 and review the difference '
-                  f'in {name}.\n' + '\n'.join(changes))
+        test.fail(f'This is not what {name} stores. If the change is meant, run the test with {UPDATE}=1 and review '
+                  'the difference.\n' + '\n'.join(changes))
 
 
 def check_both(test, typed, called, named):
