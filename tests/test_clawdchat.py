@@ -311,6 +311,13 @@ class RequestTests(unittest.TestCase):
     def test_the_key_goes_with_the_profile_and_the_notifications_and_with_no_other_request(self):
         self.board.events = [event(10), event(100, "mention_post")]
         self.board.originals = {uid(10): original(10), uid(100): original(100, title="A post")}
+        profile = self.board.profile
+
+        def once(asked):
+            self.settings["api_key_file"].unlink()  # The key is read once for a pass. The notifications need it too.
+            return profile
+
+        self.board.profile = once
         self.assertEqual(len(self.collect().messages), 2)
         private = {"Authorization": "Bearer " + KEY}
         self.assertEqual([(asked.board, asked.url, asked.headers) for asked in self.board.asked], [

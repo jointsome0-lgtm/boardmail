@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from urllib.error import URLError
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from boardmail import adapter_botnet as adapter, commands
 from boardmail.adapters import Batch, validate
@@ -312,6 +312,13 @@ class PassTests(unittest.TestCase):
 
     def test_the_key_goes_with_the_profile_and_the_inbox_and_with_no_other_request(self):
         self.board.add(10)
+        profile = self.board.profile
+
+        def once(asked):
+            self.settings["api_key_file"].unlink()  # The key is read once for a pass. The inbox needs it too.
+            return profile
+
+        self.board.profile = once
         self.assertEqual(len(self.collect().messages), 1)
         private, forum = {"Authorization": "Bearer " + KEY}, "https://botnet.com/api/forum"
         self.assertEqual([(asked.board, asked.url, asked.headers) for asked in self.board.asked], [
@@ -377,6 +384,45 @@ class PassTests(unittest.TestCase):
         batch = self.collect()
         self.assertEqual((batch.error, len(batch.messages)), ("invalid_response", 1))
         self.assertIn(mid(30), self.known)
+
+
+class ExpandTests(unittest.TestCase):
+    """The expand command at the invented board. The collect command filled the inbox from the same board, so the
+    test writes nothing into the inbox file itself."""
+    def test_expand_asks_the_board_once_for_each_original_and_without_the_key(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        store, board = Store(Path(folder.name) / "mail.sqlite3"), Board()
+        sources = {"botnet": {"adapter": "botnet", "account_id": OWNER, "api_key_file": key_file(self)}}
+        asks = {"source": "botnet", "thread": TOPIC, "through": 2, "sources": sources, "fetch": board}
+        commands.execute(store, "init", sources=sources)
+        board.add(10)
+        board.add(11, parentMessageId=mid(10))
+        self.assertEqual(commands.execute(store, "collect", sources=sources, fetch=board)[0]["added"], 2)
+        sources["botnet"]["api_key_file"].unlink()  # What is public is read without the key of the account.
+        board.calls.clear()
+        result, code = commands.execute(store, "expand", **asks)
+        self.assertEqual((code, result["complete"], result["root"]["id"], result["root"]["origin"]),
+                         (0, True, TOPIC, "remote"))
+        self.assertEqual([(item["id"], item["parent"]["id"], item["parent"]["status"]) for item in result["items"]],
+                         [(mid(10), OPENER, "available"), (mid(11), mid(10), "available")])
+        # The topic is the root and no parent. Message 10 is asked once, though it is also the parent of 11.
+        asked = [("/topics/" + TOPIC, {}, False),
+                 *[("/topic-messages/" + quote(name, safe=""), {}, False) for name in (mid(10), OPENER, mid(11))]]
+        self.assertEqual(board.calls, asked)
+        # An opener that is in another topic now is no parent, and a message that the board no longer has is
+        # missing.
+        board.originals[OPENER]["topicId"] = uid(999)
+        board.originals[mid(11)] = 404
+        result, code = commands.execute(store, "expand", **asks)
+        first, second = result["items"]
+        self.assertEqual((code, result["complete"], first["parent"]["status"], first["parent"]["error"]),
+                         (1, False, "unavailable", "invalid_response"))
+        self.assertEqual((second["target"]["remote_status"], second["target"]["error"], second["parent"]["status"]),
+                         ("missing", "http_404", "available"))
+        self.assertEqual(board.calls, asked * 2)
+        result, code = commands.execute(store, "expand", **asks, local=True)
+        self.assertEqual((result["fetched"], len(board.calls)), (False, 8), "A local read asks the board nothing")
 
 
 if __name__ == "__main__":
