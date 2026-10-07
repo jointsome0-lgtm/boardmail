@@ -2,6 +2,7 @@
 import base64
 import binascii
 from datetime import datetime
+from functools import partial
 import hashlib
 import hmac
 from http.client import HTTPException
@@ -10,7 +11,6 @@ import re
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, build_opener
 
 from . import addressing, subscriptions, transport
 from .config import MailError, uuid
@@ -20,7 +20,6 @@ HOSTS = {"postingboard":"https://getpostingboard.dev", "the-colony":"https://the
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
-MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_AUTH_ERROR_BYTES = 4096
 COLONY_AUTH_CODES = frozenset({
     "AUTH_2FA_REQUIRED", "AUTH_2FA_INVALID", "AUTH_INVALID_TOKEN",
@@ -28,9 +27,11 @@ COLONY_AUTH_CODES = frozenset({
 })
 
 
-class NoRedirect(transport.NoRedirect):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise MailError("redirect_refused")
+# The three boards of this module refuse a redirect alike, and call a failed request alike. Where no client is
+# at hand to say which board is meant, this one answers for the three.
+ANY = "moltbook"
+# For a caller that builds an opener of its own.
+NoRedirect = partial(transport.NoRedirect, ANY)
 
 
 def colony_auth_error(exc):
@@ -86,7 +87,7 @@ class Client:
         self.token = None
         self.deadline = time.monotonic()+SOURCE_SECONDS
         self.next_request = 0
-        self.opener = build_opener(NoRedirect())
+        self.opener = transport.opener(source)
 
     def _request(self, path, *, token=None, body=None):
         if self.source == "postingboard":
@@ -95,45 +96,20 @@ class Client:
         remaining = self.deadline-time.monotonic()
         if remaining <= 0:
             raise MailError("budget_exhausted")
-        headers = {"Accept":"application/json", "User-Agent":"boardmail/0.2"}
-        if token:
-            headers["Authorization"] = "Bearer " + token
-        if self.source == "postingboard":
-            headers["X-Agent-Protocol"] = "getpostingboard/1"
-        if body is not None:
-            headers["Content-Type"] = "application/json"
         prefix = "" if self.source == "postingboard" else "/api/v1"
-        request = Request(self.host+prefix+path, headers=headers,
-                          data=json.dumps(body).encode() if body is not None else None)
         try:
-            response = self.opener.open(request, timeout=min(10,remaining))
+            return transport.fetch(self.source, self.host+prefix+path, through=self.opener, left=remaining,
+                                   headers={"Authorization": "Bearer " + token} if token else None, body=body)
         except HTTPError as exc:
             if self.source == "the-colony" and (token or path == "/auth/token") and exc.code in (400, 401, 403):
                 code = colony_auth_error(exc)
                 if code:
                     raise MailError(code) from None
             raise
-        with response:
-            chunks, size = [], 0
-            while True:
-                if time.monotonic() > self.deadline:
-                    raise MailError("source_timeout")
-                chunk = response.read1(65536)
-                if not chunk:
-                    return json.loads(b"".join(chunks))
-                size += len(chunk)
-                if size > MAX_RESPONSE_BYTES:
-                    raise MailError("response_too_large")
-                chunks.append(chunk)
 
     def get(self, path, params=None, *, authenticated=False):
         if authenticated and self.token is None:
-            try:
-                key = self.settings["api_key_file"].read_text().strip()
-                if not key:
-                    raise ValueError()
-            except (OSError, ValueError):
-                raise MailError("credentials_unavailable") from None
+            key = transport.key(self.source, self.settings["api_key_file"])
             if self.source == "the-colony":
                 body = {"api_key": key}
                 if "totp_secret_file" in self.settings:
@@ -183,12 +159,7 @@ FAILURES = (MailError, OSError, HTTPException, ValueError, KeyError, TypeError, 
 
 
 def error_code(exc):
-    if isinstance(exc, MailError): return str(exc)
-    if isinstance(exc, HTTPError):
-        exc.close()
-        return "http_"+str(exc.code)
-    if isinstance(exc, (OSError, HTTPException)): return "network_error"
-    return "invalid_response"
+    return transport.failure(ANY, exc)
 
 
 def failure(batch, exc):

@@ -1,12 +1,8 @@
 """Botnet forum inbox, with bodies confirmed through anonymous public reads."""
 from copy import deepcopy
-from http.client import HTTPException
-import json
-from pathlib import Path
+from functools import partial
 import time
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, build_opener
 
 from . import addressing, transport
 from .adapters import Batch
@@ -17,14 +13,12 @@ ORIGIN = "https://botnet.com"
 PAGE_SIZE = 8
 MAX_PENDING = 256
 MAX_REQUESTS = 40
-MAX_RESPONSE_BYTES = 1024 * 1024
 SOURCE_SECONDS = 45
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
 
 
-class NoRedirect(transport.NoRedirect):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise MailError("redirect_refused")
+# For a caller that builds an opener of its own.
+NoRedirect = partial(transport.NoRedirect, "botnet")
 
 
 class Client:
@@ -33,7 +27,7 @@ class Client:
         self.settings, self.key = settings, None
         self.end = self.deadline = time.monotonic() + SOURCE_SECONDS
         self.requests = 0
-        self.opener = build_opener(NoRedirect())
+        self.opener = transport.opener("botnet")
         self.cache = {}
 
     def phase(self, seconds):
@@ -49,46 +43,22 @@ class Client:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0 or self.requests >= MAX_REQUESTS:
             raise MailError("budget_exhausted")
-        headers = {"Accept": "application/json", "User-Agent": "boardmail"}
+        headers = None
         if authenticated:
             if self.key is None:
-                try:
-                    with Path(self.settings.get("api_key_file")).open() as stream:
-                        key = stream.read(4097).strip()
-                    if not key or len(key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in key):
-                        raise ValueError()
-                    self.key = key
-                except (OSError, UnicodeError, ValueError, TypeError):
-                    raise MailError("credentials_unavailable") from None
-            headers["Authorization"] = "Bearer " + self.key
+                self.key = transport.key("botnet", self.settings.get("api_key_file"))
+            headers = {"Authorization": "Bearer " + self.key}
         self.requests += 1
-        request = Request(ORIGIN + "/api/forum" + path + ("?" + urlencode(params) if params else ""), headers=headers)
+        url = ORIGIN + "/api/forum" + path + ("?" + urlencode(params) if params else "")
         try:
-            with self.opener.open(request, timeout=min(4, remaining)) as response:
-                chunks, size = [], 0
-                while True:
-                    if time.monotonic() >= self.deadline:
-                        raise MailError("budget_exhausted")
-                    chunk = response.read1(65536)
-                    if not chunk:
-                        result = json.loads(b"".join(chunks))
-                        if not isinstance(result, dict):
-                            raise ValueError()
-                        if not authenticated:
-                            self.cache[cache_key] = result
-                        return deepcopy(result)
-                    size += len(chunk)
-                    if size > MAX_RESPONSE_BYTES:
-                        raise MailError("response_too_large")
-                    chunks.append(chunk)
-        except HTTPError as exc:
-            code = exc.code
-            exc.close()
-            raise MailError("http_" + str(code)) from None
-        except (URLError, OSError, HTTPException):
-            raise MailError("network_error") from None
-        except (ValueError, UnicodeError):
-            raise MailError("invalid_response") from None
+            result = transport.fetch("botnet", url, through=self.opener, left=remaining, headers=headers)
+            if not isinstance(result, dict):
+                raise ValueError()
+        except transport.FAILED as exc:
+            raise MailError(transport.failure("botnet", exc)) from None
+        if not authenticated:
+            self.cache[cache_key] = result
+        return deepcopy(result)
 
 
 def message_id(value):

@@ -4,7 +4,10 @@ Each case is one `boardmail collect` on a new inbox with one source. The board i
 network edge, so a request is what urllib would have put on the wire. board_requests.txt stores every request as
 it left the process and what the command gave. That file stays as it is when the HTTP work of a board client
 moves to another place inside the package.
+
+That place is boardmail/transport.py. No other module of the package names what sends a request.
 """
+import ast
 from itertools import count
 import json
 from pathlib import Path
@@ -14,6 +17,7 @@ import unittest
 from urllib.error import HTTPError
 from urllib.parse import parse_qsl, unquote, urlsplit
 
+import boardmail
 from examples import fixtures
 from examples.fixtures import FixtureClient, uid
 import kit
@@ -31,6 +35,7 @@ INTRO = """\
 What each board client sent and what the command gave, case by case. A case is one collect on a new inbox.
 A request line ends with the headers that the request carried, the seconds that its socket may stay silent and
 the seconds since the pass began at which it left. The sets of headers are numbered under the name of the board.
+A board that has a key file has cases for what the file holds. Its board is healthy in them.
 """
 
 
@@ -149,20 +154,33 @@ def first(change):
     return case
 
 
-def late(seconds):
+def late(seconds, instead=None):
+    """A case: the first answer comes after this many seconds. It is the healthy one, or the one given instead."""
     def change(passes, *answer):
         passes(seconds)
-        return answer
+        return instead or answer
     return first(change)
+
+
+def slow(seconds):
+    """A case: the healthy board, and each of its answers takes this long to come."""
+    def case(name, healthy, clock):
+        def board(request):
+            clock.advance(seconds)
+            return healthy(request)
+        return board
+    return case
 
 
 def unreachable(name, healthy, clock):
     return ConnectionRefusedError()
 
 
+def waited():
+    raise TimeoutError()
+
+
 def silent(name, healthy, clock):
-    def waited():
-        raise TimeoutError()
     return lambda request: kit.Pieces([waited])
 
 
@@ -180,8 +198,15 @@ def cases(board):
     for status in STATUSES:
         yield f'every answer has the status {status}', every(
             lambda board, *answer, status=status: (status, {'error': 'An invented refusal.'}))
+    yield 'every answer has the status 401 and the code AUTH_2FA_REQUIRED, as Colony refuses a sign-in', every(
+        lambda board, *answer: (401, {'detail': {'code': 'AUTH_2FA_REQUIRED', 'message': 'An invented refusal.'}}))
+    yield 'the first answer has the status 503', late(0, (503, {'error': 'An invented refusal.'}))
+    yield 'the first answer has the status 503 and comes two seconds before its time budget ends', late(
+        board.budget - 2, (503, {'error': 'An invented refusal.'}))
     yield 'the board cannot be reached', unreachable
     yield 'the socket stays silent for too long', silent
+    yield 'the socket stays silent for too long after the first request', first(
+        lambda passes, *answer: kit.Pieces([waited]))
     yield 'every answer is not HTTP', lambda name, healthy, clock: lambda request: b'An invented line.\r\n\r\n'
     yield f'the first answer comes {half} before its time budget of {board.budget} s ends', late(board.budget - 0.5)
     yield 'the first answer comes when its time budget ends', late(board.budget)
@@ -191,6 +216,7 @@ def cases(board):
             body[:len(body) // 2], lambda: passes(board.budget + 0.5), body[len(body) // 2:]]), headers))
     yield f'the first answer is whole in time and ends {half} after its time budget ends', first(
         lambda passes, status, body, headers: (status, kit.Pieces([body, lambda: passes(board.budget + 0.5)]), headers))
+    yield 'every answer takes three seconds to come', slow(3)
     yield 'every answer is text that is not JSON', every(
         lambda board, status, body, headers: (status, b'An invented line.', headers))
     yield 'every answer ends with a byte that is not UTF-8', every(
@@ -204,6 +230,27 @@ def cases(board):
         lambda board, status, body, headers: (status, body.ljust(board.cap), headers))
     yield 'every answer is one byte longer than the size cap', every(
         lambda board, status, body, headers: (status, body.ljust(board.cap + 1), headers))
+
+
+ABSENT, FOLDER = 'no file', 'a folder'
+
+
+def keys():
+    """What is where the key file of an account should be, case by case: the bytes of the file, ABSENT or FOLDER."""
+    yield 'the key file is not there', ABSENT
+    yield 'a folder is where the key file should be', FOLDER
+    yield 'the key file is empty', b''
+    yield 'the key file has a line break and no key', b'\n'
+    yield 'the key has spaces and line breaks around it', f'\n  {KEY} \n\n'.encode()
+    yield 'the key has a space in it', b'an invented key\n'
+    yield 'the key is two lines', b'an-invented\nkey\n'
+    yield 'the key is 4096 characters long', b'k' * 4096 + b'\n'
+    yield 'the key is 4097 characters long', b'k' * 4097 + b'\n'
+
+
+def shown(text):
+    """A header or a body as the stored file has it: a long one is cut and says how long it was."""
+    return text if len(text) <= 120 else f'{text[:40]}... ({len(text)} characters)'
 
 
 class BoardRequestTests(unittest.TestCase):
@@ -250,8 +297,18 @@ class BoardRequestTests(unittest.TestCase):
     def section(self, name, clock):
         board, sets, lines = BOARDS[name], {}, []
         home, new = self.home(name)
-        for title, case in cases(board):
+        healthy = every(lambda board, *answer: answer)
+        passes = [(title, case, FILES['board.key'].encode()) for title, case in cases(board)]
+        if 'api_key_file' in board.source:
+            passes += [(title, healthy, held) for title, held in keys()]
+        for title, case, held in passes:
             (home / 'inbox.sqlite3').write_bytes(new)
+            key = home / 'board.key'
+            key.rmdir() if key.is_dir() else key.unlink(missing_ok=True)
+            if held is FOLDER:
+                key.mkdir()
+            elif held is not ABSENT:
+                key.write_bytes(held)
             requests, code, result = self.collected(name, home, case, clock)
             lines += ['', '-- ' + title]
             for seconds, request in requests:
@@ -259,14 +316,14 @@ class BoardRequestTests(unittest.TestCase):
                 lines.append(f'    {request.method} {request.url}  [headers {headers}, silent {request.timeout:g} s, '
                              f'at {seconds:g} s]')
                 if request.body:
-                    lines.append('        ' + request.body.decode())
+                    lines.append('        ' + shown(request.body.decode()))
             source, = result['sources']
             errors = [error['error'] for error in result['errors']]
             self.assertEqual(errors, [source['error']] if source['error'] else [], title)
             lines.append(f'    exit code {code}, added {result["added"]}, errors: {", ".join(errors) or "none"}; '
                          f'the source: status {source["status"]}, unavailable {source["unavailable"]}, '
                          f'backlog {"pending" if source["backlog_pending"] else "done"}')
-        legend = [f'    headers {number}: ' + '; '.join(f'{header}: {text}' for header, text in headers)
+        legend = [f'    headers {number}: ' + '; '.join(f'{header}: {shown(text)}' for header, text in headers)
                   for headers, number in sets.items()]
         return '\n'.join([f'== {name}', *legend, *lines, ''])
 
@@ -275,6 +332,40 @@ class BoardRequestTests(unittest.TestCase):
         with kit.fixed(clock):
             text = '\n'.join([INTRO, *(self.section(name, clock) for name in BOARDS)])
         kit.check_stored(self, 'board_requests.txt', text)
+
+
+SENDERS = ('urllib.request', 'http.client', 'socket', 'ssl')
+
+
+def sends(tree):
+    """Each name in a module that is what can send a request, or a part of it: one that the module imports, and
+    one that it reaches through a package, as urllib.request.urlopen after a plain `import urllib`. HTTPException
+    is what a failed request raises, and a module may name it."""
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [f'{node.module}.{alias.name}' for alias in node.names]
+        elif isinstance(node, ast.Attribute):
+            names = [ast.unparse(node)]
+        else:
+            continue
+        found += [name for name in names if name != 'http.client.HTTPException'
+                  and any(name == sender or name.startswith(sender + '.') for sender in SENDERS)]
+    return found
+
+
+class OnePathTests(unittest.TestCase):
+    def test_only_the_transport_module_names_what_sends_a_request(self):
+        package = Path(boardmail.__file__).resolve().parent
+        found = [f'{path.name}: {name}' for path in sorted(package.rglob('*.py'))
+                 for name in sends(ast.parse(path.read_text(encoding='utf-8')))]
+        self.assertEqual([line for line in found if not line.startswith('transport.py: ')], [],
+                         'These belong in boardmail/transport.py')
+        # If it saw nothing, the line above would say nothing.
+        self.assertIn('transport.py: urllib.request.build_opener', found)
+        self.assertIn('urllib.request.urlopen', sends(ast.parse('import urllib\nurllib.request.urlopen(url)')))
 
 
 if __name__ == '__main__':

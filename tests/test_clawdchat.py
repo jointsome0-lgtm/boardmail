@@ -333,8 +333,8 @@ class TransportTests(unittest.TestCase):
         with self.assertRaisesRegex(MailError, "^http_429$"):
             client.get("/notifications", authenticated=True)
         self.assertEqual(len(handler.requests), 1)
-        client, handler = self.client([(200, b"x" * 65, None)])
-        with patch.object(adapter, "MAX_RESPONSE_BYTES", 64), self.assertRaisesRegex(MailError, "^response_too_large$"):
+        client, handler = self.client([(200, b"x" * (1024 * 1024 + 1), None)])
+        with self.assertRaisesRegex(MailError, "^response_too_large$"):
             client.get("/comments/" + uid(10))
 
     def test_deadline_and_global_request_limit_stop_network_work(self):
