@@ -1,15 +1,17 @@
 """The one HTTP path of the board clients.
 
 A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
-the size cap and at the time budget of that board, and reads the answer as what it must be. failure() says what
-a request that failed is called there. BOARDS holds every difference between the boards that a board or an agent
-can see. None of them is unified here, and none is decided in another module.
+the size cap and when the time is over, and reads the answer as what it must be. failure() says what a request
+that failed is called there, and key() reads the key of an account from its file. BOARDS holds every difference
+between the boards that a board or an agent can see. None of them is unified here, and none is decided in
+another module.
 
-Fruitflies and 4claw read through this module. The other board clients still carry their own copy of the rest,
-and refuse a redirect with the NoRedirect of this module under the name that they give it.
+What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
+it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
 """
 from http.client import HTTPException
 import json
+from pathlib import Path
 import time
 from typing import NamedTuple
 from urllib.error import HTTPError
@@ -22,43 +24,73 @@ class Board(NamedTuple):
     """What a request to one board carries, what its answer may take, and what a failure is called."""
     accept: str             # the Accept header
     agent: str              # the User-Agent header
+    protocol: str | None    # the X-Agent-Protocol header. None: the board gets none.
+    key: int | None         # the most characters of the key of an account. Each must be printable ASCII and
+                            # no space. None: a key is any text, or the board has no key.
     kind: str | None        # the content type that an answer must have; it is then UTF-8 text.
                             # None: an answer is JSON, whatever type it gives.
     cap: int                # the most bytes of an answer that are read. One more is too large.
-    silence: float          # the seconds that the socket may stay silent
-    budget: float           # the seconds that a request may take
-    to_the_end: bool        # an answer that has come whole is still late when its end comes after the budget
-    late: str               # the code when the budget is spent
+    silence: float          # the seconds that the socket may stay silent, and never more than the time has left
+    budget: float | None    # the seconds that a request may take. None: the client says how many it has left.
+    at_the_end: bool        # an answer is late at the very moment at which the time is over. Else only after it.
+    to_the_end: bool        # an answer that has come whole is still late when its end comes after that moment
+    late: str               # the code for an answer that is late
     large: str              # the code for an answer over the cap
     network: str            # the code when the board is not reached or does not answer in HTTP
     content: str            # the code for an answer that cannot be read as what it must be
     statuses: tuple | None  # the statuses that are called http_<status>. None: every status.
     status: str | None      # the code for any other status
+    redirect: str | None    # the code for a redirect that names where it leads. None: it is called as its status is.
 
 
+# Postingboard, Colony and Moltbook share one client. They differ in one header.
+SHARED = dict(
+    accept='application/json', agent='boardmail/0.2', key=None, kind=None, cap=16 * 1024 * 1024,
+    silence=10, budget=None, at_the_end=False, to_the_end=False,
+    late='source_timeout', large='response_too_large', network='network_error', content='invalid_response',
+    statuses=None, status=None, redirect='redirect_refused')
 BOARDS = {
+    'postingboard': Board(protocol='getpostingboard/1', **SHARED),
+    'the-colony': Board(protocol=None, **SHARED),
+    'moltbook': Board(protocol=None, **SHARED),
+    'clawdchat': Board(
+        accept='application/json', agent='boardmail/0.2', protocol=None, key=4096, kind=None, cap=1024 * 1024,
+        silence=4, budget=None, at_the_end=True, to_the_end=False,
+        late='budget_exhausted', large='response_too_large', network='network_error', content='invalid_response',
+        statuses=None, status=None, redirect='redirect_refused'),
+    'botnet': Board(
+        accept='application/json', agent='boardmail', protocol=None, key=4096, kind=None, cap=1024 * 1024,
+        silence=4, budget=None, at_the_end=True, to_the_end=False,
+        late='budget_exhausted', large='response_too_large', network='network_error', content='invalid_response',
+        statuses=None, status=None, redirect='redirect_refused'),
     'fruitflies': Board(
-        accept='application/json', agent='boardmail/fruitflies', kind=None, cap=2 * 1024 * 1024,
-        silence=8, budget=8, to_the_end=False,
+        accept='application/json', agent='boardmail/fruitflies', protocol=None, key=None, kind=None,
+        cap=2 * 1024 * 1024, silence=8, budget=8, at_the_end=True, to_the_end=False,
         late='network_timeout', large='response_too_large', network='network_error', content='invalid_response',
-        statuses=None, status=None),
+        statuses=None, status=None, redirect=None),
     'fourclaw': Board(
-        accept='text/html', agent='boardmail/1', kind='text/html', cap=2_000_000,
-        silence=5, budget=10, to_the_end=True,
+        accept='text/html', agent='boardmail/1', protocol=None, key=None, kind='text/html',
+        cap=2_000_000, silence=5, budget=10, at_the_end=True, to_the_end=True,
         late='fourclaw_network_error', large='fourclaw_invalid_public_page', network='fourclaw_network_error',
         content='fourclaw_invalid_public_page',
-        statuses=(401, 403, 404, 429, 500, 502, 503, 504), status='fourclaw_http_error'),
+        statuses=(401, 403, 404, 429, 500, 502, 503, 504), status='fourclaw_http_error', redirect=None),
 }
 # What fetch() raises when a request fails. failure() names each of them.
 FAILED = (MailError, OSError, HTTPException, ValueError)
 
 
 class NoRedirect(HTTPRedirectHandler):
-    """No redirect is followed, and urllib then raises its status like any other status that is not a success.
+    """No redirect of a board is followed. It fails with the code that the board has for it, or urllib raises its
+    status like any other status that is not a success.
 
     The answer of a redirect is closed here, whatever becomes of it, so it holds no connection open: when it is
-    refused, when a board client refuses it under a name of its own, and when urllib cannot read where it leads."""
+    refused, and when urllib cannot read where it leads."""
+    def __init__(self, board):
+        self.refused = BOARDS[board].redirect
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if self.refused:
+            raise MailError(self.refused)
         return None
 
     def http_error_302(self, req, fp, code, msg, headers):
@@ -70,21 +102,57 @@ class NoRedirect(HTTPRedirectHandler):
     http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
-def fetch(board, url):
-    """The answer of a board to a GET of this URL: text where an answer must be a page, and what the JSON says
-    everywhere else.
+def opener(board):
+    """What sends the requests of a board. A client that sends more than one keeps it."""
+    return build_opener(NoRedirect(board))
+
+
+def key(board, file):
+    """The key of an account as its file gives it, without the spaces and line breaks around it. Where the file
+    cannot be read, or holds no key that the board takes, a MailError says that the credentials are not there."""
+    most = BOARDS[board].key
+    try:
+        if most is None:
+            key = file.read_text().strip()
+        else:
+            with Path(file).open() as stream:
+                key = stream.read(most + 1).strip()
+            if len(key) > most or any(ord(letter) < 33 or ord(letter) > 126 for letter in key):
+                raise ValueError('The board takes no such key')
+        if not key:
+            raise ValueError('The file holds no key')
+    except (OSError, ValueError, TypeError):
+        raise MailError('credentials_unavailable') from None
+    return key
+
+
+def fetch(board, url, *, through=None, left=None, headers=None, body=None):
+    """The answer of a board to a request for this URL: text where an answer must be a page, and what the JSON
+    says everywhere else.
+
+    through is the opener of a client that keeps one. left is the seconds that the client has left for this
+    request, where the board has no time budget of its own. headers are sent with the headers of the board.
+    A body is sent as JSON, and the request is then a POST. Without one it is a GET.
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
     that cannot be read, and a MailError with the code of the board for an answer that is too large or late."""
     about = BOARDS[board]
-    request = Request(url, headers={'Accept': about.accept, 'User-Agent': about.agent})
-    end = time.monotonic() + about.budget
+    send = {'Accept': about.accept, 'User-Agent': about.agent, **(headers or {})}
+    if about.protocol:
+        send['X-Agent-Protocol'] = about.protocol
+    if body is not None:
+        send['Content-Type'] = 'application/json'
+    request = Request(url, headers=send, data=None if body is None else json.dumps(body).encode())
+    if left is None:
+        left = about.budget
+    end = time.monotonic() + left
 
     def in_time():
-        if time.monotonic() >= end:
+        now = time.monotonic()
+        if now > end or about.at_the_end and now == end:
             raise MailError(about.late)
 
-    with build_opener(NoRedirect()).open(request, timeout=about.silence) as answer:
+    with (opener(board) if through is None else through).open(request, timeout=min(about.silence, left)) as answer:
         if about.kind and answer.headers.get_content_type() != about.kind:
             raise ValueError('The answer is not ' + about.kind)
         content = bytearray()

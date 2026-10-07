@@ -12,13 +12,14 @@ PACKAGE = Path(boardmail.__file__).resolve().parent
 # The stored rows for codes the catalog does not list.
 UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 # The raises that build their code at run time. The stored table has rows for what they build.
-BUILT = {"adapter_botnet.py: 'http_' + str(code)",       # an HTTP status
-         "adapter_clawdchat.py: 'http_' + str(code)",    # an HTTP status
-         'config.py: error',                             # the code that a call names with error=
-         'providers.py: code',                           # a Colony sign-in code
-         'transport.py: about.large',                    # what a board calls an answer over its size cap
-         'transport.py: about.late',                     # what a board calls an answer after its time budget
-         "verification.py: error or 'reply_' + status"}  # reply_deleted, reply_missing or a Moltbook lookup error
+BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet calls a request that failed
+         'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
+         'config.py: error',                                     # the code that a call names with error=
+         'providers.py: code',                                   # a Colony sign-in code
+         'transport.py: about.large',                            # what a board calls an answer over its size cap
+         'transport.py: about.late',                             # what a board calls an answer that is late
+         'transport.py: self.refused',                           # what a board calls a redirect
+         "verification.py: error or 'reply_' + status"}          # reply_deleted, reply_missing or a lookup error
 
 
 def stored():
@@ -74,9 +75,17 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual(built, BUILT)
         self.assertEqual({code.lower() for code in providers.COLONY_AUTH_CODES} - set(errors.CODES), set())
         named = {code for about in transport.BOARDS.values()
-                 for code in (about.late, about.large, about.network, about.content, about.status)}
+                 for code in (about.late, about.large, about.network, about.content, about.status, about.redirect)}
         self.assertEqual(named - set(errors.CODES) - {None}, set())
         self.assertEqual(UNLISTED & set(errors.CODES), set())
+
+    def test_one_board_answers_for_the_boards_that_call_a_failure_alike(self):
+        # providers.error_code() names a failure for the three boards of its module without knowing which one
+        # it was, and the reply checks call it for ClawdChat too.
+        def called(board):
+            about = transport.BOARDS[board]
+            return about.network, about.content, about.statuses, about.status, about.redirect
+        self.assertEqual({called(board) for board in (*providers.HOSTS, 'clawdchat')}, {called(providers.ANY)})
 
     def test_mcp_flags_every_error_code(self):
         for code in [*errors.CODES, *UNLISTED]:

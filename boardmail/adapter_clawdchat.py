@@ -1,12 +1,11 @@
 """ClawdChat notifications, confirmed through anonymous public originals."""
 from datetime import datetime
+from functools import partial
 from http.client import HTTPException
 import json
-from pathlib import Path
 import time
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, build_opener
 
 from boardmail import addressing, subscriptions, transport
 from boardmail.adapters import Batch
@@ -17,7 +16,6 @@ ORIGIN = "https://clawdchat.cn"
 PAGE_SIZE = 8
 MAX_PENDING = 256
 MAX_REQUESTS = 40
-MAX_RESPONSE_BYTES = 1024 * 1024
 SOURCE_SECONDS = 45
 SUBSCRIPTION_REQUESTS = 10   # Reserved for subscribed threads when any exist.
 SUBSCRIPTION_SECONDS = 11
@@ -29,9 +27,8 @@ KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
 UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
 
 
-class NoRedirect(transport.NoRedirect):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise MailError("redirect_refused")
+# For a caller that builds an opener of its own.
+NoRedirect = partial(transport.NoRedirect, "clawdchat")
 
 
 class Client:
@@ -45,55 +42,34 @@ class Client:
         self.deadline = self.end
         self.requests = 0
         self.limit = MAX_REQUESTS
-        self.opener = build_opener(NoRedirect())
+        self.opener = transport.opener("clawdchat")
 
     def phase(self, seconds):
         self.deadline = min(self.end, time.monotonic() + seconds)
 
     def get(self, path, params=None, *, authenticated=False):
-        headers = {"Accept": "application/json", "User-Agent": "boardmail/0.2"}
+        headers = None
         if authenticated:
             if self.key is None:
-                try:
-                    with Path(self.settings.get("api_key_file")).open() as stream:
-                        key = stream.read(4097).strip()
-                    if not key or len(key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in key):
-                        raise ValueError()
-                    self.key = key
-                except (OSError, UnicodeError, ValueError, TypeError):
-                    raise MailError("credentials_unavailable") from None
-            headers["Authorization"] = "Bearer " + self.key
+                self.key = transport.key("clawdchat", self.settings.get("api_key_file"))
+            headers = {"Authorization": "Bearer " + self.key}
+        url = ORIGIN + "/api/v1" + path + ("?" + urlencode(params) if params else "")
         for attempt in range(3):  # At most two retries, all inside this phase's budget.
             remaining = self.deadline - time.monotonic()
             if remaining <= 0 or self.requests >= self.limit:
                 raise MailError("budget_exhausted")
             self.requests += 1
-            request = Request(ORIGIN + "/api/v1" + path + ("?" + urlencode(params) if params else ""), headers=headers)
             try:
-                with self.opener.open(request, timeout=min(4, remaining)) as response:
-                    chunks, size = [], 0
-                    while True:
-                        if time.monotonic() >= self.deadline:
-                            raise MailError("budget_exhausted")
-                        chunk = response.read1(65536)
-                        if not chunk:
-                            result = json.loads(b"".join(chunks))
-                            if not isinstance(result, dict) or result.get("success") is False:
-                                raise MailError("invalid_response")
-                            return result
-                        size += len(chunk)
-                        if size > MAX_RESPONSE_BYTES:
-                            raise MailError("response_too_large")
-                        chunks.append(chunk)
-            except HTTPError as exc:
-                code = exc.code
-                exc.close()
-                if code not in (408, 500, 502, 503, 504) or attempt == 2:
-                    raise MailError("http_" + str(code)) from None
-            except (URLError, OSError, HTTPException):
-                if attempt == 2:
-                    raise MailError("network_error") from None
-        raise MailError("network_error")
+                result = transport.fetch("clawdchat", url, through=self.opener, left=remaining, headers=headers)
+            except (OSError, HTTPException) as exc:
+                code = transport.failure("clawdchat", exc)
+                # A retry is for a board that was not reached and for these statuses.
+                if attempt == 2 or isinstance(exc, HTTPError) and exc.code not in (408, 500, 502, 503, 504):
+                    raise MailError(code) from None
+            else:
+                if not isinstance(result, dict) or result.get("success") is False:
+                    raise MailError("invalid_response")
+                return result
 
 
 def _text(value):
