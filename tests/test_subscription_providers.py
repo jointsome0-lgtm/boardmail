@@ -18,12 +18,13 @@ from uuid import UUID
 from boardmail import adapter_clawdchat as clawd
 from boardmail import adapter_fourclaw as fourclaw
 from boardmail import adapter_fruitflies as fruit
-from boardmail import addressing, commands, providers, subscriptions
+from boardmail import addressing, commands, subscriptions
 from boardmail.adapters import Batch, validate
 from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
 from boardmail.boards import BOARDS
+from boardmail import adapter_common
 from examples.fixtures import FixtureBoard, named, original, settings, status, uid
 from kit import Clock, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
@@ -159,7 +160,7 @@ class ThreadBoard(FixtureBoard):
         assert not authenticated, "Public thread reads must be anonymous"
         self.requests += 1
         if self.requests == self.fits:
-            self.clock.advance(providers.SOURCE_SECONDS)
+            self.clock.advance(adapter_common.SOURCE_SECONDS)
         match = re.fullmatch(r"/posts/([0-9a-f-]{36})(/comments)?", path)
         root = match.group(1)
         if root in self.failures:
@@ -283,7 +284,7 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
                 def slow(path, params=None, **kwargs):
                     if path == '/posts/' + uid(400):
                         # The root has not answered when the time of the pass is over, and the transport says so.
-                        self.clock.advance(providers.SOURCE_SECONDS + 1)
+                        self.clock.advance(adapter_common.SOURCE_SECONDS + 1)
                         raise MailError('source_timeout')
                     return real(path, params, **kwargs)
 
