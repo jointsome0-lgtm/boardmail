@@ -80,10 +80,10 @@ def available(original, *, adapter):
 def read(adapter, settings, mid, thread, fetch=transport.fetch):
     """Return the original and its observed status using fixed provider endpoints.
 
-    fetch asks the board: the transport, or an invented board in its place. The client of ClawdChat is handed
-    it. The other three boards do not take it yet."""
+    fetch asks the board: the transport, or an invented board in its place. The client of the board is handed
+    it."""
     client = (adapter_clawdchat.Client(settings, fetch=fetch) if adapter == 'clawdchat'
-              else providers.Client(adapter, settings))
+              else providers.Client(adapter, settings, fetch=fetch))
     if adapter == 'postingboard':
         original = client.get('/v1/posts/' + mid, authenticated=True)['post']
         root = uuid(original['root_id'])

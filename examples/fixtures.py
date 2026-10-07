@@ -107,7 +107,7 @@ class FixtureClient:
         self.source, self.settings, self.owner = source,config,config["account_id"]
         self.host = "https://"+source+".example.invalid"
         self.calls = []
-        self.fail = False
+        self.fail = False     # True: every request gets a 503. An exception: every request ends with it.
         self.per_page = None  # The most that a page of notifications or comments holds. None: as many as asked.
         if source == "postingboard":
             self.roots = {uid(301):named(301,301,3),uid(302):named(302,302)}
@@ -134,6 +134,8 @@ class FixtureClient:
             # Moltbook's second event intentionally has no public original yet.
 
     def failure(self):
+        if isinstance(self.fail, BaseException):
+            return self.fail
         return HTTPError("https://untrusted.invalid/secret-token",503,"private provider prose",{},io.BytesIO())
 
     def limit(self, params):

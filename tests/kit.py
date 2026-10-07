@@ -22,6 +22,7 @@ import sys
 import time
 from typing import NamedTuple
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 from boardmail import cli, config
@@ -154,6 +155,18 @@ class Network:
 
     def __exit__(self, *exc):
         self.stack.close()
+
+
+def edge(board):
+    """A FixtureBoard of examples/fixtures.py as a board of Network. The command line hands no board in, so a
+    test of it puts the invented board where a request leaves the process."""
+    def answer(request):
+        sent = request.headers.get('Authorization')
+        try:
+            return 200, board(board.source, request.url, headers={'Authorization': sent} if sent else None)
+        except HTTPError as exc:
+            return exc.code, {}
+    return answer
 
 
 class Clock:

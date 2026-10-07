@@ -8,27 +8,26 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
-from urllib.error import HTTPError, URLError
+from urllib.error import URLError
 
 from boardmail import cli, commands, providers
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureClient, named, original, settings, uid
+from examples.fixtures import FakeBoard, FixtureBoard, named, original, settings, uid
+from kit import Clock, Network, edge, fixed
 from test_clawdchat import Board as ClawdChat, original as clawd_original
 from test_mail import mail
-
-NO_CLIENT = AssertionError('remote client constructed')
 
 
 class ExpandTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'mail.sqlite3'
-        self.cfg = settings()['postingboard']
+        self.cfg = settings(self.temp.name)['postingboard']
         self.sources = {'postingboard': self.cfg}
         self.store = Store(self.path); self.store.initialize(self.sources)
-        self.fixture = FixtureClient('postingboard', self.cfg)
+        self.fixture = FixtureBoard('postingboard', self.cfg)
+        self.clock = Clock(1790000000)
         self.fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, 3, body='Our answer.'),
                                uid(602): named(602, 600, reply_to=601, body='Edited follow-up.'),
                                uid(603): named(603, 600, reply_to=601), uid(604): named(604, 600, reply_to=600)}
@@ -41,12 +40,13 @@ class ExpandTests(unittest.TestCase):
             {**mail(604), 'thread_id': uid(600), 'parent_id': uid(600)}])
         self.store.mark('postingboard', uid(611), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
 
-    def expand(self, thread=600, *, through=5, after=0, limit=None, local=False, sources='configured', client=None):
+    def expand(self, thread=600, *, through=5, after=0, limit=None, local=False, sources='configured', board=None):
         sources = self.sources if sources == 'configured' else sources
-        with patch.object(providers, 'Client', return_value=client or self.fixture):
-            args = {} if limit is None else {'limit': limit}
+        args = {} if limit is None else {'limit': limit}
+        # The client waits between two requests to Postingboard. With the clock fixed, the wait only moves it.
+        with fixed(self.clock):
             return commands.execute(self.store, 'expand', source='postingboard', thread=uid(thread), through=through,
-                                    after=after, local=local, sources=sources, **args)
+                                    after=after, local=local, sources=sources, fetch=board or self.fixture, **args)
 
     def paths(self):
         return [path for path, _, _ in self.fixture.calls]
@@ -97,8 +97,9 @@ class ExpandTests(unittest.TestCase):
                          ('available', 'missing', 'http_404', 'Synthetic text'))
         self.assertEqual([i['complete'] for i in result['items']], [True, True, False, True])
         # Singular context keeps its established meaning: a saved target is complete context.
-        with patch.object(providers, 'Client', return_value=self.fixture):
-            context, code = commands.execute(self.store, 'context', source='postingboard', id=uid(603), sources=self.sources)
+        with fixed(self.clock):
+            context, code = commands.execute(self.store, 'context', source='postingboard', id=uid(603),
+                                             sources=self.sources, fetch=self.fixture)
         self.assertEqual((code, context['complete'], context['target']['remote_status']), (0, True, 'missing'))
         # A root that is gone counts before its parent references are collapsed.
         self.fixture.others[uid(603)] = named(603, 600, reply_to=601)
@@ -120,12 +121,13 @@ class ExpandTests(unittest.TestCase):
         self.assertNotIn('/v1/posts/' + uid(700), self.paths())
 
     def test_exhausted_budget_stops_further_requests_and_keeps_saved_text(self):
-        get, remaining = self.fixture.get, [3]
-        def bounded(path, params=None, **kwargs):
-            if not remaining[0]: raise MailError('budget_exhausted')
-            remaining[0] -= 1
+        get = self.fixture.get
+        def slow(path, params=None, **kwargs):
+            # The command has 45 seconds. The second answer takes 43 of them, so one more request goes out, and
+            # after the wait before the fourth the time is over.
+            if path.endswith(uid(602)): self.clock.advance(43)
             return get(path, params, **kwargs)
-        self.fixture.get = bounded
+        self.fixture.get = slow
         result, code = self.expand()
         self.assertEqual((code, result['complete'], result['budget_exhausted'], result['fetched']), (1, False, True, True))
         self.assertEqual([i['complete'] for i in result['items']], [True, True, False, False])
@@ -148,24 +150,25 @@ class ExpandTests(unittest.TestCase):
 
     def test_local_paused_unconfigured_and_unsupported_reads_never_build_a_client(self):
         self.store.save('fourclaw', 'demo', [{**mail(800), 'thread_id': uid(800)}])
-        with patch.object(providers, 'Client', side_effect=NO_CLIENT):
-            cases = [('local', dict(local=True)), ('unconfigured', dict(sources=None)), ('other source', dict(sources={'moltbook': settings()['moltbook']}))]
-            for name, args in cases:
-                with self.subTest(case=name):
-                    result, code = self.expand(client=NO_CLIENT, **args)
-                    self.assertEqual((code, result['fetched'], result['complete'], result['root']['origin']), (1, False, False, 'local'))
-                    self.assertNotIn('remote_status', result['root'])
-                    self.assertEqual([i['parent']['status'] for i in result['items']], ['none', 'unknown', 'unknown', 'same_as_root'])
-                    self.assertEqual([i['complete'] for i in result['items']], [True, False, False, True])
-                    # A recorded parent identity still links the exchange although the parent text is unknown.
-                    self.assertEqual((result['items'][1]['previous_exchange']['status'], result['items'][1]['parent']['id']), ('linked', uid(601)))
-            self.store.set_paused('postingboard', True)
-            result, code = self.expand(client=NO_CLIENT)
-            self.assertEqual((code, result['fetched'], result['items'][3]['complete']), (1, False, True))
-            self.store.set_paused('postingboard', False)
-            result, code = commands.execute(self.store, 'expand', source='fourclaw', thread=uid(800), through=10,
-                                            sources={'fourclaw': {'adapter': 'fourclaw', 'account_id': 'demo'}})
-            self.assertEqual((code, result['fetched'], result['complete'], result['items'][0]['target']['origin']), (0, False, True, 'local'))
+        board = FakeBoard([])  # It has no answer, and it is asked nothing.
+        cases = [('local', dict(local=True)), ('unconfigured', dict(sources=None)), ('other source', dict(sources={'moltbook': settings()['moltbook']}))]
+        for name, args in cases:
+            with self.subTest(case=name):
+                result, code = self.expand(board=board, **args)
+                self.assertEqual((code, result['fetched'], result['complete'], result['root']['origin']), (1, False, False, 'local'))
+                self.assertNotIn('remote_status', result['root'])
+                self.assertEqual([i['parent']['status'] for i in result['items']], ['none', 'unknown', 'unknown', 'same_as_root'])
+                self.assertEqual([i['complete'] for i in result['items']], [True, False, False, True])
+                # A recorded parent identity still links the exchange although the parent text is unknown.
+                self.assertEqual((result['items'][1]['previous_exchange']['status'], result['items'][1]['parent']['id']), ('linked', uid(601)))
+        self.store.set_paused('postingboard', True)
+        result, code = self.expand(board=board)
+        self.assertEqual((code, result['fetched'], result['items'][3]['complete']), (1, False, True))
+        self.store.set_paused('postingboard', False)
+        result, code = commands.execute(self.store, 'expand', source='fourclaw', thread=uid(800), through=10,
+                                        sources={'fourclaw': {'adapter': 'fourclaw', 'account_id': 'demo'}}, fetch=board)
+        self.assertEqual((code, result['fetched'], result['complete'], result['items'][0]['target']['origin']), (0, False, True, 'local'))
+        self.assertEqual(board.asked, [])
 
     def test_failed_shared_parent_is_attempted_once_and_can_be_retried_next_operation(self):
         get = self.fixture.get
@@ -190,30 +193,33 @@ class ExpandTests(unittest.TestCase):
 
     def test_empty_interval_and_invalid_arguments_touch_no_board(self):
         before = self.path.read_bytes()
-        with patch.object(providers, 'Client', side_effect=NO_CLIENT):
-            result, code = commands.execute(self.store, 'expand', source='postingboard', thread=uid(600), through=5, after=5, sources=self.sources)
-            self.assertEqual((code, result['items'], result['fetched'], result['complete'], result['budget_exhausted']), (0, [], True, True, False))
-            self.assertEqual((result['root']['id'], result['root']['status'], result['next_after'], result['more']), (uid(600), 'unknown', 5, False))
-            result, code = commands.execute(self.store, 'expand', source='postingboard', thread=uid(999), through=5, sources=self.sources)
-            self.assertEqual((code, result['items'], result['root']['status']), (0, [], 'unknown'))
-            for args in (dict(through=None), dict(through=3, after=4), dict(through=5, limit=0), dict(through=5, limit=101),
-                         dict(through=5, limit=True), dict(through=5.0), dict(through=2**63), dict(through=5, thread='not-a-uuid'),
-                         dict(through=5, thread=None), dict(through=5, thread='x\x00y'), dict(through=5, source=None)):
-                with self.subTest(args=args):
-                    call = {'source': 'postingboard', 'thread': uid(600), **args}
-                    with self.assertRaisesRegex(MailError, '^invalid_arguments$'):
-                        commands.execute(self.store, 'expand', sources=self.sources, **call)
+        board = FakeBoard([])  # It has no answer, and it is asked nothing.
+        result, code = commands.execute(self.store, 'expand', source='postingboard', thread=uid(600), through=5, after=5,
+                                        sources=self.sources, fetch=board)
+        self.assertEqual((code, result['items'], result['fetched'], result['complete'], result['budget_exhausted']), (0, [], True, True, False))
+        self.assertEqual((result['root']['id'], result['root']['status'], result['next_after'], result['more']), (uid(600), 'unknown', 5, False))
+        result, code = commands.execute(self.store, 'expand', source='postingboard', thread=uid(999), through=5,
+                                        sources=self.sources, fetch=board)
+        self.assertEqual((code, result['items'], result['root']['status']), (0, [], 'unknown'))
+        for args in (dict(through=None), dict(through=3, after=4), dict(through=5, limit=0), dict(through=5, limit=101),
+                     dict(through=5, limit=True), dict(through=5.0), dict(through=2**63), dict(through=5, thread='not-a-uuid'),
+                     dict(through=5, thread=None), dict(through=5, thread='x\x00y'), dict(through=5, source=None)):
+            with self.subTest(args=args):
+                call = {'source': 'postingboard', 'thread': uid(600), **args}
+                with self.assertRaisesRegex(MailError, '^invalid_arguments$'):
+                    commands.execute(self.store, 'expand', sources=self.sources, fetch=board, **call)
+        self.assertEqual(board.asked, [])
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_cli_expands_with_config_and_reads_offline_with_db_alone(self):
-        root = Path(self.temp.name)
-        (root/'example.key').write_text('synthetic-key')
+        root = Path(self.temp.name)  # The key of the account is there already, in example.key.
         (root/'config.json').write_text(json.dumps({'database': 'other.sqlite3', 'sources': {'postingboard': {
             'account_id': self.cfg['account_id'], 'api_key_file': 'example.key', 'threads': [uid(600)]}}}))
         before = self.path.read_bytes()
         def run(*args):
             out = io.StringIO()
-            with patch.object(providers, 'Client', lambda *_: self.fixture), redirect_stdout(out):
+            # The command line hands no board in. The invented one stands where a request leaves the process.
+            with Network({'getpostingboard.dev': edge(self.fixture)}), fixed(self.clock), redirect_stdout(out):
                 code = cli.main(['--config', str(root/'config.json'), '--db', str(self.path), 'expand', 'postingboard', uid(600), *args])
             return code, json.loads(out.getvalue())
         code, result = run('--through', '5', '--after', '1', '--limit', '2')
@@ -280,7 +286,8 @@ class ExpandReuseTests(unittest.TestCase):
 
     def test_moltbook_comment_pages_are_read_once_for_every_target_and_parent(self):
         cfg = {**settings()['moltbook'], 'adapter': 'moltbook'}
-        client = FixtureClient('moltbook', cfg)
+        client = FixtureBoard('moltbook', cfg)
+        client.per_page = 1  # The board gives one comment on a page.
         client.comments = [original(209, 201), original(211, 201, 1, body='Our published answer.'),
                            {**original(212, 201, body='Current reply.'), 'parent_id': uid(211)}, original(213, 201)]
         self.store.save('molt', cfg['account_id'], [
@@ -288,8 +295,10 @@ class ExpandReuseTests(unittest.TestCase):
             {**mail(213), 'thread_id': uid(201)}])
         self.store.mark('molt', uid(211), 'replied', ref=providers.parent_reference('moltbook', uid(201), uid(211)))
         before = self.path.read_bytes()
-        with patch.object(providers, 'PAGE_SIZE', 1), patch.object(providers, 'Client', return_value=client):
-            result, code = commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg})
+        def expand():
+            return commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg},
+                                    fetch=client)
+        result, code = expand()
         self.assertEqual((code, result['complete'], result['budget_exhausted']), (0, True, False))
         self.assertEqual((result['root']['origin'], result['root']['remote_status']), ('remote', 'available'))
         first, second, third = result['items']
@@ -306,8 +315,7 @@ class ExpandReuseTests(unittest.TestCase):
         # The cache belongs to one operation: an edit is visible to the next call.
         client.comments[2]['content'] = 'Edited again.'
         client.calls.clear()
-        with patch.object(providers, 'PAGE_SIZE', 1), patch.object(providers, 'Client', return_value=client):
-            result, code = commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg})
+        result, code = expand()
         self.assertEqual((len(client.calls), result['items'][1]['target']['current_message']['body']), (5, 'Edited again.'))
         get, attempts = client.get, []
         def failed_page(path, params=None, **kwargs):
@@ -316,8 +324,7 @@ class ExpandReuseTests(unittest.TestCase):
                 raise URLError('synthetic page outage')
             return get(path, params, **kwargs)
         client.get = failed_page
-        with patch.object(providers, 'Client', return_value=client):
-            result, code = commands.execute(self.store, 'expand', source='molt', thread=uid(201), through=3, sources={'molt': cfg})
+        result, code = expand()
         self.assertEqual(attempts, ['/posts/' + uid(201), '/posts/' + uid(201) + '/comments'])
         self.assertEqual((code, result['complete'], len(result['items'])), (1, False, 3))
         self.assertEqual({item['target']['error'] for item in result['items']}, {'network_error'})

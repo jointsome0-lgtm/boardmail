@@ -3,14 +3,13 @@ import io
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 from urllib.error import HTTPError
 
 from boardmail import commands, providers
 from boardmail.adapters import Batch
-from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FakeBoard, FixtureClient, original, uid
+from examples.fixtures import FakeBoard, FixtureBoard, original, uid
+from kit import Clock, fixed
 from test_clawdchat import Board as ClawdChat, original as clawd_original
 from test_mail import mail
 
@@ -25,7 +24,7 @@ class PublicContextTests(unittest.TestCase):
         self.adapter, self.source = adapter, 'alias-' + adapter
         self.cfg = {'account_id': uid(1), 'adapter': adapter, 'api_key_file': Path('absent.key')}
         if adapter == 'moltbook':
-            self.client = FixtureClient(adapter, self.cfg)
+            self.client = FixtureBoard(adapter, self.cfg)
             self.root, self.parent, self.target = uid(201), uid(211), uid(212)
             self.parent_raw = original(211, 201, 1, body='Our published answer.')
             self.target_raw = {**original(212, 201, body='Current reply.'), 'parent_id': self.parent}
@@ -48,28 +47,20 @@ class PublicContextTests(unittest.TestCase):
         self.store.mark(self.source, uid(900), 'replied', ref=self.ref)
         self.store.mark(self.source, self.target, 'needs_reply')
 
-    def clawdchat_context(self, *, local=False):
-        """The context command with the invented ClawdChat in the place of the transport. There is no key file
-        for its client to read."""
+    def context(self, *, local=False):
+        """The context command with the invented board in the place of the transport. There is no key file for
+        a client to read: both boards give an original to anyone."""
         before = len(self.client.asked)
         result = commands.execute(self.store, 'context', source=self.source, id=self.target,
                                   sources={self.source: self.cfg}, local=local, fetch=self.client)
         if local or self.store.is_paused(self.source): self.assertEqual(len(self.client.asked), before)
         return result
 
-    def context(self, *, local=False):
-        if self.adapter == 'clawdchat':
-            return self.clawdchat_context(local=local)
-        with patch.object(providers, 'Client', return_value=self.client) as factory:
-            result = commands.execute(self.store, 'context', source=self.source, id=self.target,
-                                      sources={self.source: self.cfg}, local=local)
-            if local or self.store.is_paused(self.source): factory.assert_not_called()
-            return result
-
     def test_both_sources_resolve_own_parent_current_text_and_exact_exchange_without_writes(self):
         for adapter in ('moltbook', 'clawdchat'):
-            with self.subTest(adapter=adapter), patch.object(providers, 'PAGE_SIZE', 1):
+            with self.subTest(adapter=adapter):
                 self.setup_source(adapter)
+                if adapter == 'moltbook': self.client.per_page = 1  # The board gives one comment on a page.
                 before = self.path.read_bytes()
                 result, code = self.context()
                 self.assertEqual((code, result['complete'], result['fetched']), (0, True, True))
@@ -101,11 +92,17 @@ class PublicContextTests(unittest.TestCase):
 
     def test_moltbook_partial_search_and_complete_absence_are_distinct(self):
         self.setup_source('moltbook')
-        with patch.object(providers, 'PAGE_SIZE', 1), patch.object(providers, 'MAX_PAGES', 1):
-            result, code = self.context()
-            self.assertEqual(result['target']['remote_status'], 'unavailable')
-            self.assertEqual(result['target']['error'], 'budget_exhausted')
-            self.assertIsNone(result['target']['differs_from_saved'])
+        # The board gives one comment on a page, and 100 others stand before the parent with the reply under it.
+        # A search reads 100 pages at most.
+        self.client.per_page = 1
+        self.client.comments[:0] = [original(n, 201) for n in range(1000, 1099)]
+        result, code = self.context()
+        self.assertEqual(result['target']['remote_status'], 'unavailable')
+        self.assertEqual(result['target']['error'], 'budget_exhausted')
+        self.assertIsNone(result['target']['differs_from_saved'])
+        del self.client.comments[0]  # With 99 before it, the reply is on the last page that is read.
+        result, code = self.context()
+        self.assertEqual((code, result['target']['remote_status']), (0, 'available'))
         self.client.comments = []
         result, code = self.context()
         self.assertEqual(result['target']['remote_status'], 'missing')
@@ -114,13 +111,15 @@ class PublicContextTests(unittest.TestCase):
 
     def test_moltbook_reuses_received_parent_and_root_within_the_shared_budget(self):
         self.setup_source('moltbook')
-        get, remaining = self.client.get, [3]  # One root and two comment pages fit.
-        def bounded(path, params=None, **kwargs):
-            if not remaining[0]: raise MailError('budget_exhausted')
-            remaining[0] -= 1
-            return get(path, params, **kwargs)
-        self.client.get = bounded
-        with patch.object(providers, 'PAGE_SIZE', 1):
+        self.client.per_page = 1  # The board gives one comment on a page.
+        clock, get = Clock(1790000000), self.client.get
+        def last_in_time(path, params=None, **kwargs):
+            # One root and two comment pages fit. The third answer comes as the 45 seconds of the command end.
+            answer = get(path, params, **kwargs)
+            if len(self.client.calls) == 3: clock.advance(providers.SOURCE_SECONDS)
+            return answer
+        self.client.get = last_in_time
+        with fixed(clock):
             result, code = self.context()
             self.assertEqual((code, result['complete']), (0, True))
             self.assertEqual(result['parent']['message']['body'], 'Our published answer.')
@@ -128,7 +127,7 @@ class PublicContextTests(unittest.TestCase):
             self.assertEqual(len(self.client.calls), 3)
             # Originals are cached only for that command, never across later reads.
             self.parent_raw['content'] = 'An edited answer.'
-            remaining[0] = 3; self.client.calls.clear()
+            self.client.calls.clear()
             result, code = self.context()
             self.assertEqual((code, result['parent']['message']['body']), (0, 'An edited answer.'))
             self.assertEqual(len(self.client.calls), 3)
@@ -147,35 +146,35 @@ class PublicContextTests(unittest.TestCase):
         result, code = self.context()
         self.assertEqual((code, result['parent']['error']), (1, 'invalid_response'))
         self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
-        with patch.object(self.client, 'get', side_effect=HTTPError('https://example.invalid', 404, '', {}, io.BytesIO())):
-            status, error, message = providers.moltbook_lookup(self.client, uid(999))
-        self.assertEqual((status, error, message), ('unknown', 'thread_unknown', None))
-        with patch.object(self.client, 'get', side_effect=HTTPError('https://example.invalid', 404, '', {}, io.BytesIO())):
-            status, error, message = providers.moltbook_lookup(self.client, self.target, self.root)
-        self.assertEqual((status, error, message), ('unavailable', 'thread_missing', None))
+        def absent(path, params=None, **kwargs):
+            raise HTTPError('https://example.invalid', 404, '', {}, io.BytesIO())
+        self.client.get = absent
+        client = providers.Client('moltbook', self.cfg, fetch=self.client)
+        self.assertEqual(providers.moltbook_lookup(client, uid(999)), ('unknown', 'thread_unknown', None))
+        self.assertEqual(providers.moltbook_lookup(client, self.target, self.root), ('unavailable', 'thread_missing', None))
 
     def test_clawdchat_lookup_preserves_unavailable_and_malformed_parent_status(self):
         self.setup_source('clawdchat')
         for answer, status in ((404, 'missing'), (410, 'deleted'), (503, 'unavailable')):
             self.client.originals[self.parent] = answer
-            result, code = self.clawdchat_context()
+            result, code = self.context()
             self.assertEqual((code, result['parent']['status'], result['parent']['error']),
                              (1, status, 'http_' + str(answer)))
             self.assertEqual(result['previous_exchange']['status'], 'linked')
         self.parent_raw['is_deleted'] = True
         self.client.originals[self.parent] = self.parent_raw
-        result, code = self.clawdchat_context()
+        result, code = self.context()
         self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, 'deleted', None))
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         del self.parent_raw['is_deleted']
         self.parent_raw['post']['is_deleted'] = True
-        result, code = self.clawdchat_context()
+        result, code = self.context()
         self.assertEqual((code, result['parent']['status'], result['parent']['error']), (1, 'unavailable', 'thread_deleted'))
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         del self.parent_raw['post']['is_deleted']
         self.parent_raw['post_id'] = uid(999)
         self.client.originals[self.parent] = self.parent_raw
-        result, code = self.clawdchat_context()
+        result, code = self.context()
         self.assertEqual((code, result['parent']['error']), (1, 'invalid_response'))
         self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
 
@@ -214,7 +213,7 @@ class PublicContextTests(unittest.TestCase):
             dict(mail(100), thread_id=uid(999)), dict(mail(11), thread_id=uid(999))])
         saved = self.store.show(self.source, self.target)
         before = self.path.read_bytes()
-        result, code = self.clawdchat_context()
+        result, code = self.context()
         self.assertEqual((code, result['complete']), (0, True))
         for role, expected in (('root', self.root), ('parent', self.parent)):
             self.assertEqual((result[role]['status'], result[role]['origin'], result[role]['id']),

@@ -2,7 +2,6 @@
 from contextlib import redirect_stdout
 from copy import deepcopy
 from urllib.error import HTTPError
-from unittest.mock import patch
 import io
 import json
 from pathlib import Path
@@ -14,8 +13,8 @@ import unittest
 from boardmail import cli, commands, config, providers
 from boardmail.config import MailError
 from boardmail.store import Store
-from examples.fixtures import FixtureBoard, FixtureClient, named, settings, uid
-from kit import Clock, fixed
+from examples.fixtures import FixtureBoard, named, settings, uid
+from kit import Clock, Network, edge, fixed
 from test_mail import mail
 
 
@@ -362,14 +361,17 @@ class ContextTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)/'inbox.sqlite3'
         self.store = Store(self.path); self.store.initialize()
-        self.cfg = settings()['postingboard']
-        self.fixture = FixtureClient('postingboard', self.cfg)
+        self.cfg = settings(self.temp.name)['postingboard']
+        self.fixture = FixtureBoard('postingboard', self.cfg)
+        self.clock = Clock(1_000_000)
         self.fixture.others = {uid(600): named(600, 600), uid(601): named(601, 600, body='A parent comment.'),
                                uid(602): named(602, 600, reply_to=601, body='@sample-agent nested reply.')}
         self.store.save('postingboard', self.cfg['account_id'], [{**mail(602), 'thread_id': uid(600), 'parent_id': uid(601)}])
 
     def context(self, mid, cfg=None):
-        return commands.context(self.store, 'postingboard', mid, cfg, client_factory=lambda *_: self.fixture)
+        # The client waits between two requests to Postingboard. With the clock fixed, the wait only moves it.
+        with fixed(self.clock):
+            return commands.context(self.store, 'postingboard', mid, cfg, fetch=self.fixture)
 
     def test_saved_root_compares_text_exactly_without_changing_snapshot_or_marks(self):
         saved = {**mail(610), 'thread_id': uid(610), 'title': 'Original title', 'body': 'Cafe\u0301\r\n'}
@@ -512,13 +514,13 @@ class ContextTests(unittest.TestCase):
         root = Path(self.temp.name)
         self.store.save('postingboard', self.cfg['account_id'], [mail(603)])
         self.store.mark('postingboard', uid(603), 'replied', ref=providers.HOSTS['postingboard'] + '/v1/posts/' + uid(601))
-        before = self.path.read_bytes()
-        (root/'example.key').write_text('synthetic-key')
+        before = self.path.read_bytes()  # The key of the account is in the folder already, in example.key.
         (root/'config.json').write_text(json.dumps({'database': 'other.sqlite3', 'sources': {'postingboard': {
             'account_id': self.cfg['account_id'], 'api_key_file': 'example.key', 'threads': [uid(600)]}}}))
         def run(*args):
             out = io.StringIO()
-            with patch.object(providers, 'Client', lambda *_: self.fixture), redirect_stdout(out):
+            # The command line hands no board in. The invented one stands where a request leaves the process.
+            with Network({'getpostingboard.dev': edge(self.fixture)}), fixed(self.clock), redirect_stdout(out):
                 code = cli.main(['--config', str(root/'config.json'), '--db', str(self.path), 'context', 'postingboard', uid(602), *args])
             return code, json.loads(out.getvalue())
         code, result = run()
@@ -587,7 +589,7 @@ class FreshnessTests(unittest.TestCase):
     def test_stale_boundary_uses_exact_elapsed_time(self):
         self.store.save('moltbook', uid(2), [], now=100)
         for now, expected in ((640.0, 'ok'), (640.5, 'stale')):
-            with patch.object(providers.time, 'time', return_value=now), patch('boardmail.store.time.time', return_value=now):
+            with fixed(Clock(now)):
                 source = self.store.status()['sources'][0]
             self.assertEqual((source['status'], source['last_ok_age']), (expected, 540))
 

@@ -1,7 +1,6 @@
 """Source pause contracts with invented mail and no board requests."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
-from copy import deepcopy
 import json
 from pathlib import Path
 import shutil
@@ -11,13 +10,14 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
 
 from boardmail import commands, config, providers
-from boardmail.adapters import Batch, collect_all
+from boardmail.adapters import collect_all
 from boardmail.store import Store
-from examples.fixtures import original, settings, uid
+from examples.fixtures import FakeBoard, FixtureBoard, original, settings, together, uid
+from kit import Clock, fixed
 from test_mail import mail
+from test_subscription_providers import ThreadBoard
 
 
 class PauseTests(unittest.TestCase):
@@ -128,18 +128,26 @@ class PauseTests(unittest.TestCase):
         self.assertEqual((code, colony['status'], colony['error']), (1, 'error', 'http_503'))
 
     def test_inflight_pass_can_finish_but_cannot_clear_pause_or_start_later_paused_source(self):
-        sources = {s: settings()[s] for s in ('moltbook', 'the-colony')}
+        sources = {s: settings(self.root)[s] for s in ('moltbook', 'the-colony')}
         self.store.initialize(sources)
+        boards = {s: FixtureBoard(s, sources[s]) for s in sources}
+        # What the same pass over Moltbook gives and keeps when nothing comes in between.
+        alone = providers.collect('moltbook', sources['moltbook'], {}, set(), fetch=FixtureBoard('moltbook', sources['moltbook']))
+        self.assertEqual((len(alone.messages), bool(alone.state)), (1, True))
         entered, finish = threading.Event(), threading.Event()
+        get = boards['moltbook'].get
 
-        def collect(*args, **kwargs):
-            entered.set()
-            if not finish.wait(5):
-                raise RuntimeError('test did not release collector')
-            return Batch(messages=[mail(10)], state={'cursor': 'saved'})
+        def held(path, params=None, **kwargs):
+            # The board holds the pass at its first request until the test lets it go.
+            if not entered.is_set():
+                entered.set()
+                if not finish.wait(5):
+                    raise RuntimeError('test did not release collector')
+            return get(path, params, **kwargs)
 
-        with patch.object(providers, 'collect', side_effect=collect) as remote, ThreadPoolExecutor(1) as pool:
-            running = pool.submit(collect_all, self.store, sources)
+        boards['moltbook'].get = held
+        with ThreadPoolExecutor(1) as pool:
+            running = pool.submit(collect_all, self.store, sources, fetch=together(boards))
             try:
                 self.assertTrue(entered.wait(5))
                 self.store.set_paused('moltbook', True)
@@ -147,18 +155,21 @@ class PauseTests(unittest.TestCase):
             finally:
                 finish.set()
             result = running.result(timeout=5)
-            self.assertEqual((result['added'], result['failed'], remote.call_count), (1, False, 1))
+            self.assertEqual((result['added'], result['failed']), (1, False))
+        self.assertEqual(boards['the-colony'].asked, [])
         self.assertTrue(all(s['paused'] for s in self.store.status()['sources']))
         self.store.set_paused('moltbook', False)
-        self.assertEqual(self.store.collection_state('moltbook', uid(2), 'moltbook')[1], {'cursor': 'saved'})
+        self.assertEqual(self.store.collection_state('moltbook', uid(2), 'moltbook')[1], alone.state)
 
     def test_paused_context_never_creates_a_remote_client(self):
         self.store.initialize(settings())
         self.store.save('postingboard', uid(3), [mail(10)])
         self.store.set_paused('postingboard', True)
         before = self.path.read_bytes()
-        with patch.object(providers, 'Client', side_effect=AssertionError('remote lookup while paused')):
-            result, code = commands.execute(self.store, 'context', source='postingboard', id=uid(10), sources=settings())
+        board = FakeBoard([])  # It has no answer, and it is asked nothing.
+        result, code = commands.execute(self.store, 'context', source='postingboard', id=uid(10),
+                                        sources=settings(self.root), fetch=board)
+        self.assertEqual(board.asked, [])
         self.assertFalse(result['fetched'])
         self.assertEqual(result['target']['message']['id'], uid(10))
         self.assertIsNone(result['target']['current_message'])
@@ -168,46 +179,24 @@ class PauseTests(unittest.TestCase):
 
     def test_builtin_pages_resume_after_pause_and_reopen_without_losing_marks(self):
         source, owner, root = 'the-colony', uid(1), uid(400)
-        sources = {source: settings()[source]}
+        sources = {source: settings(self.root)[source]}
         self.store.initialize(sources)
         self.store.set_subscription(source, root, True)
-        post = {**original(400, 400, colony=True), 'title': 'Synthetic subscribed discussion'}
-        pages = {
-            1: [original(411, 400, colony=True), original(412, 400, author=1, colony=True)],
-            2: [{**original(413, 400, colony=True), 'parent_id': uid(412)}],
-        }
-        calls = []
-
-        class PageClient:
-            """Only these finite invented routes exist; unexpected requests fail."""
-            host = 'https://example.invalid'
-
-            def __init__(client, requested_source, config):
-                self.assertEqual(requested_source, source)
-                client.source, client.settings, client.owner = requested_source, config, owner
-
-            def get(client, path, params=None, *, authenticated=False):
-                params = dict(params or {})
-                calls.append((path, params, authenticated))
-                self.assertEqual(authenticated, path in ('/agents/me', '/notifications'))
-                if path == '/agents/me':
-                    return {'id': owner}
-                if path == '/notifications':
-                    return []
-                if path == '/posts/' + root:
-                    return deepcopy(post)
-                self.assertEqual(path, '/posts/' + root + '/comments')
-                self.assertEqual(params.get('limit'), 2)
-                self.assertEqual(params.get('sort'), 'oldest')
-                number = params['page']
-                self.assertIn(number, pages)
-                return {'items': deepcopy(pages[number]), 'page': number, 'has_more': number == 1}
+        # The invented Colony has one thread of three comments and gives two of them on a page.
+        clock = Clock(1790000000)
+        board = ThreadBoard(source, sources[source], clock)
+        board.per_page, calls = 2, board.calls
+        board.posts[root] = {**original(400, 400, colony=True), 'title': 'Synthetic subscribed discussion'}
+        board.comments[root] = [original(411, 400, colony=True), original(412, 400, author=1, colony=True),
+                                {**original(413, 400, colony=True), 'parent_id': uid(412)}]
 
         def progress(store):
             return store.collection_state(source, owner, source)
 
-        with patch.object(providers, 'PAGE_SIZE', 2), patch.object(providers, 'MAX_PAGES', 1):
-            first = collect_all(self.store, sources, client_factory=PageClient)
+        with fixed(clock):
+            board.fits = 2  # The time of the first pass is over after the root and one page.
+            first = collect_all(self.store, sources, fetch=board)
+            board.fits = None
             self.assertEqual((first['added'], first['failed']), (1, False))
             checkpoint = progress(self.store)
             root_progress = checkpoint[1]['subscriptions']['roots'][root]
@@ -221,15 +210,14 @@ class PauseTests(unittest.TestCase):
             self.store.set_paused(source, True)
             reopened = Store(self.path)
             paused_calls = list(calls)
-            with patch.object(providers, 'Client', side_effect=AssertionError('paused client loaded')):
-                paused = collect_all(reopened, sources, client_factory=lambda *_: self.fail('paused client created'))
+            paused = collect_all(reopened, sources, fetch=board)
             self.assertEqual((paused['added'], paused['failed']), (0, False))
             self.assertEqual(calls, paused_calls)
             self.assertEqual(progress(reopened), checkpoint)
             self.assertEqual(reopened.show(source, uid(411)), marked)
             self.assertTrue(reopened.is_paused(source))
             reopened.set_paused(source, False)
-            resumed = collect_all(reopened, sources, client_factory=PageClient)
+            resumed = collect_all(reopened, sources, fetch=board)
             self.assertEqual((resumed['added'], resumed['failed']), (1, False))
             self.assertFalse(resumed['sources'][0]['backlog_pending'])
             completed = progress(reopened)
@@ -239,12 +227,12 @@ class PauseTests(unittest.TestCase):
             self.assertEqual(reopened.show(source, uid(411)), marked)
             self.assertEqual([call[1]['page'] for call in calls if call[0].endswith('/comments')], [1, 2])
             # A later cycle revisits the head but does not duplicate old mail or marks.
-            replay = collect_all(reopened, sources, client_factory=PageClient)
+            replay = collect_all(reopened, sources, fetch=board)
             self.assertEqual((replay['added'], replay['failed']), (0, False))
             self.assertEqual(reopened.show(source, uid(411)), marked)
             self.assertTrue(reopened.set_subscription(source, root, False))
             boundary = len(calls)
-            unsubscribed = collect_all(Store(self.path), sources, client_factory=PageClient)
+            unsubscribed = collect_all(Store(self.path), sources, fetch=board)
             self.assertEqual((unsubscribed['added'], unsubscribed['failed']), (0, False))
             self.assertFalse(any(path.startswith('/posts/') for path, _, _ in calls[boundary:]))
             self.assertNotIn('subscriptions', progress(reopened)[1])

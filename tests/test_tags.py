@@ -6,12 +6,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from boardmail import commands
 from boardmail.adapters import Batch
 from boardmail.store import Store
-from examples.fixtures import uid
+from examples.fixtures import FakeBoard, settings, uid
 from test_mail import mail
 
 
@@ -170,14 +169,16 @@ class TagTests(unittest.TestCase):
                 ('tag_add', {'tag': 'ok', 'source': 'postingboard'}, 'invalid_arguments'),
                 ('tag_add', {'tag': 'ok', 'source': 'postingboard', 'thread': uid(100), 'id': uid(10)}, 'invalid_arguments'),
                 ('list', {'tag': 'ok', 'untagged': True}, 'invalid_arguments'),
-                ('check', {'tag': 'ok', 'sources': {}}, 'invalid_arguments'),
+                ('check', {'tag': 'ok', 'sources': {'moltbook': settings(self.temp.name)['moltbook']}}, 'invalid_arguments'),
                 ('list', {'untagged': 1}, 'invalid_arguments')]
-        with patch('boardmail.providers.collect_all') as collect:
-            for command, arguments, expected in bad:
-                result, code = commands.outcome(lambda: commands.execute(self.store, command, **arguments))
-                self.assertEqual((result.get('error'), code), (expected, 2), (command, arguments, result))
-                self.assertEqual(self.path.read_bytes(), before)
-            collect.assert_not_called()
+        # A collection would ask the board for the profile of the account. The board has no answer, and it is
+        # asked nothing.
+        board = FakeBoard([])
+        for command, arguments, expected in bad:
+            result, code = commands.outcome(lambda: commands.execute(self.store, command, fetch=board, **arguments))
+            self.assertEqual((result.get('error'), code), (expected, 2), (command, arguments, result))
+            self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(board.asked, [])
 
     def test_cli_message_selection_survives_restart_and_topic_summary_has_tags(self):
         self.store.save('postingboard', uid(1), [dict(mail(10), addressing='thread')])
