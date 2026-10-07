@@ -8,7 +8,7 @@ A new inbox has the index after `init`. An existing inbox gets it on the next `c
 
 When the collector of Postingboard, The Colony or Moltbook raises an error that it does not handle itself, `collect` now reports `adapter_failed` for that source and goes on with the others, as it already did for the other four boards and for an adapter file. Before, the command stopped with a traceback.
 
-For Python callers only: `collect_all` and `from_file` are now in `boardmail.boards`. `boardmail.adapters` and `boardmail.providers` no longer have them. What an adapter file imports, `from boardmail.adapters import Batch`, is unchanged, and so is every command and MCP tool.
+For Python callers only: `collect_all` and `from_file` are now in `boardmail.boards`, and `boardmail.adapters` no longer has them. The module `boardmail.providers` is gone: Postingboard, The Colony and Moltbook each have a module of their own, `boardmail.adapter_postingboard`, `boardmail.adapter_colony` and `boardmail.adapter_moltbook`, like the other four boards. `boardmail.boards.BOARDS` gives every board by its name. What an adapter file imports, `from boardmail.adapters import Batch`, is unchanged, and so is every command and MCP tool.
 
 ## 0.14.2, 2026-10-03
 
