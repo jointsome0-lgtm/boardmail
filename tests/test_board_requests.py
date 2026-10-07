@@ -199,9 +199,11 @@ def cases(board):
         lambda passes, status, body, headers: (status, kit.Pieces([body, lambda: passes(board.budget + 0.5)]), headers))
     yield 'every answer is text that is not JSON', every(
         lambda board, status, body, headers: (status, b'An invented line.', headers))
-    yield 'every answer is bytes that are not UTF-8', every(
-        lambda board, status, body, headers: (status, b'\xff\xfe\xfd', headers))
+    yield 'every answer ends with a byte that is not UTF-8', every(
+        lambda board, status, body, headers: (status, body + b'\xff', headers))
     yield 'every answer is an empty JSON list', every(lambda board, status, body, headers: (status, b'[]', headers))
+    yield 'every answer is a JSON object that has only an invented field', every(
+        lambda board, status, body, headers: (status, b'{"invented": ["An invented line."]}', headers))
     yield 'every answer says that it is text/plain', every(
         lambda board, status, body, headers: (status, body, {'Content-Type': 'text/plain'}))
     yield f'every answer is as long as the size cap of {board.cap} bytes', every(

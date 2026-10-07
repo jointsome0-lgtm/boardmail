@@ -136,11 +136,15 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
@@ -323,12 +327,17 @@ the seconds since the pass began at which it left. The sets of headers are numbe
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
@@ -491,11 +500,15 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
@@ -660,11 +673,15 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
@@ -815,11 +832,15 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
@@ -1023,13 +1044,19 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
@@ -1175,11 +1202,15 @@ the seconds since the pass began at which it left. The sets of headers are numbe
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
     exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
 
--- every answer is bytes that are not UTF-8
+-- every answer ends with a byte that is not UTF-8
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
     exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
 
 -- every answer is an empty JSON list
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a JSON object that has only an invented field
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
     exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
 
