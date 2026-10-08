@@ -28,7 +28,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
-from boardmail import cli, commands, config
+from boardmail import cli, commands, config, table
 from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import uid
@@ -447,6 +447,32 @@ class Step(NamedTuple):
 
 def mcp_missing():
     return importlib.util.find_spec('mcp') is None
+
+
+def words(route):
+    """A route of a result as the words that follow boardmail on a command line: the command of its tool, then
+    its arguments as the command line takes them. A value that begins with a dash is typed as --option=value, or
+    after -- where it stands by position. It fails where the route is not the two fields of a route, or has an
+    argument that its command does not take."""
+    assert set(route) == {'tool', 'arguments'}, route
+    name = route['tool'].removeprefix('boardmail_')
+    command, group, left = table.COMMANDS[name], name.partition('_')[0], dict(route['arguments'])
+    found = [group, name.removeprefix(group + '_')] if group in table.GROUPS else [name]
+    placed, options = [], []
+    for argument in command.arguments:
+        if argument.name not in left:
+            continue
+        value, option = str(left.pop(argument.name)), argument.typed.split()[0]
+        if not argument.typed.startswith('-'):
+            placed.append(value)
+        elif argument.kind['type'] == 'boolean':
+            options += [option] * route['arguments'][argument.name]
+        else:
+            options += [f'{option}={value}'] if value.startswith('-') else [option, value]
+    assert not left, f'{name} does not take {sorted(left)}'
+    if any(value.startswith('-') for value in placed):
+        return [*found, *options, '--', *placed]
+    return [*found, *placed, *options]
 
 
 def told(story, home, entry):

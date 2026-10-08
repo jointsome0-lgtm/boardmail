@@ -6,7 +6,7 @@ import sqlite3
 
 from . import adapter_common, boards, config, reader, replies, table, tags, transport, verification
 from .config import MailError
-from .errors import exit_code, next_action
+from .errors import exit_code, following, next_action
 
 LOCAL_FAILURES = (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError)
 # The function that runs each command of the command table.
@@ -15,19 +15,20 @@ HANDLERS = {}
 NO_REFERENCE = object()
 
 
-def error_result(error, argument=None):
-    """The result of an error. argument is the argument whose value was refused, where the error has one."""
+def error_result(error, argument=None, call=None):
+    """The result of an error. argument is the argument whose value was refused, where the error has one. call
+    is what the command that failed was given: where the next step is a call, the result names it as next."""
+    step = following(error, call or {})
     result = {"event": "error", "error": error, **({} if argument is None else {"argument": argument}),
-              "next_action": next_action(error), "history_complete": False}
-    if error == "message_not_found":
-        result["identifier_hint"] = ("Use the source and remote message id returned by list. "
-                                     "arrival_seq is a local arrival cursor, not a remote message id.")
+              "next_action": next_action(error), **({} if step is None else {"next": step}),
+              "history_complete": False}
     return result, exit_code(error)
 
 
-def local_state_result(exc, source=None, message_id=None):
-    """Fixed diagnostic codes; exception prose never enters the shared result."""
-    result, code = error_result("local_state_error")
+def local_state_result(exc, call=None):
+    """Fixed diagnostic codes; exception prose never enters the shared result. call is what a reply command was
+    given: its failure names the read of the journal as next, and never allows sending."""
+    result, code = error_result("local_state_error", call=call)
     reason = None
     if isinstance(exc, OSError):
         if exc.errno == errno.EROFS:
@@ -43,9 +44,7 @@ def local_state_result(exc, source=None, message_id=None):
                 reason = "permission_denied"
     if reason is not None:
         result["reason"] = reason
-    if all(config.converted(config.identifier, value) for value in (source, message_id)):
-        result["recovery"] = {"command": "reply show", "tool": "boardmail_reply_show",
-                              "arguments": {"source": source, "id": message_id}, "read_only": True}
+    if "next" in result:
         result["send_allowed"] = False
     return result, code
 
@@ -54,7 +53,7 @@ def outcome(operation):
     try:
         result, code = operation()
     except MailError as exc:
-        return error_result(str(exc), exc.argument)
+        return error_result(str(exc), exc.argument, exc.call)
     except LOCAL_FAILURES as exc:
         return local_state_result(exc)
     except KeyboardInterrupt:
@@ -70,14 +69,19 @@ def execute(store, name, /, *, sources=None, cancelled=None, fetch=transport.fet
     command = table.COMMANDS.get(name)
     if command is None:
         raise MailError("invalid_arguments")
-    arguments = table.checked(command, given)
+    call = table.checked(command, given)
+    arguments = dict(call)
     if command.sources:
         arguments["sources"] = sources
     if command.waits:
         arguments["cancelled"] = cancelled
     if table.OPEN_WORLD in command.hints:
         arguments["fetch"] = fetch
-    return HANDLERS[name](store, **arguments)
+    try:
+        return HANDLERS[name](store, **arguments)
+    except MailError as exc:
+        exc.call = call  # for the next step that the error names
+        raise
 
 
 def handles(name):
@@ -254,7 +258,7 @@ def journal(function):
         try:
             return function(store, source=source, id=id, **more)
         except LOCAL_FAILURES as exc:
-            return local_state_result(exc, source, id)
+            return local_state_result(exc, {"source": source, "id": id})
     return run
 
 

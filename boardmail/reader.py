@@ -3,6 +3,7 @@ import json
 
 from . import boards
 from .config import MailError
+from .errors import route
 
 DEFAULTS = {"scope": "addressed", "context": "brief"}
 CHOICES = {"scope": ("addressed", "all"), "context": ("brief", "none")}
@@ -111,12 +112,10 @@ def present(db, result, *, scope, context):
     for summary in activity.values():
         # An inclusive upper bound prevents newer arrivals leaking into replay.
         # Omit unread: explicit marks may have changed since the summary.
-        summary["replay"] = {"command": "list", "arguments": {
-            "source": summary["source"], "thread": summary["thread_id"],
-            "after": summary["first_seq"] - 1, "through": summary["last_seq"], "scope": "all", "context": "none"}}
-        summary["expand"] = {"command": "expand", "arguments": {
-            "source": summary["source"], "thread": summary["thread_id"],
-            "after": summary["first_seq"] - 1, "through": summary["last_seq"], "limit": 20}}
+        within = {"source": summary["source"], "thread": summary["thread_id"],
+                  "after": summary["first_seq"] - 1, "through": summary["last_seq"]}
+        summary["replay"] = route("list", **within, scope="all", context="none")
+        summary["expand"] = route("expand", **within, limit=20)
     if not result["checkpoint_safe"]:
         action = "process_filtered_page_keep_delivery_checkpoint"
     else:

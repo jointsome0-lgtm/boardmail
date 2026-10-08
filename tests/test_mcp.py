@@ -360,7 +360,8 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             page = await self.call(c, 'wait', {'timeout': 0, 'limit': 1})
             self.assertEqual((page['messages'], page['next_after']), ([], 1))
             replay = page['thread_activity'][0]['replay']
-            full = await self.call(c, replay['command'], replay['arguments'])
+            self.assertEqual(set(replay), {'tool', 'arguments'})
+            full = await self.call(c, replay['tool'].removeprefix('boardmail_'), replay['arguments'])
             self.assertEqual([m['id'] for m in full['messages']], [uid(10)])
             self.assertFalse(full['checkpoint_safe'])
             await self.call(c, 'list', {'thread': uid(100)}, error=True)

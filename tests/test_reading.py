@@ -16,7 +16,7 @@ from boardmail.boards import BOARDS
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
-from kit import DESCRIBED, Clock, arrive, described, fixed, mark, notify
+from kit import DESCRIBED, Clock, arrive, described, fixed, mark, notify, words
 from test_mail import mail
 
 
@@ -252,8 +252,8 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10), uid(11)])
         self.assertFalse(replay['more'])
         self.assertFalse(replay['checkpoint_safe'])
-        expanded, code = commands.execute(self.store, summary['expand']['command'],
-                                           local=True, **summary['expand']['arguments'])
+        self.assertEqual(summary['expand']['tool'], 'boardmail_expand')
+        expanded, code = commands.execute(self.store, 'expand', local=True, **summary['expand']['arguments'])
         self.assertEqual(code, 1)  # Saved messages survive unavailable local context.
         self.assertEqual([item['id'] for item in expanded['items']], [uid(10), uid(11)])
         self.assertEqual(expanded['through'], summary['last_seq'])
@@ -429,15 +429,10 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(len(cli('list')['messages']), 2)
         focused = cli('list', '--scope', 'addressed')
         summary = focused['thread_activity'][0]
-        args = summary['replay']['arguments']
-        replay = cli('list', *(part for key, value in args.items() for part in ('--'+key, str(value))))
+        replay = cli(*words(summary['replay']))
         self.assertEqual([m['id'] for m in replay['messages']], [uid(10)])
-        args = dict(summary['expand']['arguments'])
-        source, thread = args.pop('source'), args.pop('thread')
         process = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
-            summary['expand']['command'], source, thread, '--local',
-            *(part for key, value in args.items() for part in ('--'+key, str(value)))],
-            capture_output=True, text=True, timeout=10)
+            *words(summary['expand']), '--local'], capture_output=True, text=True, timeout=10)
         self.assertEqual(process.returncode, 1)  # The fixture has no saved root or parent.
         expanded = json.loads(process.stdout)
         self.assertEqual([item['id'] for item in expanded['items']], [uid(10)])

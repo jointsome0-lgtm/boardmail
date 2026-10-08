@@ -167,6 +167,13 @@ exit code 2
   "event": "error",
   "error": "reply_body_conflict",
   "next_action": "show_saved_reply_before_changing_a_draft",
+  "next": {
+    "tool": "boardmail_reply_show",
+    "arguments": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3"
+    }
+  },
   "history_complete": false
 }
 
@@ -223,6 +230,13 @@ exit code 2
   "event": "error",
   "error": "reply_key_mismatch",
   "next_action": "show_saved_reply_before_changing_a_draft",
+  "next": {
+    "tool": "boardmail_reply_show",
+    "arguments": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d3"
+    }
+  },
   "history_complete": false
 }
 
@@ -457,7 +471,6 @@ exit code 0
         "state": "unknown",
         "next_action": "read_back_before_retry",
         "show": {
-          "command": "reply show",
           "tool": "boardmail_reply_show",
           "arguments": {
             "source": "moltbook",
@@ -494,7 +507,6 @@ exit code 0
       "state": "unknown",
       "next_action": "read_back_before_retry",
       "show": {
-        "command": "reply show",
         "tool": "boardmail_reply_show",
         "arguments": {
           "source": "moltbook",
@@ -534,7 +546,6 @@ exit code 0
     "state": "unknown",
     "next_action": "read_back_before_retry",
     "show": {
-      "command": "reply show",
       "tool": "boardmail_reply_show",
       "arguments": {
         "source": "moltbook",
@@ -939,6 +950,13 @@ exit code 2
   "event": "error",
   "error": "reply_already_recorded",
   "next_action": "inspect_saved_reply_do_not_publish_again",
+  "next": {
+    "tool": "boardmail_reply_show",
+    "arguments": {
+      "source": "moltbook",
+      "id": "00000000-0000-0000-0000-0000000000d5"
+    }
+  },
   "history_complete": false
 }
 

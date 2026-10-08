@@ -555,7 +555,6 @@ exit code 0
     "messages": 2,
     "unread": 1,
     "read": {
-      "command": "list",
       "tool": "boardmail_list",
       "arguments": {
         "after": 0,
@@ -589,7 +588,6 @@ exit code 0
     "unread": 0
   },
   "read": {
-    "command": "list",
     "tool": "boardmail_list",
     "arguments": {
       "after": 0,
@@ -1154,7 +1152,6 @@ exit code 0
     "state": "confirmed",
     "next_action": "do_not_publish_again",
     "show": {
-      "command": "reply show",
       "tool": "boardmail_reply_show",
       "arguments": {
         "source": "moltbook",
@@ -1226,7 +1223,6 @@ exit code 0
       "messages": 2,
       "unread": 1,
       "read": {
-        "command": "list",
         "tool": "boardmail_list",
         "arguments": {
           "after": 0,
@@ -1236,7 +1232,6 @@ exit code 0
         }
       },
       "show": {
-        "command": "tag show",
         "tool": "boardmail_tag_show",
         "arguments": {
           "tag": "follow-up"
@@ -1249,7 +1244,6 @@ exit code 0
     "messages": 0,
     "unread": 0,
     "read": {
-      "command": "list",
       "tool": "boardmail_list",
       "arguments": {
         "after": 0,

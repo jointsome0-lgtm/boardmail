@@ -5,6 +5,7 @@ import time
 
 from . import schema
 from .config import MailError, converted, identifier
+from .errors import route
 
 NAME_PATTERN = r"[a-z0-9][a-z0-9_-]{0,63}"
 
@@ -36,8 +37,7 @@ def predicate(db, tag=None, untagged=False):
 
 
 def read_action(*, unread=True, **filters):
-    return {'command': 'list', 'tool': 'boardmail_list',
-            'arguments': {'after': 0, 'unread': unread, 'scope': 'all', **filters}}
+    return route('list', after=0, unread=unread, scope='all', **filters)
 
 
 def overview(db):
@@ -50,7 +50,7 @@ def overview(db):
         GROUP BY t.tag ORDER BY t.tag""")]
     for row in rows:
         row['read'] = read_action(tag=row['tag'])
-        row['show'] = {'command': 'tag show', 'tool': 'boardmail_tag_show', 'arguments': {'tag': row['tag']}}
+        row['show'] = route('tag_show', tag=row['tag'])
     clause, values = predicate(db, untagged=True)
     untagged = dict(db.execute("""SELECT COUNT(*) AS threads,COALESCE(SUM(messages),0) AS messages,
         COALESCE(SUM(unread),0) AS unread FROM (

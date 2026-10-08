@@ -1,4 +1,4 @@
-"""Error guidance uses fixed codes and read-only recovery for invented state."""
+"""Error guidance uses fixed codes and the read of the journal as the next call, for invented state."""
 import errno
 import json
 from pathlib import Path
@@ -49,7 +49,7 @@ class CommandErrorTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             commands.outcome(lambda: fail(RuntimeError(SECRET)))
 
-    def test_missing_message_hint_does_not_reinterpret_numeric_remote_id(self):
+    def test_a_missing_message_names_the_list_of_its_source_and_takes_no_number_for_an_id(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)/'invented.sqlite3'
             store = new_inbox(path)
@@ -59,13 +59,15 @@ class CommandErrorTests(unittest.TestCase):
             self.assertEqual((code, result['message']['id']), (0, '1087'))
             missing, code = commands.outcome(lambda: commands.execute(store, 'show', source='synthetic', id='1'))
             self.assertEqual((missing['error'], code), ('message_not_found', 2))
-            self.assertIn('source', missing['identifier_hint'])
-            self.assertIn('remote', missing['identifier_hint'])
-            self.assertIn('list', missing['identifier_hint'])
-            self.assertIn('arrival_seq', missing['identifier_hint'])
+            self.assertEqual(missing['next_action'], 'use_the_source_and_id_of_a_listed_message')
+            self.assertEqual(missing['next'], {'tool': 'boardmail_list', 'arguments': {
+                'source': 'synthetic', 'scope': 'all', 'context': 'none'}})
+            self.assertNotIn('identifier_hint', missing)
+            listed, code = commands.outcome(lambda: commands.execute(store, 'list', **missing['next']['arguments']))
+            self.assertEqual((code, [message['id'] for message in listed['messages']]), (0, ['1087']))
             self.assertEqual(path.read_bytes(), before)
 
-    def test_reply_write_failure_offers_exact_read_only_recovery_without_mutation(self):
+    def test_reply_write_failure_names_the_read_of_the_journal_and_changes_nothing(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)/'invented.sqlite3'
             store = new_inbox(path)
@@ -77,12 +79,12 @@ class CommandErrorTests(unittest.TestCase):
             self.assertEqual((result['error'], code, result['reason']), ('local_state_error', 2, 'permission_denied'))
             self.assertEqual(result['next_action'], 'inspect_database_do_not_delete')
             self.assertFalse(result['send_allowed'])
-            self.assertEqual(result['recovery'], {'command': 'reply show', 'tool': 'boardmail_reply_show',
-                             'arguments': {'source': 'synthetic', 'id': '1087'}, 'read_only': True})
+            self.assertEqual(result['next'], {'tool': 'boardmail_reply_show',
+                                              'arguments': {'source': 'synthetic', 'id': '1087'}})
+            self.assertNotIn('recovery', result)
             self.assertNotIn(SECRET, json.dumps(result))
             self.assertEqual(path.read_bytes(), before)
-            args = result['recovery']['arguments']
-            recovered, code = commands.execute(store, 'reply_show', **args)
+            recovered, code = commands.execute(store, 'reply_show', **result['next']['arguments'])
             self.assertEqual((code, recovered['reply'], recovered['changed'], recovered['send_allowed']),
                              (0, None, False, False))
             self.assertEqual(path.read_bytes(), before)
@@ -101,17 +103,26 @@ class CommandErrorTests(unittest.TestCase):
                 self.assertEqual((result['error'], code), ('local_state_error', 2))
                 self.assertNotIn('reason', result)
                 self.assertFalse(result['send_allowed'])
-                self.assertEqual(result['recovery']['arguments'], {'source': 'alias', 'id': 'numeric-20'})
+                self.assertEqual(result['next'], {'tool': 'boardmail_reply_show',
+                                                  'arguments': {'source': 'alias', 'id': 'numeric-20'}})
                 self.assertEqual(result['next_action'], 'inspect_database_do_not_delete')
                 self.assertNotIn(SECRET, json.dumps(result))
+        # A command that is no reply command has no journal to read: its failure names no call.
+        with patch('sqlite3.connect', side_effect=sqlite_error(sqlite3.SQLITE_CANTOPEN)):
+            result, code = commands.outcome(lambda: commands.execute(store, 'show', source='alias', id='numeric-20'))
+        self.assertEqual((result['error'], code), ('local_state_error', 2))
+        self.assertNotIn('next', result)
+        self.assertNotIn('send_allowed', result)
 
-    def test_invalid_target_does_not_produce_recovery_route(self):
+    def test_a_failure_names_no_next_call_without_a_name_and_an_id_to_give_it(self):
         for source, mid in ((None, '10'), ('alias', None), ('alias', 'bad\nidentifier')):
-            result, _ = commands.local_state_result(OSError(errno.EROFS, SECRET), source, mid)
-            self.assertNotIn('recovery', result)
+            result, _ = commands.local_state_result(OSError(errno.EROFS, SECRET), {'source': source, 'id': mid})
+            self.assertNotIn('next', result)
+            self.assertNotIn('send_allowed', result)
+        self.assertNotIn('next', commands.local_state_result(OSError(errno.EROFS, SECRET))[0])
         result, code = commands.outcome(lambda: fail(MailError('invalid_arguments')))
         self.assertEqual((result['error'], code), ('invalid_arguments', 2))
-        self.assertNotIn('identifier_hint', result)
+        self.assertNotIn('next', result)
 
 
 if __name__ == '__main__':

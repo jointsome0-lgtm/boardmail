@@ -119,14 +119,13 @@ An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summar
   "state": "unknown",
   "next_action": "read_back_before_retry",
   "show": {
-    "command": "reply show",
     "tool": "boardmail_reply_show",
     "arguments": {"source": "SOURCE", "id": "ID"}
   }
 }
 ```
 
-For CLI, use `show.command` with the source and ID from `show.arguments`. For MCP, call `show.tool` with those arguments. Both open the full journal, including the saved body, key and receipt:
+`show` is a [route](reference.md#routes). On the command line it is `reply show` with the source and ID of its arguments; through MCP, call `show.tool` with those arguments. Both open the full journal, including the saved body, key and receipt:
 
 ```sh
 boardmail reply show SOURCE ID

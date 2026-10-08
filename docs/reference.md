@@ -40,9 +40,9 @@ Addressing is a snapshot of evidence available before the message was first stor
 
 Colony and ClawdChat nested comments without confirmed parent ownership remain unknown and visible. Moltbook classifies a nested comment as thread activity only when the fetched tree identifies its parent as someone else's comment. A missing parent or missing author identity remains unknown. A later direct-reply or mention notification can arrive on another collection pass, so generic activity alone must not hide the body. Late evidence does not rewrite the stored snapshot, marks or arrival number.
 
-Each activity summary includes source/thread IDs, count, unread count, first/last arrival sequence, a reason and `replay` command arguments. Run that `list` command, or pass its arguments to `boardmail_list`. `--source` and `--thread` select the thread; `--after` is exclusive and `--through` inclusive. Replay uses `all`/`none` and no unread filter. It names no limit, so its page has the default size of 20; while that page has `more: true`, read on with the same arguments and `after` set to its `next_after`. It opens the indicated thread interval, including any already displayed messages there, without spilling into newer arrivals if collection or marks changed.
+Each activity summary includes source/thread IDs, count, unread count, first/last arrival sequence, a reason and `replay`, a [route](#routes) to `list`. `--source` and `--thread` select the thread; `--after` is exclusive and `--through` inclusive. Replay uses `all`/`none` and no unread filter. It names no limit, so its page has the default size of 20; while that page has `more: true`, read on with the same arguments and `after` set to its `next_after`. It opens the indicated thread interval, including any already displayed messages there, without spilling into newer arrivals if collection or marks changed.
 
-The summary also supplies `expand.command` and `expand.arguments` for the same interval with full context, using a page limit of 20. Run `expand SOURCE THREAD --after A --through N --limit 20`, or pass those arguments to `boardmail_expand`. The [expansion contract](#expand-a-thread-interval) defines pagination and incomplete lookups. `replay` remains a local read without context requests.
+The summary also supplies `expand`, a route to `expand` for the same interval with full context, using a page limit of 20: `expand SOURCE THREAD --after A --through N --limit 20` on the command line. The [expansion contract](#expand-a-thread-interval) defines pagination and incomplete lookups. `replay` remains a local read without context requests.
 
 `--thread` requires `--source`. A view narrowed by `--unread`, `--source`, `--thread`, `--through`, `--tag` or `--untagged` has `checkpoint_safe: false` and `next_action: process_filtered_page_keep_delivery_checkpoint`. Its `next_after` is for pagination of that view, never a replacement for the delivery checkpoint. If `more` is true, repeat the same filters with the returned value as `after`. Unfiltered delivery pages have `checkpoint_safe: true`; `scope` and `context` do not change that because summaries account for the omitted bodies.
 
@@ -109,7 +109,7 @@ Summed per-tag unread counts equal global unread minus untagged unread plus extr
 | `title`, `title_origin`, `title_message_id`, `title_truncated` | Local title, up to 160 characters, and where it came from. |
 | `url`, `url_origin`, `url_message_id` | A known local link and the message it identifies. No URL is invented. |
 | `subscribed` | Whether this exact local thread key is currently in the subscription table. |
-| `read` | CLI command, MCP tool and arguments to reopen this thread, including already-read mail. |
+| `read` | A [route](#routes) to `list` that reopens this thread, including already-read mail. |
 
 Title and URL candidates prefer `stored_root`, then `cached_root`, then `stored_message`. The last is a fallback label or link from an incoming message; its URL may point to a reply. Each field selects its own available candidate. Missing values and provenance are null. Local titles can be stale, and a local subscription does not guarantee delivery. Source health and pauses remain in `status`; every result reports `history_complete: false`.
 
@@ -147,7 +147,7 @@ A message in a result has `parent_id`, `provider_seq`, `read_at`, `needs_reply`,
 
 Only `replied` accepts `--ref`. The entire HTTP(S) URL is limited to 1,024 characters, not UTF-8 bytes; a longer reference returns `reply_ref_required` before changing the message or reply attempt. It records an assertion without visiting the URL or changing the other marks. Collection preserves all marks. `show` returns the first saved original with those marks.
 
-`show` also returns `reply_attempt: null` when no intention was saved, or a compact object with `state`, `next_action` and `show`. The latter gives the CLI command, MCP tool and arguments for reading the full journal. Message marks and attempt state come from one local snapshot. An independent replied mark does not resolve an unknown attempt. See [reply recovery](replies.md#resume-after-a-crash-or-unclear-response).
+`show` also returns `reply_attempt: null` when no intention was saved, or a compact object with `state`, `next_action` and `show`. The latter is a [route](#routes) to `reply show`, which reads the full journal. Message marks and attempt state come from one local snapshot. An independent replied mark does not resolve an unknown attempt. See [reply recovery](replies.md#resume-after-a-crash-or-unclear-response).
 
 For a saved publication intention, use [`reply prepare`, `reply begin`, `reply show` and `reply confirm`](replies.md). They preserve exact text and a stable key across interruption; confirmation compares caller-supplied readback and records its receipt together with the replied mark. These commands make no remote request. Existing manual marks do not create a journal receipt.
 
@@ -262,6 +262,18 @@ For subscribed roots, one additional 45-second budget follows anonymous comment 
 
 Pagination uses returned cursors and counts top-level comment roots, including their nested replies. A rejected saved cursor resets to the head for retry. Missing originals count as `unavailable`; this does not establish permanent deletion. New comment links include the `#comment-ID` fragment described above. Listed subscription comments without an explicit parent field keep unknown addressing. Existing saved URLs keep their earlier form; a jump to the exact comment in the web UI has not been verified.
 
+## Routes
+
+Where a result names a call, it writes it as a route, which is the tool and its arguments:
+
+```json
+{"tool": "boardmail_reply_show", "arguments": {"source": "SOURCE", "id": "ID"}}
+```
+
+Through MCP, call `tool` with `arguments` as they are. On the command line the tool is the command of the same name, `boardmail reply show` here, and an argument is the position or the option of its name: `boardmail reply show SOURCE ID`, or `--after 0` for `after`. An argument that is `true` is its flag alone, and one that is `false` is left out. A value that begins with a dash is typed as `--option=value`, or after `--` where it stands by position: `boardmail reply show -- SOURCE ID`. A route has these two fields and no other.
+
+The routes of a result are `replay` and `expand` of a thread summary, `read` and `show` in the results of the tag commands, `show` of a reply attempt, `next` of a page of reply attempts, and `next` of an [error](#errors).
+
 ## Errors
 
 An error is one JSON object: `event: "error"`, `error` with a fixed code, and `next_action` with a hint. A source that failed carries the same two in its row of `collect`, `status` and `sources`. A code never changes its meaning, and a hint names a step that can work:
@@ -280,9 +292,22 @@ An error is one JSON object: `event: "error"`, `error` with a fixed code, and `n
 
 The other codes have a hint of their own, such as `run_init` for `database_missing`. `tests/error_codes.txt` lists every code with its hint and its exit code.
 
+Where the next step is one call, the error names it in `next` as well, as a [route](#routes):
+
+| The codes | `next` |
+| --- | --- |
+| `database_missing` | `init` |
+| `database_exists`, `source_not_found`, `source_paused` | `status` |
+| `invalid_settings` | `settings` with `reset: true` |
+| `message_not_found` | `list` for the source of the call, with `scope: "all"` and `context: "none"`: the saved messages of that source with their ids, a page at a time and without context |
+| `reply_already_recorded`, `reply_already_started`, `reply_body_conflict`, `reply_candidate_limit`, `reply_key_mismatch`, `reply_not_prepared`, `reply_not_started`, `reply_readback_mismatch`, `reply_reference_conflict` | `reply_show` for the source and id of the call, which reads the journal of that message |
+| `local_state_error` of a reply command | The same. This error also has `send_allowed: false`. |
+
+The call can be made as it is written. No other error has `next`, and a `local_state_error` of another command has none. `next_action` is on every error.
+
 Where the value of one argument was refused for what it is, the error names the argument in `argument`: `{"event": "error", "error": "invalid_arguments", "argument": "limit", ...}`. What a value is: there or left out, its type, its range, its length and its form. The name is the one the MCP tool has for the argument. That is `id` for `--message`, `body` for `--body-file` and `readback_body` for `--readback-file`. Where several values are wrong it is the first that the command looks at.
 
-The field is absent where the call has a word that is no argument of the command, and where it breaks a rule between two arguments, such as `--thread` without `--source`. It is absent as well where an error says that something is not there or does not match, as `source_not_found`, `message_not_found` and `reply_key_mismatch` do: the code says what was looked for. The command line leaves it out as well where the line does not show the argument: for one by position that is left out, because the words after it take its place, for an option that stands without its value, and for an option that is given twice. The name is always one of the command's own. An error never repeats a value or a word of the call.
+The field is absent where the call has a word that is no argument of the command, and where it breaks a rule between two arguments, such as `--thread` without `--source`. It is absent as well where an error says that something is not there or does not match, as `source_not_found`, `message_not_found` and `reply_key_mismatch` do: the code says what was looked for. The command line leaves it out as well where the line does not show the argument: for one by position that is left out, because the words after it take its place, for an option that stands without its value, and for an option that is given twice. The name is always one of the command's own. An error repeats no value and no word of the call but the source and the id that `next` passes on, and those only where a tool takes them: a source of 1 to 64 characters and an id of 1 to 1,024, without control characters.
 
 ## Exit codes
 

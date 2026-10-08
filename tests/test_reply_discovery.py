@@ -10,7 +10,7 @@ import unittest
 
 from boardmail import commands, replies
 from examples.fixtures import FakeBoard, uid
-from kit import arrive, mark, new_inbox, on_statement
+from kit import arrive, mark, new_inbox, on_statement, words
 from test_mail import mail
 
 
@@ -64,15 +64,14 @@ class ReplyDiscoveryTests(unittest.TestCase):
                 observed.append((item['source'], item['id'], item['state']))
                 self.assertNotIn('body', item); self.assertNotIn('idempotency_key', item)
                 route = item['show']
-                recovered = self.cli(*route['command'].split(), route['arguments']['source'], route['arguments']['id'])
+                recovered = self.cli(*words(route))
                 self.assertEqual(recovered['reply']['state'], item['state'])
                 self.assertEqual(recovered['next_action'], item['next_action'])
             if not page['has_more']:
                 self.assertIsNone(page['next']); break
             route = page['next']
             self.assertEqual(route['tool'], 'boardmail_reply_list')
-            page = self.cli(*route['command'].split(), '--after', str(route['arguments']['after']),
-                            '--limit', str(route['arguments']['limit']))
+            page = self.cli(*words(route))
         self.assertEqual(sizes, [20, 20, 5])
         self.assertEqual(observed, expected)
         self.assertEqual(board.asked, [])

@@ -17,7 +17,7 @@ from boardmail import commands, reader, replies
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, uid
-from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox
+from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox, words
 from test_mail import mail
 
 
@@ -98,10 +98,8 @@ class ReplyRecoveryTests(unittest.TestCase):
                     self.assertNotIn('body', summary)
                     route = summary['show']
                     self.assertEqual(route['tool'], 'boardmail_reply_show')
-                    args = route['arguments']
                     recovered = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path),
-                        *route['command'].split(), args['source'], args['id']],
-                        capture_output=True, text=True, timeout=10)
+                        *words(route)], capture_output=True, text=True, timeout=10)
                     self.assertEqual(recovered.returncode, 0, recovered.stderr)
                     attempt = json.loads(recovered.stdout)['reply']
                     self.assertEqual((attempt['state'], attempt['body'], attempt['idempotency_key']),
@@ -159,8 +157,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                             self.assertEqual(set(summary), {'state', 'next_action', 'show'})
                             route = summary['show']
                             recovered = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(path),
-                                *route['command'].split(), route['arguments']['source'], route['arguments']['id']],
-                                capture_output=True, text=True, timeout=10)
+                                *words(route)], capture_output=True, text=True, timeout=10)
                             self.assertEqual(recovered.returncode, 0, recovered.stderr)
                             journal = json.loads(recovered.stdout)
                             self.assertEqual(journal['reply'], original['reply'])
@@ -207,9 +204,8 @@ class ReplyRecoveryTests(unittest.TestCase):
                         self.assertEqual((summary['state'], summary['next_action']),
                                          (state, next_action))
                         route = summary['show']
-                        self.assertEqual(route, {'command': 'reply show',
-                            'tool': 'boardmail_reply_show',
-                            'arguments': {'source': 'moltbook', 'id': target}})
+                        self.assertEqual(route, {'tool': 'boardmail_reply_show',
+                                                 'arguments': {'source': 'moltbook', 'id': target}})
                         recovered, code = commands.outcome(lambda: commands.execute(
                             self.store, 'reply_show', **route['arguments']))
                         self.assertEqual(code, 0)
