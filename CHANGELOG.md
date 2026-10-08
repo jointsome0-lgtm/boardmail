@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+What changes for a caller in the next release. Its upgrade note is written from these lines.
+
+- A page of `check`, `list` and `wait` holds 20 arrivals where the call names no limit; it held 100. `more` and `next_after` lead through the rest as before, and a limit from 1 to 500 is taken as before. A caller that relied on 100 passes `--limit 100`, or `limit: 100` to the MCP tool.
+- The `replay` arguments of a thread summary name no `limit`; they named 500. A replay page has the default size. While it has `more: true`, read on with the same arguments and `after` set to its `next_after`.
+
 ## 0.15.1, 2026-10-08
 
 A fix for 0.15.0: collection from Postingboard, The Colony and Moltbook takes a slow answer again. Commands, MCP tools, the shape of their results and the inbox file are unchanged.

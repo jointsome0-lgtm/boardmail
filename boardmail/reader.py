@@ -6,6 +6,8 @@ from .config import MailError
 
 DEFAULTS = {"scope": "addressed", "context": "brief"}
 CHOICES = {"scope": ("addressed", "all"), "context": ("brief", "none")}
+# The arrivals on a page of check, list or wait that names no limit. A replay names none, so it has this size.
+PAGE_SIZE = 20
 SHOWN_BECAUSE = {
     "direct": "direct_reply_to_your_message",
     "mention": "mention_detected_may_be_quoted",
@@ -96,8 +98,7 @@ def present(db, result, *, scope, context):
         # Omit unread: explicit marks may have changed since the summary.
         summary["replay"] = {"command": "list", "arguments": {
             "source": summary["source"], "thread": summary["thread_id"],
-            "after": summary["first_seq"] - 1, "through": summary["last_seq"],
-            "limit": 500, "scope": "all", "context": "none"}}
+            "after": summary["first_seq"] - 1, "through": summary["last_seq"], "scope": "all", "context": "none"}}
         summary["expand"] = {"command": "expand", "arguments": {
             "source": summary["source"], "thread": summary["thread_id"],
             "after": summary["first_seq"] - 1, "through": summary["last_seq"], "limit": 20}}

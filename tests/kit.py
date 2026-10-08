@@ -207,7 +207,7 @@ def one_pass(store, source, settings, fetch=None):
     result, code = commands.execute(store, 'collect', sources={source: settings}, **({'fetch': fetch} if fetch else {}))
     health, = (entry for entry in result['sources'] if entry['source'] == source)
     state = store.collection_state(source, settings['account_id'], str(settings.get('adapter', source)))[1]
-    return Batch(messages=store.page(before)['messages'], state=state, complete=not health['backlog_pending'],
+    return Batch(messages=store.page(before, 500)['messages'], state=state, complete=not health['backlog_pending'],
                  error=health['error'], unavailable=health['unavailable']), result['added']
 
 

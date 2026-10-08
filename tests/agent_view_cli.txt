@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18070
+  help text: 18033
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -39,7 +39,7 @@ boardmail:
   epilog: |
     After configuring an account:
       boardmail init                         # new database only
-      boardmail check --after 0 --limit 50    # collect and read
+      boardmail check --after 0              # collect and read
 
     For each returned message, use its source and exact id:
       boardmail show SOURCE ID
@@ -262,9 +262,9 @@ boardmail check:
       type: int
       default: 0
     --limit N:
-      help: Arrivals scanned per page, before scope filtering; 1 to 500, default 100
+      help: Arrivals scanned per page, before scope filtering; 1 to 500, default 20
       type: int
-      default: 100
+      default: 20
     --scope:
       help: Override saved scope once; addressed summarizes only proven thread activity
       choices: [addressed, all]
@@ -272,7 +272,7 @@ boardmail check:
       help: Override saved context once; brief uses bounded local excerpts, never fetches
       choices: [brief, none]
   epilog: |
-    Example: boardmail check --after 0 --limit 50
+    Example: boardmail check --after 0
     Replace 0 with your saved next_after after processing a page.
     Handle messages and thread_activity, mark explicitly, then save next_after.
     Use list to drain more pages. An empty page or timeout does not prove
@@ -287,9 +287,9 @@ boardmail list:
       type: int
       default: 0
     --limit N:
-      help: Arrivals scanned per page, before scope filtering; 1 to 500, default 100
+      help: Arrivals scanned per page, before scope filtering; 1 to 500, default 20
       type: int
-      default: 100
+      default: 20
     --scope:
       help: Override saved scope once; addressed summarizes only proven thread activity
       choices: [addressed, all]
@@ -314,7 +314,7 @@ boardmail list:
       takes: no value
       not with: [--tag]
   epilog: |
-    Example: boardmail list --after 0 --limit 50
+    Example: boardmail list --after 0
     Replace 0 with your saved next_after after processing a page.
     Handle messages and thread_activity, mark explicitly, then save next_after.
     Use list to drain more pages. An empty page or timeout does not prove
@@ -334,9 +334,9 @@ boardmail wait:
       type: int
       default: 0
     --limit N:
-      help: Arrivals scanned per page, before scope filtering; 1 to 500, default 100
+      help: Arrivals scanned per page, before scope filtering; 1 to 500, default 20
       type: int
-      default: 100
+      default: 20
     --scope:
       help: Override saved scope once; addressed summarizes only proven thread activity
       choices: [addressed, all]
@@ -348,7 +348,7 @@ boardmail wait:
       type: float
       default: 1800
   epilog: |
-    Example: boardmail wait --after 0 --limit 50
+    Example: boardmail wait --after 0
     Replace 0 with your saved next_after after processing a page.
     Handle messages and thread_activity, mark explicitly, then save next_after.
     Use list to drain more pages. An empty page or timeout does not prove

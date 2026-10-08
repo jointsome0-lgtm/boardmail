@@ -265,7 +265,7 @@ class Store:
             return {**reader.DEFAULTS, **saved,
                     "origin": {key: "saved" if key in saved else "default" for key in reader.DEFAULTS}}
 
-    def page(self, after=0, limit=100, *, unread=False, scope="all", context="none", through=None,
+    def page(self, after=0, limit=reader.PAGE_SIZE, *, unread=False, scope="all", context="none", through=None,
              source=None, thread=None, tag=None, untagged=False):
         with self.connect() as db:
             predicate, values = "arrival_seq>?", [after]
@@ -339,7 +339,7 @@ class Store:
             if not changed:
                 raise MailError("message_not_found")
 
-    def wait(self, after, timeout, limit=100, *, cancelled=None, scope="all", context="none"):
+    def wait(self, after, timeout, limit=reader.PAGE_SIZE, *, cancelled=None, scope="all", context="none"):
         cancelled = cancelled or threading.Event()
         deadline = time.monotonic()+timeout
         while True:

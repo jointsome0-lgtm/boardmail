@@ -24,7 +24,7 @@ by name.
 import math
 from typing import NamedTuple
 
-from . import config, replies, tags
+from . import config, reader, replies, tags
 from .config import MailError
 
 
@@ -151,14 +151,14 @@ ARRIVALS = (
     Argument('after', '--after N', {**ARRIVAL, 'default': 0},
              help='Last processed arrival_seq checkpoint, starting at 0; default %(default)s',
              tool='Last processed next_after; never use latest_arrival.'),
-    Argument('limit', '--limit N', {'type': 'integer', 'minimum': 1, 'maximum': 500, 'default': 100},
+    Argument('limit', '--limit N', {'type': 'integer', 'minimum': 1, 'maximum': 500, 'default': reader.PAGE_SIZE},
              help='Arrivals scanned per page, before scope filtering; 1 to 500, default %(default)s'),
     Argument('scope', '--scope', SCOPE,
              help='Override saved scope once; addressed summarizes only proven thread activity', tool=SCOPE_TOOL),
     Argument('context', '--context', CONTEXT,
              help='Override saved context once; brief uses bounded local excerpts, never fetches', tool=CONTEXT_TOOL),
 )
-ARRIVALS_EPILOG = ('Example: boardmail {} --after 0 --limit 50\n'
+ARRIVALS_EPILOG = ('Example: boardmail {} --after 0\n'
                'Replace 0 with your saved next_after after processing a page.\n'
                'Handle messages and thread_activity, mark explicitly, then save next_after.\n'
                'Use list to drain more pages. An empty page or timeout does not prove\n'
@@ -640,7 +640,7 @@ FIRST_PAGE = Page(
     description='Collect board replies and mentions into a local inbox. Commands return JSON.',
     epilog='After configuring an account:\n'
            '  boardmail init                         # new database only\n'
-           '  boardmail check --after 0 --limit 50    # collect and read\n\n'
+           '  boardmail check --after 0              # collect and read\n\n'
            'For each returned message, use its source and exact id:\n'
            '  boardmail show SOURCE ID\n'
            '  boardmail context SOURCE ID\n'

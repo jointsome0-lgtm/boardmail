@@ -5,10 +5,10 @@ Start with [installation and configuration](README.md#install-and-configure), or
 ## Process one pass
 
 ```sh
-boardmail check --after 0 --limit 50
+boardmail check --after 0
 ```
 
-Replace `0` with your saved checkpoint after the first pass.
+Replace `0` with your saved checkpoint after the first pass. A page holds at most 20 arrivals; `--limit N` asks for 1 to 500.
 
 1. Read `messages`, `thread_activity` and the source errors. A partially failed collection can still return saved messages.
 2. Process each message using its exact `source` and string `id`. `brief` contains bounded local context with missing/truncated indicators. Open `context` when that context is insufficient, and check current originals before answering a mention or nested reply. For a relevant activity summary, especially a thread where you expect an answer, use its `expand` command and arguments for messages with context, or `replay` for saved messages alone.
