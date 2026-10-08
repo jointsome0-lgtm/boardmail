@@ -7,6 +7,7 @@ What changes for a caller in the next release. Its upgrade note is written from 
 - A page of `check`, `list` and `wait` holds 20 arrivals where the call names no limit; it held 100. `more` and `next_after` lead through the rest as before, and a limit from 1 to 500 is taken as before. A caller that relied on 100 passes `--limit 100`, or `limit: 100` to the MCP tool.
 - The `replay` arguments of a thread summary name no `limit`; they named 500. A replay page has the default size. While it has `more: true`, read on with the same arguments and `after` set to its `next_after`.
 - A page of `check`, `list` and `wait` names a source only when it needs attention: its status is `stale`, `error`, `unknown` or `paused`, or it is `ok` with a backlog pending. It named every source. `sources: []` says that no source needs attention. A caller that read the health of every source from a page asks `status`.
+- The brief context of a message says each thing once. Its root, its parent and an earlier message of the exchange have no `url` and no `fetched_at`, and have `thread_id` and `title` only where those differ from the message's own. `previous_exchange` has no `reply_ref`, and the brief has no `expand`. `context SOURCE ID`, the call that `expand` named, has the addresses and the `reply_ref` where the source supports that lookup. No result has the time at which a cached excerpt was fetched.
 
 ## 0.15.1, 2026-10-08
 

@@ -86,13 +86,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000a"
-          }
         }
       }
     },
@@ -130,13 +123,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000b"
-          }
         }
       }
     }
@@ -213,13 +199,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000b"
-          }
         }
       }
     }
@@ -296,13 +275,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000a"
-          }
         }
       }
     },
@@ -340,13 +312,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000b"
-          }
         }
       }
     }
@@ -776,13 +741,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000a"
-          }
         }
       }
     },
@@ -820,13 +778,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000b"
-          }
         }
       }
     }
@@ -1484,13 +1435,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000a"
-          }
         }
       }
     },
@@ -1530,13 +1474,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-00000000000b"
-          }
         }
       }
     }

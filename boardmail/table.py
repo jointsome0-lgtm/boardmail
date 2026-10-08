@@ -386,7 +386,8 @@ COMMANDS = {command.name: command for command in (
              'thread requires source. tag and untagged=true are mutually exclusive local thread filters, applied before LIMIT. '
              'Start each new topic visit with after=0, unread=true and scope=all; preserve the delivery checkpoint. '
              'Read marks apply to a message in every tag. check, list and wait name only sources that need '
-             'attention: status not ok, or backlog_pending. None named means none needs it; status lists every source.',
+             'attention: status not ok, or backlog_pending. None named means none needs it; status lists every source. '
+             "A brief is a short local excerpt; context with a message's source and id gives its full context.",
         arguments=(
             *ARRIVALS,
             Argument('unread', '--unread', FLAG, help='Only messages without a local read mark'),

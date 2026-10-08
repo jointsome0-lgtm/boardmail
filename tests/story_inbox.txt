@@ -264,13 +264,9 @@ exit code 0
       "shown_because": "direct_reply_to_your_message",
       "brief": {
         "root": {
-          "status": "cached",
-          "fetched_at": 1800000000,
           "id": "00000000-0000-0000-0000-0000000000c9",
-          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "status": "cached",
           "author": "sample-agent",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
-          "title": "Example discussion",
           "body": "An invented post of ours.",
           "truncated": false
         },
@@ -281,13 +277,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-0000000000d3"
-          }
         }
       }
     },
@@ -325,13 +314,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "example",
-            "id": "1"
-          }
         }
       }
     }
@@ -1020,13 +1002,9 @@ exit code 0
       "shown_because": "direct_reply_to_your_message",
       "brief": {
         "root": {
-          "status": "cached",
-          "fetched_at": 1800000000,
           "id": "00000000-0000-0000-0000-0000000000c9",
-          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "status": "cached",
           "author": "sample-agent",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
-          "title": "Example discussion",
           "body": "An invented post of ours.",
           "truncated": false
         },
@@ -1037,13 +1015,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-0000000000d3"
-          }
         }
       }
     }
@@ -1135,13 +1106,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "example",
-            "id": "1"
-          }
         }
       }
     }
@@ -1275,49 +1239,30 @@ exit code 0
       "shown_because": "direct_reply_to_your_message",
       "brief": {
         "root": {
-          "status": "cached",
-          "fetched_at": 1800000600,
           "id": "00000000-0000-0000-0000-0000000000c9",
-          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "status": "cached",
           "author": "sample-agent",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
-          "title": "Example discussion",
           "body": "An invented post of ours.",
           "truncated": false
         },
         "parent": {
-          "status": "cached",
-          "fetched_at": 1800000600,
           "id": "00000000-0000-0000-0000-0000000000dd",
-          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "status": "cached",
           "author": "sample-agent",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-          "title": "Example discussion",
           "body": "An invented answer of ours.",
           "truncated": false
         },
         "previous_exchange": {
           "status": "linked",
-          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
           "messages": [
             {
               "id": "00000000-0000-0000-0000-0000000000d3",
-              "thread_id": "00000000-0000-0000-0000-0000000000c9",
               "author": "sample-writer",
-              "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
-              "title": "Example discussion",
               "body": "An invented reply to the post.",
               "truncated": false
             }
           ],
           "more": false
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-0000000000d4"
-          }
         }
       }
     },
@@ -1345,38 +1290,23 @@ exit code 0
       "shown_because": "mention_detected_may_be_quoted",
       "brief": {
         "root": {
-          "status": "cached",
-          "fetched_at": 1800000600,
           "id": "00000000-0000-0000-0000-00000000012d",
-          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "status": "cached",
           "author": "sample-writer",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d",
-          "title": "Another discussion",
           "body": "An invented post of theirs.",
           "truncated": false
         },
         "parent": {
-          "status": "stored",
           "id": "00000000-0000-0000-0000-000000000137",
-          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "status": "stored",
           "author": "another-writer",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
-          "title": "Another discussion",
           "body": "An invented comment for nobody in particular.",
           "truncated": false
         },
         "previous_exchange": {
           "status": "unmatched",
-          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
           "messages": [],
           "more": false
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-000000000138"
-          }
         }
       }
     },
@@ -1414,13 +1344,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "example",
-            "id": "2"
-          }
         }
       }
     }
@@ -1509,49 +1432,30 @@ exit code 0
       "shown_because": "direct_reply_to_your_message",
       "brief": {
         "root": {
-          "status": "cached",
-          "fetched_at": 1800000600,
           "id": "00000000-0000-0000-0000-0000000000c9",
-          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "status": "cached",
           "author": "sample-agent",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9",
-          "title": "Example discussion",
           "body": "An invented post of ours.",
           "truncated": false
         },
         "parent": {
-          "status": "cached",
-          "fetched_at": 1800000600,
           "id": "00000000-0000-0000-0000-0000000000dd",
-          "thread_id": "00000000-0000-0000-0000-0000000000c9",
+          "status": "cached",
           "author": "sample-agent",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-          "title": "Example discussion",
           "body": "An invented answer of ours.",
           "truncated": false
         },
         "previous_exchange": {
           "status": "linked",
-          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
           "messages": [
             {
               "id": "00000000-0000-0000-0000-0000000000d3",
-              "thread_id": "00000000-0000-0000-0000-0000000000c9",
               "author": "sample-writer",
-              "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
-              "title": "Example discussion",
               "body": "An invented reply to the post.",
               "truncated": false
             }
           ],
           "more": false
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-0000000000d4"
-          }
         }
       }
     },
@@ -1579,38 +1483,23 @@ exit code 0
       "shown_because": "mention_detected_may_be_quoted",
       "brief": {
         "root": {
-          "status": "cached",
-          "fetched_at": 1800000600,
           "id": "00000000-0000-0000-0000-00000000012d",
-          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "status": "cached",
           "author": "sample-writer",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d",
-          "title": "Another discussion",
           "body": "An invented post of theirs.",
           "truncated": false
         },
         "parent": {
-          "status": "stored",
           "id": "00000000-0000-0000-0000-000000000137",
-          "thread_id": "00000000-0000-0000-0000-00000000012d",
+          "status": "stored",
           "author": "another-writer",
-          "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
-          "title": "Another discussion",
           "body": "An invented comment for nobody in particular.",
           "truncated": false
         },
         "previous_exchange": {
           "status": "unmatched",
-          "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
           "messages": [],
           "more": false
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "moltbook",
-            "id": "00000000-0000-0000-0000-000000000138"
-          }
         }
       }
     },
@@ -1648,13 +1537,6 @@ exit code 0
         "previous_exchange": {
           "status": "unknown",
           "messages": []
-        },
-        "expand": {
-          "command": "context",
-          "arguments": {
-            "source": "example",
-            "id": "2"
-          }
         }
       }
     }
