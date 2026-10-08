@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18849
+  help text: 18394
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -16,15 +16,15 @@ boardmail:
       help: Override the configured SQLite file; local reads then need no config
       type: Path
   commands:
-    init: Create a new inbox database
-    collect: Fetch one pass of remote mail
+    init: Create the inbox database once
+    collect: Fetch one bounded pass of configured public mail
     settings: Read or save this inbox's reading preferences
     subscribe: Collect activity in a selected thread
     unsubscribe: Stop subscription collection for a selected thread
     subscriptions: List local thread subscriptions
     tags: List local topics and unread counts without message bodies
     tag: Group whole threads for local reading
-    pause: Stop collection and remote context for one source
+    pause: Stop collection and other remote reads for one source
     resume: Enable a source for the next collection
     status: Show local counts, pending reply attempts and source health
     check: Collect once, then read a local arrival page
@@ -60,40 +60,36 @@ boardmail:
   formatter: RawDescriptionHelpFormatter
 
 boardmail init:
-  summary: Create a new inbox database
-  description: Create a new database. Never overwrites an existing file; not for upgrades.
-  epilog: |
-    Example: boardmail --config /path/config.json init
-    Configure the account first. An existing inbox is ready for check; do not init it again.
-    Setup: https://github.com/jointsome0-lgtm/boardmail#install-and-configure
+  summary: Create the inbox database once
+  description: Create the inbox database once. Never overwrites a file; not for upgrades.
+  formatter: HelpFormatter
 
 boardmail collect:
-  summary: Fetch one pass of remote mail
-  description: Collect from configured sources. Partial failure can still save messages.
-  epilog: |
-    Example: boardmail collect
-    Inspect added, failed and errors. Partial failure can still save mail.
-    Use list to read saved messages, or check to combine collection and reading.
+  summary: Fetch one bounded pass of configured public mail
+  description: >
+    Fetch one bounded pass of configured public mail.
+    May save messages despite errors.
+    Run periodically, separately from wait.
+    Never publishes or marks remote mail.
+  formatter: HelpFormatter
 
 boardmail settings:
   summary: Read or save this inbox's reading preferences
-  description: One consumer per database. Defaults: addressed scope, brief local context.
+  description: >
+    Read or save this inbox's reading preferences.
+    They affect check, list and wait only, where --scope and --context override them once.
+    Without arguments it writes nothing and returns the saved values, or the defaults: addressed scope and brief context.
   options:
     --scope:
-      help: Default scope for check/list/wait
+      help: Scope to save. addressed summarizes only proven thread activity; unknown remains visible.
       choices: [addressed, all]
     --context:
-      help: Default local context for check/list/wait
+      help: Context to save. brief adds bounded local excerpts; no network.
       choices: [brief, none]
     --reset:
-      help: Restore defaults; cannot combine with other settings flags
+      help: Restore the defaults. Not with --scope or --context.
       takes: no value
-  epilog: |
-    Examples:
-      boardmail settings
-      boardmail settings --scope all --context none
-      boardmail settings --reset
-    Preferences affect check/list/wait only. Their flags override a saved preference once.
+  formatter: HelpFormatter
 
 boardmail subscribe:
   summary: Collect activity in a selected thread
@@ -218,42 +214,40 @@ boardmail tag show:
     Local subscription state does not guarantee collection or complete history.
 
 boardmail pause:
-  summary: Stop collection and remote context for one source
-  description: Stop collection and remote context for one source. Keeps messages and progress.
+  summary: Stop collection and other remote reads for one source
+  description: >
+    Stop collection and other remote reads for one source.
+    Keeps messages, marks and progress; a running pass or lookup may finish.
   arguments:
     SOURCE:
-      help: Source name from status or config
-  epilog: |
-    Example: boardmail pause SOURCE
-    Use a source name from status. This command does not collect mail.
+      help: Its name in status or config
+  formatter: HelpFormatter
 
 boardmail resume:
   summary: Enable a source for the next collection
-  description: Enable a source for the next collection. Keeps messages and progress.
+  description: Enable a source for the next collection. Keeps its progress and fetches no mail.
   arguments:
     SOURCE:
-      help: Source name from status or config
-  epilog: |
-    Example: boardmail resume SOURCE
-    Use a source name from status. This command does not collect mail.
+      help: Its name in status or config
+  formatter: HelpFormatter
 
 boardmail status:
   summary: Show local counts, pending reply attempts and source health
-  description: Read collection health and pending reply attempts without contacting a board.
+  description: >
+    Show local counts, pending reply attempts and source health.
+    Contacts no board.
+    latest_arrival is diagnostic, not a checkpoint.
+    A fresh poll proves nothing about a consumer.
+    reply_attempts has state counts and the prepared and unknown attempts with journal routes, 20 per page; follow its next route for more.
+    Replied counts are local marks and do not resolve unknown.
   options:
     --require-fresh:
-      help: Exit 1 if an active source is unknown, errored or stale; exclude paused sources
+      help: Fail unless fresh: every source is ok or paused.
       takes: no value
     --stale-after SECONDS:
-      help: Age after which collection is stale; nonnegative seconds, default 540
+      help: Seconds after which a source is stale; default 540.
       type: int
-  epilog: |
-    Examples:
-      boardmail status
-      boardmail status --require-fresh --stale-after 540
-    A health read exits 0; --require-fresh makes unhealthy active sources exit 1.
-    reply_attempts shows prepared/unknown attempts and journal routes, 20 per page.
-    Follow its next route for more. Replied counts are local marks and do not resolve unknown.
+  formatter: HelpFormatter
 
 boardmail check:
   summary: Collect once, then read a local arrival page
