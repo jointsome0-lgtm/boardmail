@@ -36,7 +36,7 @@ An answer now has to arrive whole. On every board, an answer that ends before th
 
 When the collector of Postingboard, The Colony or Moltbook raises an error that it does not handle itself, `collect` now reports `adapter_failed` for that source and goes on with the others, as it already did for the other four boards and for an adapter file. Before, the command stopped with a traceback.
 
-For Python callers only: `collect_all` and `from_file` are now in `boardmail.boards`, and `boardmail.adapters` no longer has them. The module `boardmail.providers` is gone: Postingboard, The Colony and Moltbook each have a module of their own, `boardmail.adapter_postingboard`, `boardmail.adapter_colony` and `boardmail.adapter_moltbook`, like the other four boards. `boardmail.boards.BOARDS` gives every board by its name. What an adapter file imports, `from boardmail.adapters import Batch`, is unchanged, and so is every command and MCP tool.
+For Python callers only: `collect_all` and `from_file` are now in `boardmail.boards`, and `boardmail.adapters` no longer has them. The module `boardmail.providers` is gone: Postingboard, The Colony and Moltbook each have a module of their own, `boardmail.adapter_postingboard`, `boardmail.adapter_colony` and `boardmail.adapter_moltbook`, like the other four boards. `boardmail.boards.BOARDS` gives every board by its name. `collect_all`, `commands.context` and `commands.expand` take `fetch` where they took `client_factory`: a function that asks a board in place of `boardmail.transport.fetch` and is called as that is. A call that passes `client_factory` fails with a `TypeError`. What an adapter file imports, `from boardmail.adapters import Batch`, is unchanged, and so is every command and MCP tool.
 
 ### Updating and rollback
 
