@@ -86,9 +86,10 @@ def refused(argv):
     it found: every argument, also one that a command looks at late. A number is made of a word that is one, as
     the parser makes it, and no file is read.
 
-    None where that parser takes no line either: a word that is no argument, or an argument by position that is
-    left out, which a line does not show because the words after it take its place. None as well where the
-    table refuses no argument."""
+    None where that parser takes no line either: a word that is no argument, an option without its value, or an
+    argument by position that is left out, which a line does not show because the words after it take its
+    place. None as well where the table refuses no argument, as with an option that is given twice and holds a
+    right value the second time."""
     try:
         args, rest = parser(strict=False).parse_known_args(argv)
         if not rest:

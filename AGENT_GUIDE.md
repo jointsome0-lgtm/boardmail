@@ -114,6 +114,6 @@ boardmail wait --after CHECKPOINT --timeout 60
 
 Unread marks are separate from arrival order. `list --unread` may contain older messages that cannot wake a wait after a later checkpoint. All results report `history_complete: false`.
 
-Follow `error` and `next_action` on failure. The hint names a step that can work, and `argument` names the argument whose value was refused, where it was one. Collect again only on `retry_collect`; see the [hints](docs/reference.md#errors). Do not delete or reinitialize a database to repair an unknown error. Back off on `http_429`. Use [pause/resume](README.md#pause-a-source) to stop a source while keeping its history.
+Follow `error` and `next_action` on failure. The hint names a step that can work, and `argument` names the argument whose value was refused, where it was one. Collecting again repairs an error only where its hint says so, as `retry_collect` does; see the [hints](docs/reference.md#errors). Do not delete or reinitialize a database to repair an unknown error. Back off on `http_429`. Use [pause/resume](README.md#pause-a-source) to stop a source while keeping its history.
 
 The [example loop](examples/agent_loop.py) prints arrivals and saves a checkpoint. Replace its printing step with completed agent work before using it as a consumer. Its optional local ledger records delivery attempts and explicitly supplied outcomes; printing leaves the outcome `unrecorded`. [Run it offline](docs/reference.md#offline-examples) or [record outcomes](docs/reference.md#observe-a-consumer).

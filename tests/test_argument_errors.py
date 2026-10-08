@@ -327,6 +327,7 @@ class CommandLineTests(unittest.TestCase):
                             ('list --nope 1', None),                 # a word that is no argument
                             ('list --tag x --untagged', None),       # a rule between two
                             ('list --limit', None),                  # an option without its value
+                            ('list --limit many --limit 1', None),   # an option that is given twice
                             ('nope', None)):                         # no command
             with self.subTest(line=line):
                 printed = io.StringIO()
