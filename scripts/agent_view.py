@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""What an agent reads before its first call, as text, and how much of it there is.
+"""What an agent reads before its first call, as text, and how much of it and of its results there is.
 
     python scripts/agent_view.py            the size report
     python scripts/agent_view.py --update   write the stored view again
@@ -72,6 +72,19 @@ holds for the tools, as one text. The size report prints the same numbers,
 and the length of the help that argparse prints on this Python at 80
 columns. That last number is not stored: it differs a little between Python
 versions.
+
+What the size report says of results
+------------------------------------
+
+The stored view ends where the first call begins. What an agent reads after that is results, and the size report
+counts those that tests/story_inbox.txt and tests/story_reply.txt hold: the two stories store the result of
+every command that they run, on invented boards. A page is a result of check, list or wait that holds messages.
+For the pages, for the messages on them, for the brief context of those messages, for the rows that a page has
+for the sources and for its summaries of thread activity, and for the results of context and of expand, the
+report has how many the stories hold and how many characters they are together as compact JSON. The bodies of
+the messages are counted as their text. So the numbers say what a result costs around the mail that it carries,
+and they move when a result changes shape. They are not a measure of real mail: the bodies of the stories are
+one short sentence each.
 """
 import argparse
 import importlib.util
@@ -84,6 +97,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 STORED = {'cli': ROOT / 'tests/agent_view_cli.txt', 'mcp': ROOT / 'tests/agent_view_mcp.txt'}
+STORIES = (ROOT / 'tests/story_inbox.txt', ROOT / 'tests/story_reply.txt')
 COMMAND = 'python scripts/agent_view.py --update'
 EXTRA = "The MCP part needs the optional extra. From the source checkout, run: python -m pip install '.[mcp]'"
 TITLES = {'cli': 'What an agent reads from the boardmail command line before its first call.',
@@ -99,6 +113,8 @@ WORD = re.compile(r'[\w$.-]+')
 CONTROL = re.compile('[\x00-\x1f\x7f-\x9f\u2028\u2029]')
 SENTENCE = re.compile(r'(?<!e\.g\.)(?<!i\.e\.)(?<=[.!?]) (?=\S)')
 COLOR = re.compile('\x1b\\[[0-9;]*m')
+# One step of a stored story after its "== ": the title, what was typed, the exit code and the result.
+STEP = re.compile(r'(?s)(?P<title>[^\n]*)\n\$ (?P<command>.*?)\nexit code [^\n]*\n(?P<result>\{.*)')
 
 
 # The outline.
@@ -409,10 +425,58 @@ def mcp_view():
     return written('mcp', mcp_tree())
 
 
+# The results.
+
+def told(story):
+    """(command, result) for each step of a stored story: what was typed, and the result as values."""
+    steps = []
+    for step in ('\n' + story).split('\n== ')[1:]:
+        found = STEP.fullmatch(step)
+        if found is None:
+            raise ValueError(f'The step {step.partition(chr(10))[0]!r} of a story is not a command with its exit code')
+        # What was typed may run over several lines.
+        steps.append((found['command'], json.loads(found['result'])))
+    return steps
+
+
+def results_size(stories=None):
+    """What the results in the stored stories cost: for each kind of thing the report counts, how many the
+    stories hold and how many characters they are together. stories are the texts of the stories."""
+    if stories is None:
+        stories = [path.read_text(encoding='utf-8') for path in STORIES]
+    size = {kind: [0, 0] for kind in (
+        'pages of check, list and wait', 'messages on those pages', 'bodies of those messages',
+        'brief context of those messages', 'source rows on those pages', 'thread summaries on those pages',
+        'results of context', 'results of expand')}
+
+    def count(kind, value):
+        size[kind][0] += 1
+        size[kind][1] += len(value) if isinstance(value, str) else len(
+            json.dumps(value, separators=(',', ':'), ensure_ascii=False))
+
+    for story in stories:
+        for command, result in told(story):
+            if result.get('event') == 'messages':
+                count('pages of check, list and wait', result)
+                for message in result['messages']:
+                    count('messages on those pages', message)
+                    count('bodies of those messages', message['body'])
+                    if 'brief' in message:
+                        count('brief context of those messages', message['brief'])
+                for source in result['sources']:
+                    count('source rows on those pages', source)
+                for thread in result['thread_activity']:
+                    count('thread summaries on those pages', thread)
+            elif result.get('event') in ('context', 'expanded'):
+                count('results of context' if result['event'] == 'context' else 'results of expand', result)
+    return {kind: tuple(found) for kind, found in size.items()}
+
+
 # The size report.
 
-def report(cli_size, mcp_size):
-    """The size report as text. mcp_size is None when the optional extra is not installed."""
+def report(cli_size, mcp_size, results):
+    """The size report as text. mcp_size is None when the optional extra is not installed. results is what
+    results_size() gives."""
     pages, characters = printed_help()
     version = '.'.join(map(str, sys.version_info[:2]))
     rows = ['MCP server']
@@ -426,18 +490,22 @@ def report(cli_size, mcp_size):
              f'  {"commands that run":36}{cli_size["commands that run"]:>8,}',
              f'  {"help text":36}{cli_size["help text"]:>8,} characters',
              f'  {"printed help":36}{characters:>8,} characters on {pages} pages at 80 columns, Python {version}',
-             'JSON is counted compact. Help text leaves out the names of commands and arguments.']
+             'Results in ' + ' and '.join(str(path.relative_to(ROOT)) for path in STORIES),
+             *(f'  {kind:36}{number:>8,} with {together:>7,} characters' for kind, (number, together) in results.items()),
+             'JSON is counted compact. Help text leaves out the names of commands and arguments. '
+             'A body is counted as its text.']
     return '\n'.join(rows)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description='Print how much an agent reads before its first call. The top of this file says what is counted.')
+        description='Print how much an agent reads before its first call and in the results of the stored '
+                    'stories. The top of this file says what is counted.')
     parser.add_argument('--update', action='store_true',
                         help='Write the view to tests/agent_view_cli.txt and tests/agent_view_mcp.txt')
     args = parser.parse_args(argv)
     trees = {'cli': cli_tree(), 'mcp': None if mcp_missing() else mcp_tree()}
-    print(report(trees['cli']['size'], trees['mcp'] and trees['mcp']['size']))
+    print(report(trees['cli']['size'], trees['mcp'] and trees['mcp']['size'], results_size()))
     if args.update:
         for part, tree in trees.items():
             if tree is not None:
