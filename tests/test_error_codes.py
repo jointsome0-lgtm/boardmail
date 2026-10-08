@@ -11,11 +11,16 @@ TESTS = Path(__file__).resolve().parent
 PACKAGE = Path(boardmail.__file__).resolve().parent
 # The stored rows for codes the catalog does not list.
 UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
+# The codes of a pass that could not finish. Collecting again can work for them, and for no other code of the catalog.
+UNFINISHED = {'budget_exhausted', 'collection_conflict', 'fourclaw_http_error', 'fourclaw_invalid_public_page',
+              'fourclaw_network_error', 'invalid_response', 'network_error', 'network_timeout',
+              'pagination_no_progress', 'pending_overflow', 'source_timeout'}
 # The raises that build their code at run time. The stored table has rows for what they build.
 BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet calls a request that failed
          'adapter_common.py: code',                              # the code of a refusal that a board explains: a Colony sign-in code
          'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
          'errors.py: error',                                     # the code that a call names with error=
+         'table.py: str(exc)',                                   # the code of a check, with the name of its argument
          "adapter_moltbook.py: error or 'reply_' + status",      # reply_deleted, reply_missing or a lookup error
          'transport.py: about.large',                            # what a board calls an answer over its size cap
          'transport.py: about.late',                             # what a board calls an answer that is late
@@ -63,6 +68,27 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual(set(table), set(errors.CODES) | UNLISTED)
         for code, entry in table.items():
             self.assertEntry(code, entry)
+
+    def test_a_hint_names_a_step_that_can_work(self):
+        hints = {code: errors.next_action(code) for code in errors.CODES}
+        self.assertEqual({code for code, hint in hints.items() if hint == 'retry_collect'}, UNFINISHED)
+        self.assertEqual(errors.next_action('a_code_from_a_custom_adapter'), 'retry_collect')
+        # A tool call has no help page to read.
+        self.assertEqual({code: hint for code, hint in hints.items() if 'help' in hint}, {})
+
+    def test_an_error_names_the_argument_that_it_is_given(self):
+        self.assertEqual(commands.error_result('invalid_arguments', 'limit')[0],
+                         {'event': 'error', 'error': 'invalid_arguments', 'argument': 'limit',
+                          'next_action': 'fix_the_arguments', 'history_complete': False})
+        self.assertNotIn('argument', commands.error_result('invalid_arguments')[0])
+        error = errors.MailError('invalid_arguments', argument='limit')
+        self.assertEqual((str(error), error.argument, errors.MailError('invalid_arguments').argument),
+                         ('invalid_arguments', 'limit', None))
+        with self.assertRaises(errors.MailError) as raised:
+            errors.converted(int, 'many', error='invalid_arguments', argument='limit')
+        self.assertEqual((str(raised.exception), raised.exception.argument), ('invalid_arguments', 'limit'))
+        result, exit_code = commands.outcome(lambda: errors.converted(int, 'many', error='invalid_mark', argument='ref'))
+        self.assertEqual((result['error'], result['argument'], exit_code), ('invalid_mark', 'ref', 2))
 
     def test_an_http_status_without_a_row_is_treated_like_500(self):
         table = stored()

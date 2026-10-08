@@ -22,7 +22,7 @@ SHOWN_BECAUSE = {
 def validate_options(scope=None, context=None):
     for key, value in (("scope", scope), ("context", context)):
         if value is not None and value not in CHOICES[key]:
-            raise MailError("invalid_arguments")
+            raise MailError("invalid_arguments", argument=key)
 
 
 def written(message):

@@ -126,7 +126,7 @@ def story(step, board, clock):
 # What MCP answers differently, by the title of the step. The tool catalog says what a tag name may be, so a bad
 # name is refused as an argument before the tag command sees it.
 ONLY_MCP = {'A name a tag cannot have': {
-    'event': 'error', 'error': 'invalid_arguments', 'next_action': 'check_command_help_and_returned_message_ids',
+    'event': 'error', 'error': 'invalid_arguments', 'argument': 'tag', 'next_action': 'fix_the_arguments',
     'history_complete': False}}
 
 

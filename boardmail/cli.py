@@ -19,28 +19,36 @@ class Parser(argparse.ArgumentParser):
         raise MailError("invalid_arguments")
 
 
-def add(holder, argument):
-    """Give a parser, or a group of its options, one argument of the command table."""
+def number(kind):
+    """What makes the number of a kind from a word of the command line, or None for a kind that is no number."""
+    return {'integer': int, 'number': float}.get(kind['type'])
+
+
+def add(holder, argument, strict=True):
+    """Give a parser, or a group of its options, one argument of the command table. A parser that is not strict
+    takes the argument whatever its word is, and takes a line that leaves out an option."""
     kind, positional = argument.kind, not argument.typed.startswith('-')
     flag, _, word = ('', '', argument.typed) if positional else argument.typed.partition(' ')
     given = {'help': argument.help}
     if kind['type'] == 'boolean':
         given['action'] = 'store_true'
-    else:
-        number = {'integer': int, 'number': float}.get(kind['type'])
+    elif strict:
         # A help page shows the choices where there are some, and the word for the value where there are none.
-        given.update(type=Path if argument.file else number, choices=kind.get('enum'), default=kind.get('default'),
-                     metavar=None if 'enum' in kind else word or None)
+        given.update(type=Path if argument.file else number(kind), choices=kind.get('enum'),
+                     default=kind.get('default'), metavar=None if 'enum' in kind else word or None)
     if positional:
         holder.add_argument(argument.name, nargs=None if argument.required else '?', **given)
     else:
-        holder.add_argument(flag, dest=argument.name, required=argument.required, **given)
+        holder.add_argument(flag, dest=argument.name, required=strict and argument.required, **given)
 
 
-def parser():
-    p = Parser(prog="boardmail", description=table.FIRST_PAGE.description, epilog=table.FIRST_PAGE.epilog)
+def parser(strict=True):
+    """The parser of the command line. One that is not strict has no help page and takes a line whatever the
+    values of its arguments are and whichever options it leaves out: see refused()."""
+    p = Parser(prog="boardmail", description=table.FIRST_PAGE.description, epilog=table.FIRST_PAGE.epilog,
+               add_help=strict)
     for argument in table.BEFORE:
-        add(p, argument)
+        add(p, argument, strict)
     sub = p.add_subparsers(dest="command",required=True)
     groups = {}
     for command in table.COMMANDS.values():
@@ -49,25 +57,64 @@ def parser():
         if group in table.GROUPS:
             if group not in groups:
                 page = table.GROUPS[group]
-                s = sub.add_parser(group, help=page.summary, description=page.description, epilog=page.epilog)
+                s = sub.add_parser(group, help=page.summary, description=page.description, epilog=page.epilog,
+                                   add_help=strict)
                 groups[group] = s.add_subparsers(dest=group + '_action', required=True)
             holder, word = groups[group], word.removeprefix(group + '_')
-        s = holder.add_parser(word, help=command.summary, epilog=command.epilog,
+        s = holder.add_parser(word, help=command.summary, epilog=command.epilog, add_help=strict,
                               description=command.description or command.summary + '.')
         either = {}
         for rule, *names in command.rules:
-            if rule == table.NOT_BOTH:
+            if strict and rule == table.NOT_BOTH:
                 either.update(dict.fromkeys(names, s.add_mutually_exclusive_group()))
         for argument in command.arguments:
-            add(either.get(argument.name, s), argument)
+            add(either.get(argument.name, s), argument, strict)
     return p
 
 
-def run(args):
+def named(args):
+    """The command of a command line that a parser took."""
     name = args.command
     if name in table.GROUPS:
         name += '_' + getattr(args, name + '_action')
-    command = table.COMMANDS[name]
+    return table.COMMANDS[name]
+
+
+def refused(argv):
+    """The argument that a command line is refused for, where the parser did not take the line. argparse says so
+    only in a sentence, so a parser that is not strict reads the line again and the command table checks what
+    it found: every argument, also one that a command looks at late. A number is made of a word that is one, as
+    the parser makes it, and no file is read.
+
+    None where that parser takes no line either: a word that is no argument, an option without its value, or an
+    argument by position that is left out, which a line does not show because the words after it take its
+    place. None as well where the table refuses no argument, as with an option that is given twice and holds a
+    right value the second time."""
+    try:
+        args, rest = parser(strict=False).parse_known_args(argv)
+        if not rest:
+            command, given = named(args), {}
+            for argument in command.arguments:
+                word, make = getattr(args, argument.name), number(argument.kind)
+                given[argument.name] = word if make is None else config.converted(make, word, otherwise=word)
+            every = tuple(argument._replace(late=False) for argument in command.arguments)
+            table.checked(command._replace(arguments=every), given)
+    except MailError as exc:
+        return exc.argument
+    return None
+
+
+def taken(argv):
+    """What the parser makes of a command line. Where it takes none, the error names the argument if it is one."""
+    try:
+        return parser().parse_args(argv)
+    except MailError:
+        raise MailError("invalid_arguments", argument=refused(argv)) from None
+
+
+def run(args):
+    command = named(args)
+    name = command.name
     # Local reads need no config when --db is supplied; an explicit config still
     # enables remote context lookups unless --local is given.
     # Explicit init config seeds source identities even with a --db override.
@@ -78,7 +125,7 @@ def run(args):
     given = {}
     for argument in command.arguments:
         value = getattr(args, argument.name)
-        given[argument.name] = replies.read_body(value) if argument.file else value
+        given[argument.name] = replies.read_body(value, argument.name) if argument.file else value
     def invoke(cancelled=None):
         return commands.execute(store, name, sources=data["sources"] if data else None, cancelled=cancelled, **given)
     if not command.waits:
@@ -95,6 +142,6 @@ def run(args):
 
 
 def main(argv=None):
-    result, code = commands.outcome(lambda: run(parser().parse_args(argv)))
+    result, code = commands.outcome(lambda: run(taken(argv)))
     print(json.dumps(result,ensure_ascii=True))
     return code
