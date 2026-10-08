@@ -18,7 +18,9 @@ import os
 from pathlib import Path
 import re
 import shlex
+import socket
 import sqlite3
+import ssl
 import sys
 import time
 from typing import NamedTuple
@@ -107,9 +109,18 @@ class Network:
 
     answers has every answer that a client began to read, as http.client made it. The network holds on to
     them, so an answer that its client did not close is still open when the test looks.
+
+    With addresses the edge is the socket, one step further out: http.client connects by itself to a host that
+    has the addresses that addresses[host] lists, in the order in which they are tried. An entry is the seconds
+    after which that address takes a connection, or None for an address that never answers, or a function that
+    says which of the two it is when an attempt begins. An attempt that is given less time than that ends when
+    its time is over, as a real one does. A host that is not listed has one address, which takes a connection at
+    once. Each attempt moves the clock by the time that it took. attempts has (host, number of the address,
+    seconds that the attempt was given) for each of them.
     """
-    def __init__(self, boards):
+    def __init__(self, boards, addresses=None, clock=None):
         self.boards, self.answers = boards, []
+        self.addresses, self.clock, self.attempts = addresses, clock, []
 
     def answer(self, scheme, host, sent, timeout):
         head, _, body = sent.partition(b'\r\n\r\n')
@@ -148,10 +159,50 @@ class Network:
                 super().__init__(*args, **kwargs)
                 answers.append(self)
 
+        network = self
+
+        class Dialled(Wire):
+            """The socket of one attempt to reach an address of a host. It is a Wire once the address took it."""
+            def __init__(self, *args, **kwargs):
+                super().__init__(None)
+                self.timeout = None
+
+            def settimeout(self, seconds):
+                self.timeout = seconds
+
+            def setsockopt(self, *args):
+                pass
+
+            def connect(self, address):
+                host, number = address
+                if host not in network.boards:
+                    raise AssertionError(f'No invented board answers for {host}')
+                if isinstance(network.boards[host], Exception):
+                    raise network.boards[host]
+                takes = network.addresses.get(host, [0])[number]
+                if callable(takes):
+                    takes = takes()
+                network.attempts.append((host, number, self.timeout))
+                if takes is None or takes > self.timeout:
+                    network.clock.advance(self.timeout)
+                    raise TimeoutError('timed out')
+                network.clock.advance(takes)
+                self.answer = lambda sent: network.answer('https', host, sent, self.timeout)
+
+        def addresses(host, port, *args, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (host, number))
+                    for number in range(len(network.addresses.get(host, [0])))]
+
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(http.client.HTTPConnection, 'response_class', Kept))
-        self.stack.enter_context(patch.object(http.client.HTTPSConnection, 'connect', offline('https')))
-        self.stack.enter_context(patch.object(http.client.HTTPConnection, 'connect', offline('http')))
+        if self.addresses is None:
+            self.stack.enter_context(patch.object(http.client.HTTPSConnection, 'connect', offline('https')))
+            self.stack.enter_context(patch.object(http.client.HTTPConnection, 'connect', offline('http')))
+        else:
+            # Every board is asked over HTTPS. The handshake of an invented host takes no time.
+            self.stack.enter_context(patch('socket.getaddrinfo', addresses))
+            self.stack.enter_context(patch('socket.socket', Dialled))
+            self.stack.enter_context(patch.object(ssl.SSLContext, 'wrap_socket', lambda context, sock, **given: sock))
         # A proxy from the environment would turn every request into one to the proxy.
         self.stack.enter_context(patch.dict('os.environ', {'no_proxy': '*'}))
         return self

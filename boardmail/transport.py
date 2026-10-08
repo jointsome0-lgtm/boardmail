@@ -1,10 +1,11 @@
 """The one HTTP path of the board clients.
 
 A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
-the size cap and when the time is over, and reads the answer as what it must be. failure() says what a request
-that failed is called there, and key() reads the key of an account from its file. BOARDS holds every difference
-between the boards that a board or an agent can see. The module of a board enters the row of its board when it
-loads. None of the differences is unified here, and none is decided outside that row.
+the size cap and when the time is over, and reads the answer as what it must be. It gives each address of the
+host ATTEMPT seconds to take the connection. failure() says what a request that failed is called there, and
+key() reads the key of an account from its file. BOARDS holds every difference between the boards that a board
+or an agent can see. The module of a board enters the row of its board when it loads. None of the differences is
+unified here, and none is decided outside that row.
 
 What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
 it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
@@ -12,13 +13,14 @@ it gives a pass, what it keeps of an answer, and what it expects an answer to ho
 fetch() is also where a test stands in for a board. A board module that takes it as an argument is handed
 FakeBoard of examples/fixtures.py instead, which answers with invented data and sends nothing.
 """
-from http.client import HTTPException
+from http.client import HTTPException, HTTPSConnection
 import json
 from pathlib import Path
+import socket
 import time
 from typing import NamedTuple
 from urllib.error import HTTPError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from .errors import MailError
 
@@ -51,6 +53,33 @@ class Board(NamedTuple):
 BOARDS = {}
 # What fetch() raises when a request fails. failure() names each of them.
 FAILED = (MailError, OSError, HTTPException, ValueError)
+# The seconds that one address of a host has to take a connection, on every board. The next address is tried
+# after them. An address that takes none would else hold the request for as long as its socket may stay silent.
+ATTEMPT = 3
+
+
+def reach(address, timeout, source_address=None):
+    """A connection to a host as socket.create_connection() makes it, where each address of the host has ATTEMPT
+    seconds to take it, and the timeout if that is less. The socket that is reached has the timeout again, so the
+    TLS handshake and the answer may stay silent for as long as the board allows."""
+    reached = socket.create_connection(address, min(ATTEMPT, timeout), source_address)
+    reached.settimeout(timeout)
+    return reached
+
+
+class Reached(HTTPSConnection):
+    """An HTTPS connection whose socket reach() makes."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # http.client has no public name for the time of a connection attempt. Its connect() makes the socket
+        # with this attribute, which is socket.create_connection unless it is set.
+        self._create_connection = reach
+
+
+class Attempts(HTTPSHandler):
+    """HTTPS over connections that reach() makes."""
+    def do_open(self, http_class, req, **http_conn_args):
+        return super().do_open(Reached, req, **http_conn_args)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -122,7 +151,7 @@ def fetch(board, url, *, left=None, headers=None, body=None):
         if now > end or about.at_the_end and now == end:
             raise MailError(about.late)
 
-    with build_opener(NoRedirect(board)).open(request, timeout=min(about.silence, left)) as answer:
+    with build_opener(NoRedirect(board), Attempts()).open(request, timeout=min(about.silence, left)) as answer:
         if about.kind and answer.headers.get_content_type() != about.kind:
             raise ValueError('The answer is not ' + about.kind)
         content = bytearray()
