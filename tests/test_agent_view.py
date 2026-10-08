@@ -206,7 +206,7 @@ class AgentViewTests(unittest.TestCase):
         context, expanded = {'event': 'context', 'target': first}, {'event': 'expanded', 'items': [first, second]}
         others = [{'event': 'error', 'error': 'message_not_found'}, {'event': 'timeout', 'sources': [source]},
                   {'event': 'message', 'message': first}]
-        steps = [('list', page), ('wait --timeout 0', empty), ('context example 1', context),
+        steps = [('list\n --after 0', page), ('wait --timeout 0', empty), ('context example 1', context),
                  ('expand example 9', expanded), *(('show example 1', other) for other in others)]
         story = '\n'.join(f'== {number}. Step {number}\n$ boardmail {typed}\nexit code 0\n{json.dumps(result, indent=2)}\n'
                           for number, (typed, result) in enumerate(steps, 1))

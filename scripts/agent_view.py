@@ -113,6 +113,8 @@ WORD = re.compile(r'[\w$.-]+')
 CONTROL = re.compile('[\x00-\x1f\x7f-\x9f\u2028\u2029]')
 SENTENCE = re.compile(r'(?<!e\.g\.)(?<!i\.e\.)(?<=[.!?]) (?=\S)')
 COLOR = re.compile('\x1b\\[[0-9;]*m')
+# One step of a stored story after its "== ": the title, what was typed, the exit code and the result.
+STEP = re.compile(r'(?s)(?P<title>[^\n]*)\n\$ (?P<command>.*?)\nexit code [^\n]*\n(?P<result>\{.*)')
 
 
 # The outline.
@@ -429,10 +431,11 @@ def told(story):
     """(command, result) for each step of a stored story: what was typed, and the result as values."""
     steps = []
     for step in ('\n' + story).split('\n== ')[1:]:
-        title, command, outcome, result = step.split('\n', 3)
-        if not command.startswith('$ ') or not outcome.startswith('exit code '):
-            raise ValueError(f'The step {title!r} of a story is not a command with its exit code')
-        steps.append((command[2:], json.loads(result)))
+        found = STEP.fullmatch(step)
+        if found is None:
+            raise ValueError(f'The step {step.partition(chr(10))[0]!r} of a story is not a command with its exit code')
+        # What was typed may run over several lines.
+        steps.append((found['command'], json.loads(found['result'])))
     return steps
 
 
