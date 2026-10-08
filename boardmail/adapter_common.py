@@ -12,7 +12,7 @@ from .errors import MailError, uuid
 # What the transport is told of such a board, but for the header in which one of them names its protocol.
 SHARED = dict(
     accept='application/json', agent='boardmail/0.2', key=None, kind=None, cap=16 * 1024 * 1024,
-    silence=10, budget=None, at_the_end=False, to_the_end=False,
+    silence=10, budget=None, at_the_end=False, to_the_end=True,
     late='source_timeout', large='response_too_large', network='network_error', content='invalid_response',
     statuses=None, status=None, redirect='redirect_refused')
 # These boards call a failed request alike. Where no client is at hand to say which board is meant, this row
@@ -21,6 +21,9 @@ ROW = transport.Board(protocol=None, **SHARED)
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
+# A collection phase admits work for SOURCE_SECONDS. Each HTTP request that it admits gets this completion
+# window, including one admitted just before the phase ends. No further request starts after that boundary.
+REQUEST_SECONDS = 10
 
 
 class Client:
@@ -29,6 +32,7 @@ class Client:
     host = None
     prefix = ""
     pause = 0
+    request_seconds = None  # Remote lookup commands retain their existing shared deadline.
 
     def __init__(self, source, settings, *, fetch=transport.fetch):
         self.source, self.settings = source, settings
@@ -54,7 +58,8 @@ class Client:
         if remaining <= 0:
             raise MailError("budget_exhausted")
         try:
-            return self.fetch(self.source, self.host+self.prefix+path, left=remaining,
+            return self.fetch(self.source, self.host+self.prefix+path,
+                              left=remaining if self.request_seconds is None else self.request_seconds,
                               headers={"Authorization": "Bearer " + token} if token else None, body=body)
         except HTTPError as exc:
             code = self.refused(exc, token, path)
@@ -111,6 +116,7 @@ def collect(connect, settings, state, known, profile, mail, account=None):
     known = set(known)  # The pass adds what it finds to a set of its own.
     try:
         client = connect()
+        client.request_seconds = REQUEST_SECONDS
         profile = client.get(profile, authenticated=True)
         if profile.get("success") is False: raise ValueError("Invalid profile")
         account = account(profile) if account else profile

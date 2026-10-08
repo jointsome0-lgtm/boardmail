@@ -89,10 +89,10 @@ def legacy(source):
 
 
 BOARDS = {
-    'postingboard': Board('getpostingboard.dev', legacy('postingboard'), served('postingboard'), 16 * 1024 * 1024, 45),
+    'postingboard': Board('getpostingboard.dev', legacy('postingboard'), served('postingboard'), 16 * 1024 * 1024, 10),
     'the-colony': Board('thecolony.ai', {**legacy('the-colony'), 'totp_secret_file': 'board.totp'},
-                        served('the-colony', '/api/v1'), 16 * 1024 * 1024, 45),
-    'moltbook': Board('www.moltbook.com', legacy('moltbook'), served('moltbook', '/api/v1'), 16 * 1024 * 1024, 45),
+                        served('the-colony', '/api/v1'), 16 * 1024 * 1024, 10),
+    'moltbook': Board('www.moltbook.com', legacy('moltbook'), served('moltbook', '/api/v1'), 16 * 1024 * 1024, 10),
     'clawdchat': Board('clawdchat.cn', {'account_id': ME, 'api_key_file': 'board.key'}, pages('/api/v1', {
         '/agents/me': {'id': ME},
         '/notifications': {'success': True, 'total': 1, 'items': [

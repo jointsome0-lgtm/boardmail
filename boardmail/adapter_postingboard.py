@@ -56,7 +56,9 @@ def postingboard_scan(client, known, batch, explicit, ownership, addressed):
                 if mode == "inbox": postingboard_inbox(client, known, batch, pending)
                 else: postingboard_search(client, term, known, batch, pending)
             except FAILURES as exc:
-                if failure(batch, exc) == "http_429": return
+                code = failure(batch, exc)
+                if code == "http_429": return
+                if code == "budget_exhausted": break
         client.deadline = end
         for mid in list(pending)[:MAX_PAGES]:
             if time.monotonic() >= end: break

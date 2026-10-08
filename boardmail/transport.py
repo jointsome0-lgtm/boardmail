@@ -99,8 +99,9 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     """The answer of a board to a request for this URL: text where an answer must be a page, and what the JSON
     says everywhere else.
 
-    left is the seconds that the client has left for this request, where the board has no time budget of its
-    own. headers are sent with the headers of the board. A body is sent as JSON, and the request is then a POST.
+    left is the completion window of this request, where the board has no time budget of its own. A collection
+    client checks admission separately; its phase's remaining time need not be this window. headers are sent
+    with the headers of the board. A body is sent as JSON, and the request is then a POST.
     Without one it is a GET.
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
@@ -131,6 +132,10 @@ def fetch(board, url, *, left=None, headers=None, body=None):
             if about.to_the_end:
                 in_time()
             if not chunk:
+                # read1() can reach the socket's EOF before Content-Length is satisfied without raising.
+                # A JSON-shaped prefix is not a complete HTTP answer.
+                if answer.length:
+                    raise HTTPException('The HTTP answer ended before its declared length')
                 break
             content += chunk
             if len(content) > about.cap:
