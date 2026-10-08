@@ -241,18 +241,11 @@ MESSAGE_EPILOG = ('Example: boardmail {} SOURCE ID\n'
 LOCAL = Argument('local', '--local', FLAG, help='Use only stored records; no remote lookup')
 FOLLOWED = (
     Argument('source', 'SOURCE', SOURCE, required=True, check=config.identifier,
-             help='Source using a subscription-capable adapter, from status or config'),
+             text='Its name in {status} or config'),
     # The thread is kept as the UUID is written in lower case with hyphens, however the call wrote it.
     Argument('thread', 'THREAD', ROOT, required=True, check=config.uuid, error='invalid_thread_id',
-             help='Selected root UUID; not a message URL', tool='Root UUID from a message or the board; not a URL.'),
+             text='Root UUID from a message or the board; not a URL'),
 )
-FOLLOWED_EPILOG = ('Example: boardmail {} SOURCE THREAD\n'
-                   'Use the root UUID from a message or board. Subscriptions support Postingboard,\n'
-                   'Colony, Moltbook, ClawdChat, 4claw and Fruitflies; Botnet is unsupported.\n'
-                   "The first collection can import older available replies within the provider's limits.\n"
-                   'Ordinary activity is summarized in addressed scope; unknown recipients remain visible.\n'
-                   'Unsubscribe preserves saved mail and marks; an in-flight source pass may finish.\n'
-                   'Source pauses still apply. Run collect/check separately; this command makes no requests.')
 PAUSED = (Argument('source', 'SOURCE', SOURCE, required=True, text='Its name in {status} or config'),)
 MEMBERSHIP = (
     # What a name of a tag may be is in TAG for a tool, and on the help page of the group for the command line.
@@ -295,36 +288,24 @@ COMMANDS = {command.name: command for command in (
             Argument('reset', '--reset', FLAG, text='Restore the defaults. Not with {.scope} or {.context}.'))),
     Command(
         'subscribe',
-        summary='Collect activity in a selected thread',
-        description='Collect activity in a selected thread. Local and idempotent; changes later collection passes.',
-        epilog=FOLLOWED_EPILOG.format('subscribe'),
-        tool='Subscribe to a root thread on Postingboard, Colony, Moltbook, ClawdChat, 4claw or Fruitflies. '
-             'Botnet subscriptions are unsupported. Local and idempotent; takes effect in later collection. '
-             'Initial collection can import older available replies within provider coverage limits. '
-             'Ordinary activity is summarized in addressed scope; uncertain recipients stay visible. '
-             'Run collect/check separately and process messages AND thread_activity. Source pauses still apply.',
+        text='Subscribe to a thread: later collection fetches its activity. Only Postingboard, Colony, Moltbook, '
+             'ClawdChat, 4claw and Fruitflies support it. Local and idempotent; makes no request, and a paused '
+             'source stays paused. Then run {collect} and {check}, and process both messages and thread_activity. '
+             "Older replies may arrive too, within the board's limits. Addressed scope summarizes ordinary "
+             'activity; unknown recipients stay visible.',
         arguments=FOLLOWED, hints=(IDEMPOTENT,), sources=GIVEN),
     Command(
         'unsubscribe',
-        summary='Stop subscription collection for a selected thread',
-        description='Stop subscription collection for a selected thread. '
-                    'Local and idempotent; changes later collection passes.',
-        epilog=FOLLOWED_EPILOG.format('unsubscribe'),
-        tool='Remove one local thread subscription. Idempotent; preserves saved messages and marks. '
-             'Future source passes stop subscription discovery; an already running pass may finish. '
-             'Independent mentions, replies and configured-thread collection continue. Makes no remote requests.',
-        arguments=(FOLLOWED[0], FOLLOWED[1]._replace(tool=None)), hints=(IDEMPOTENT,), sources=GIVEN),
+        text='Remove one local thread subscription. Idempotent; keeps saved messages and marks. Later passes stop '
+             'collecting its activity; a running pass may finish. Mentions, replies to you and configured threads '
+             'still arrive. Makes no remote request.',
+        arguments=FOLLOWED, hints=(IDEMPOTENT,), sources=GIVEN),
     Command(
         'subscriptions',
-        summary='List local thread subscriptions',
-        description='Read selected threads without collection, migration or marking mail.',
-        epilog='Examples:\n  boardmail subscriptions\n  boardmail subscriptions --source SOURCE\n'
-               'Subscriptions are shared by CLI and MCP clients of this database; changes need no MCP restart.',
-        tool="List this database's selected thread roots and their local subscription times. "
-             'CLI and MCP share these selections without restarting the server. '
-             'This read does not collect, migrate or mark mail.',
+        text='List local thread subscriptions and when each was made. The command line and MCP share them without '
+             'a restart. No collection, migration or read marks.',
         arguments=(Argument('source', '--source SOURCE', SOURCE, check=config.identifier,
-                            help="Show only this source's subscriptions"),),
+                            text='Only the subscriptions of this source'),),
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'tags',

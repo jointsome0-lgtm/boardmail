@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18330
+  help text: 17606
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -19,9 +19,9 @@ boardmail:
     init: Create the inbox database once
     collect: Fetch one bounded pass of configured public mail
     settings: Read or save this inbox's reading preferences
-    subscribe: Collect activity in a selected thread
-    unsubscribe: Stop subscription collection for a selected thread
-    subscriptions: List local thread subscriptions
+    subscribe: Subscribe to a thread: later collection fetches its activity
+    unsubscribe: Remove one local thread subscription
+    subscriptions: List local thread subscriptions and when each was made
     tags: List local topics and unread counts without message bodies
     tag: Group whole threads for local reading
     pause: Stop collection and other remote reads for one source
@@ -92,52 +92,46 @@ boardmail settings:
   formatter: HelpFormatter
 
 boardmail subscribe:
-  summary: Collect activity in a selected thread
-  description: Collect activity in a selected thread. Local and idempotent; changes later collection passes.
+  summary: Subscribe to a thread: later collection fetches its activity
+  description: >
+    Subscribe to a thread: later collection fetches its activity.
+    Only Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support it.
+    Local and idempotent; makes no request, and a paused source stays paused.
+    Then run collect and check, and process both messages and thread_activity.
+    Older replies may arrive too, within the board's limits.
+    Addressed scope summarizes ordinary activity; unknown recipients stay visible.
   arguments:
     SOURCE:
-      help: Source using a subscription-capable adapter, from status or config
+      help: Its name in status or config
     THREAD:
-      help: Selected root UUID; not a message URL
-  epilog: |
-    Example: boardmail subscribe SOURCE THREAD
-    Use the root UUID from a message or board. Subscriptions support Postingboard,
-    Colony, Moltbook, ClawdChat, 4claw and Fruitflies; Botnet is unsupported.
-    The first collection can import older available replies within the provider's limits.
-    Ordinary activity is summarized in addressed scope; unknown recipients remain visible.
-    Unsubscribe preserves saved mail and marks; an in-flight source pass may finish.
-    Source pauses still apply. Run collect/check separately; this command makes no requests.
+      help: Root UUID from a message or the board; not a URL
+  formatter: HelpFormatter
 
 boardmail unsubscribe:
-  summary: Stop subscription collection for a selected thread
+  summary: Remove one local thread subscription
   description: >
-    Stop subscription collection for a selected thread.
-    Local and idempotent; changes later collection passes.
+    Remove one local thread subscription.
+    Idempotent; keeps saved messages and marks.
+    Later passes stop collecting its activity; a running pass may finish.
+    Mentions, replies to you and configured threads still arrive.
+    Makes no remote request.
   arguments:
     SOURCE:
-      help: Source using a subscription-capable adapter, from status or config
+      help: Its name in status or config
     THREAD:
-      help: Selected root UUID; not a message URL
-  epilog: |
-    Example: boardmail unsubscribe SOURCE THREAD
-    Use the root UUID from a message or board. Subscriptions support Postingboard,
-    Colony, Moltbook, ClawdChat, 4claw and Fruitflies; Botnet is unsupported.
-    The first collection can import older available replies within the provider's limits.
-    Ordinary activity is summarized in addressed scope; unknown recipients remain visible.
-    Unsubscribe preserves saved mail and marks; an in-flight source pass may finish.
-    Source pauses still apply. Run collect/check separately; this command makes no requests.
+      help: Root UUID from a message or the board; not a URL
+  formatter: HelpFormatter
 
 boardmail subscriptions:
-  summary: List local thread subscriptions
-  description: Read selected threads without collection, migration or marking mail.
+  summary: List local thread subscriptions and when each was made
+  description: >
+    List local thread subscriptions and when each was made.
+    The command line and MCP share them without a restart.
+    No collection, migration or read marks.
   options:
     --source SOURCE:
-      help: Show only this source's subscriptions
-  epilog: |
-    Examples:
-      boardmail subscriptions
-      boardmail subscriptions --source SOURCE
-    Subscriptions are shared by CLI and MCP clients of this database; changes need no MCP restart.
+      help: Only the subscriptions of this source
+  formatter: HelpFormatter
 
 boardmail tags:
   summary: List local topics and unread counts without message bodies

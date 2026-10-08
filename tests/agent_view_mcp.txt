@@ -3,10 +3,10 @@
 
 size:
   tools: 26
-  tool descriptions: 10473
-  input schemas: 9368
+  tool descriptions: 10365
+  input schemas: 9576
   server instructions: 1493
-  tool catalog as JSON: 24165
+  tool catalog as JSON: 24265
 
 server:
   name: boardmail
@@ -429,34 +429,42 @@ tool boardmail_status:
 
 tool boardmail_subscribe:
   description: >
-    Subscribe to a root thread on Postingboard, Colony, Moltbook, ClawdChat, 4claw or Fruitflies.
-    Botnet subscriptions are unsupported.
-    Local and idempotent; takes effect in later collection.
-    Initial collection can import older available replies within provider coverage limits.
-    Ordinary activity is summarized in addressed scope; uncertain recipients stay visible.
-    Run collect/check separately and process messages AND thread_activity.
-    Source pauses still apply.
+    Subscribe to a thread: later collection fetches its activity.
+    Only Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support it.
+    Local and idempotent; makes no request, and a paused source stays paused.
+    Then run collect and check, and process both messages and thread_activity.
+    Older replies may arrive too, within the board's limits.
+    Addressed scope summarizes ordinary activity; unknown recipients stay visible.
   inputSchema:
     type: object
     properties:
-      source: {type: string, minLength: 1, maxLength: 64}
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Its name in status or config
       thread:
         type: string
         minLength: 1
         maxLength: 36
-        description: Root UUID from a message or the board; not a URL.
+        description: Root UUID from a message or the board; not a URL
     required: [source, thread]
     additionalProperties: false
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_subscriptions:
   description: >
-    List this database's selected thread roots and their local subscription times.
-    CLI and MCP share these selections without restarting the server.
-    This read does not collect, migrate or mark mail.
+    List local thread subscriptions and when each was made.
+    The command line and MCP share them without a restart.
+    No collection, migration or read marks.
   inputSchema:
     type: object
-    properties: {source: {type: string, minLength: 1, maxLength: 64}}
+    properties:
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Only the subscriptions of this source
     required: []
     additionalProperties: false
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
@@ -566,15 +574,23 @@ tool boardmail_tags:
 tool boardmail_unsubscribe:
   description: >
     Remove one local thread subscription.
-    Idempotent; preserves saved messages and marks.
-    Future source passes stop subscription discovery; an already running pass may finish.
-    Independent mentions, replies and configured-thread collection continue.
-    Makes no remote requests.
+    Idempotent; keeps saved messages and marks.
+    Later passes stop collecting its activity; a running pass may finish.
+    Mentions, replies to you and configured threads still arrive.
+    Makes no remote request.
   inputSchema:
     type: object
     properties:
-      source: {type: string, minLength: 1, maxLength: 64}
-      thread: {type: string, minLength: 1, maxLength: 36}
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Its name in status or config
+      thread:
+        type: string
+        minLength: 1
+        maxLength: 36
+        description: Root UUID from a message or the board; not a URL
     required: [source, thread]
     additionalProperties: false
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
