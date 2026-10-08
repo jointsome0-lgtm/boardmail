@@ -3,433 +3,439 @@ Made by tests/test_argument_errors.py.
 
 A line is one call that works, changed in what the line names. The values are in the test. After it stand the
 answers of two calls: first on an inbox with mail, then where no inbox file is. An answer is the error code and
-the exit code. Where a call is not refused, the event of its result stands in place
-of an error code. "nothing wrong" is the call as it works.
+the exit code, and then the argument that the error names, where it names one.
+Where a call is not refused, the event of its result stands in place of an error code. "nothing wrong" is the
+call as it works.
+
+An error names the argument whose value was refused. It names none where a call has a word that is no argument of
+the command, or breaks a rule between two arguments.
+The command line names none for an argument by position that is left out either: the words after it take its
+place, so the line does not show which one it was.
 
 == init
-nothing wrong                                      database_exists 2                 initialized 0
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      database_exists 2                       initialized 0
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == collect
-nothing wrong                                      collected 0                       database_missing 5
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      collected 0                             database_missing 5
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == settings
-nothing wrong                                      settings 0                        database_missing 5
-scope is a word that is no choice                  invalid_arguments 2               invalid_arguments 2
-context is a word that is no choice                invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-reset together with scope                          invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      settings 0                              database_missing 5
+scope is a word that is no choice                  invalid_arguments 2 scope               invalid_arguments 2 scope
+context is a word that is no choice                invalid_arguments 2 context             invalid_arguments 2 context
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+reset together with scope                          invalid_arguments 2                     invalid_arguments 2
 
 == subscribe
-nothing wrong                                      subscribed 0                      database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           source_not_found 2                database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-thread is left out                                 invalid_arguments 2               invalid_arguments 2
-thread is empty                                    invalid_thread_id 2               invalid_thread_id 2
-thread has a line break                            invalid_thread_id 2               invalid_thread_id 2
-thread has 37 characters                           invalid_thread_id 2               invalid_thread_id 2
-thread has 1025 characters                         invalid_thread_id 2               invalid_thread_id 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-thread is no UUID                                  invalid_thread_id 2               invalid_thread_id 2
-source has a line break and thread is no UUID      invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      subscribed 0                            database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           source_not_found 2                      database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+thread is left out                                 invalid_arguments 2                     invalid_arguments 2
+thread is empty                                    invalid_thread_id 2 thread              invalid_thread_id 2 thread
+thread has a line break                            invalid_thread_id 2 thread              invalid_thread_id 2 thread
+thread has 37 characters                           invalid_thread_id 2 thread              invalid_thread_id 2 thread
+thread has 1025 characters                         invalid_thread_id 2 thread              invalid_thread_id 2 thread
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+thread is no UUID                                  invalid_thread_id 2 thread              invalid_thread_id 2 thread
+source has a line break and thread is no UUID      invalid_arguments 2 source              invalid_arguments 2 source
 
 == unsubscribe
-nothing wrong                                      unsubscribed 0                    database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           source_not_found 2                database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-thread is left out                                 invalid_arguments 2               invalid_arguments 2
-thread is empty                                    invalid_thread_id 2               invalid_thread_id 2
-thread has a line break                            invalid_thread_id 2               invalid_thread_id 2
-thread has 37 characters                           invalid_thread_id 2               invalid_thread_id 2
-thread has 1025 characters                         invalid_thread_id 2               invalid_thread_id 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-thread is no UUID                                  invalid_thread_id 2               invalid_thread_id 2
-source has a line break and thread is no UUID      invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      unsubscribed 0                          database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           source_not_found 2                      database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+thread is left out                                 invalid_arguments 2                     invalid_arguments 2
+thread is empty                                    invalid_thread_id 2 thread              invalid_thread_id 2 thread
+thread has a line break                            invalid_thread_id 2 thread              invalid_thread_id 2 thread
+thread has 37 characters                           invalid_thread_id 2 thread              invalid_thread_id 2 thread
+thread has 1025 characters                         invalid_thread_id 2 thread              invalid_thread_id 2 thread
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+thread is no UUID                                  invalid_thread_id 2 thread              invalid_thread_id 2 thread
+source has a line break and thread is no UUID      invalid_arguments 2 source              invalid_arguments 2 source
 
 == subscriptions
-nothing wrong                                      subscriptions 0                   database_missing 5
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           subscriptions 0                   database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      subscriptions 0                         database_missing 5
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           subscriptions 0                         database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == tags
-nothing wrong                                      tags 0                            database_missing 5
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      tags 0                                  database_missing 5
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == tag_add
-nothing wrong                                      thread_tag 0                      database_missing 5
-tag is left out                                    invalid_arguments 2               invalid_arguments 2
-tag is empty                                       invalid_tag_name 2                invalid_tag_name 2
-tag has a line break                               invalid_tag_name 2                invalid_tag_name 2
-tag has 65 characters                              invalid_tag_name 2                invalid_tag_name 2
-tag has 1025 characters                            invalid_tag_name 2                invalid_tag_name 2
-tag has a capital letter                           invalid_tag_name 2                invalid_tag_name 2
-tag ends with a line break                         invalid_tag_name 2                invalid_tag_name 2
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           source_not_found 2                database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-thread is empty                                    invalid_arguments 2               invalid_arguments 2
-thread has a line break                            invalid_arguments 2               invalid_arguments 2
-thread has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-thread and id are both given                       invalid_arguments 2               invalid_arguments 2
-neither thread nor id is given                     invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-tag is no name and source has a line break         invalid_tag_name 2                invalid_tag_name 2
-tag is no name and neither thread nor id is given  invalid_tag_name 2                invalid_tag_name 2
+nothing wrong                                      thread_tag 0                            database_missing 5
+tag is left out                                    invalid_arguments 2                     invalid_arguments 2
+tag is empty                                       invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a line break                               invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 65 characters                              invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 1025 characters                            invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a capital letter                           invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag ends with a line break                         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           source_not_found 2                      database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+thread is empty                                    invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has a line break                            invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has 1025 characters                         invalid_arguments 2 thread              invalid_arguments 2 thread
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+thread and id are both given                       invalid_arguments 2                     invalid_arguments 2
+neither thread nor id is given                     invalid_arguments 2                     invalid_arguments 2
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+tag is no name and source has a line break         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag is no name and neither thread nor id is given  invalid_tag_name 2 tag                  invalid_tag_name 2 tag
 
 == tag_remove
-nothing wrong                                      thread_tag 0                      database_missing 5
-tag is left out                                    invalid_arguments 2               invalid_arguments 2
-tag is empty                                       invalid_tag_name 2                invalid_tag_name 2
-tag has a line break                               invalid_tag_name 2                invalid_tag_name 2
-tag has 65 characters                              invalid_tag_name 2                invalid_tag_name 2
-tag has 1025 characters                            invalid_tag_name 2                invalid_tag_name 2
-tag has a capital letter                           invalid_tag_name 2                invalid_tag_name 2
-tag ends with a line break                         invalid_tag_name 2                invalid_tag_name 2
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           source_not_found 2                database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-thread is empty                                    invalid_arguments 2               invalid_arguments 2
-thread has a line break                            invalid_arguments 2               invalid_arguments 2
-thread has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-thread and id are both given                       invalid_arguments 2               invalid_arguments 2
-neither thread nor id is given                     invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-tag is no name and source has a line break         invalid_tag_name 2                invalid_tag_name 2
-tag is no name and neither thread nor id is given  invalid_tag_name 2                invalid_tag_name 2
+nothing wrong                                      thread_tag 0                            database_missing 5
+tag is left out                                    invalid_arguments 2                     invalid_arguments 2
+tag is empty                                       invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a line break                               invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 65 characters                              invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 1025 characters                            invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a capital letter                           invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag ends with a line break                         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           source_not_found 2                      database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+thread is empty                                    invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has a line break                            invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has 1025 characters                         invalid_arguments 2 thread              invalid_arguments 2 thread
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+thread and id are both given                       invalid_arguments 2                     invalid_arguments 2
+neither thread nor id is given                     invalid_arguments 2                     invalid_arguments 2
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+tag is no name and source has a line break         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag is no name and neither thread nor id is given  invalid_tag_name 2 tag                  invalid_tag_name 2 tag
 
 == tag_show
-nothing wrong                                      tag 0                             database_missing 5
-tag is left out                                    invalid_arguments 2               invalid_arguments 2
-tag is empty                                       invalid_tag_name 2                invalid_tag_name 2
-tag has a line break                               invalid_tag_name 2                invalid_tag_name 2
-tag has 65 characters                              invalid_tag_name 2                invalid_tag_name 2
-tag has 1025 characters                            invalid_tag_name 2                invalid_tag_name 2
-tag has a capital letter                           invalid_tag_name 2                invalid_tag_name 2
-tag ends with a line break                         invalid_tag_name 2                invalid_tag_name 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      tag 0                                   database_missing 5
+tag is left out                                    invalid_arguments 2                     invalid_arguments 2
+tag is empty                                       invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a line break                               invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 65 characters                              invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 1025 characters                            invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a capital letter                           invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag ends with a line break                         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == pause
-nothing wrong                                      paused 0                          database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    source_not_found 2                database_missing 5
-source has a line break                            source_not_found 2                database_missing 5
-source has 65 characters                           source_not_found 2                database_missing 5
-source has 1025 characters                         source_not_found 2                database_missing 5
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      paused 0                                database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    source_not_found 2                      database_missing 5
+source has a line break                            source_not_found 2                      database_missing 5
+source has 65 characters                           source_not_found 2                      database_missing 5
+source has 1025 characters                         source_not_found 2                      database_missing 5
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == resume
-nothing wrong                                      resumed 0                         database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    source_not_found 2                database_missing 5
-source has a line break                            source_not_found 2                database_missing 5
-source has 65 characters                           source_not_found 2                database_missing 5
-source has 1025 characters                         source_not_found 2                database_missing 5
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      resumed 0                               database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    source_not_found 2                      database_missing 5
+source has a line break                            source_not_found 2                      database_missing 5
+source has 65 characters                           source_not_found 2                      database_missing 5
+source has 1025 characters                         source_not_found 2                      database_missing 5
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == status
-nothing wrong                                      status 0                          database_missing 5
-stale_after is -1                                  invalid_arguments 2               invalid_arguments 2
-stale_after is 2147483648                          invalid_arguments 2               invalid_arguments 2
-stale_after is a word                              invalid_arguments 2               invalid_arguments 2
-stale_after is 1.5                                 invalid_arguments 2               invalid_arguments 2
-stale_after is 2.0                                 invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      status 0                                database_missing 5
+stale_after is -1                                  invalid_arguments 2 stale_after         invalid_arguments 2 stale_after
+stale_after is 2147483648                          invalid_arguments 2 stale_after         invalid_arguments 2 stale_after
+stale_after is a word                              invalid_arguments 2 stale_after         invalid_arguments 2 stale_after
+stale_after is 1.5                                 invalid_arguments 2 stale_after         invalid_arguments 2 stale_after
+stale_after is 2.0                                 invalid_arguments 2 stale_after         invalid_arguments 2 stale_after
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == check
-nothing wrong                                      messages 0                        database_missing 5
-after is -1                                        invalid_arguments 2               invalid_arguments 2
-after is 9223372036854775808                       invalid_arguments 2               invalid_arguments 2
-after is a word                                    invalid_arguments 2               invalid_arguments 2
-after is 1.5                                       invalid_arguments 2               invalid_arguments 2
-after is 2.0                                       invalid_arguments 2               invalid_arguments 2
-limit is 0                                         invalid_arguments 2               invalid_arguments 2
-limit is 501                                       invalid_arguments 2               invalid_arguments 2
-limit is a word                                    invalid_arguments 2               invalid_arguments 2
-limit is 1.5                                       invalid_arguments 2               invalid_arguments 2
-limit is 2.0                                       invalid_arguments 2               invalid_arguments 2
-scope is a word that is no choice                  invalid_arguments 2               invalid_arguments 2
-context is a word that is no choice                invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      messages 0                              database_missing 5
+after is -1                                        invalid_arguments 2 after               invalid_arguments 2 after
+after is 9223372036854775808                       invalid_arguments 2 after               invalid_arguments 2 after
+after is a word                                    invalid_arguments 2 after               invalid_arguments 2 after
+after is 1.5                                       invalid_arguments 2 after               invalid_arguments 2 after
+after is 2.0                                       invalid_arguments 2 after               invalid_arguments 2 after
+limit is 0                                         invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 501                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is a word                                    invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 1.5                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 2.0                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+scope is a word that is no choice                  invalid_arguments 2 scope               invalid_arguments 2 scope
+context is a word that is no choice                invalid_arguments 2 context             invalid_arguments 2 context
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == list
-nothing wrong                                      messages 0                        database_missing 5
-after is -1                                        invalid_arguments 2               invalid_arguments 2
-after is 9223372036854775808                       invalid_arguments 2               invalid_arguments 2
-after is a word                                    invalid_arguments 2               invalid_arguments 2
-after is 1.5                                       invalid_arguments 2               invalid_arguments 2
-after is 2.0                                       invalid_arguments 2               invalid_arguments 2
-limit is 0                                         invalid_arguments 2               invalid_arguments 2
-limit is 501                                       invalid_arguments 2               invalid_arguments 2
-limit is a word                                    invalid_arguments 2               invalid_arguments 2
-limit is 1.5                                       invalid_arguments 2               invalid_arguments 2
-limit is 2.0                                       invalid_arguments 2               invalid_arguments 2
-scope is a word that is no choice                  invalid_arguments 2               invalid_arguments 2
-context is a word that is no choice                invalid_arguments 2               invalid_arguments 2
-through is -1                                      invalid_arguments 2               invalid_arguments 2
-through is 9223372036854775808                     invalid_arguments 2               invalid_arguments 2
-through is a word                                  invalid_arguments 2               invalid_arguments 2
-through is 1.5                                     invalid_arguments 2               invalid_arguments 2
-through is 2.0                                     invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           messages 0                        database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-thread is empty                                    invalid_arguments 2               invalid_arguments 2
-thread has a line break                            invalid_arguments 2               invalid_arguments 2
-thread has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-tag is empty                                       invalid_tag_name 2                invalid_tag_name 2
-tag has a line break                               invalid_tag_name 2                invalid_tag_name 2
-tag has 65 characters                              invalid_tag_name 2                invalid_tag_name 2
-tag has 1025 characters                            invalid_tag_name 2                invalid_tag_name 2
-tag has a capital letter                           invalid_tag_name 2                invalid_tag_name 2
-tag ends with a line break                         invalid_tag_name 2                invalid_tag_name 2
-thread is given without source                     invalid_arguments 2               invalid_arguments 2
-tag and untagged are both given                    invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-through is below after                             invalid_arguments 2               invalid_arguments 2
-tag is no name and source has a line break         invalid_tag_name 2                invalid_tag_name 2
+nothing wrong                                      messages 0                              database_missing 5
+after is -1                                        invalid_arguments 2 after               invalid_arguments 2 after
+after is 9223372036854775808                       invalid_arguments 2 after               invalid_arguments 2 after
+after is a word                                    invalid_arguments 2 after               invalid_arguments 2 after
+after is 1.5                                       invalid_arguments 2 after               invalid_arguments 2 after
+after is 2.0                                       invalid_arguments 2 after               invalid_arguments 2 after
+limit is 0                                         invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 501                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is a word                                    invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 1.5                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 2.0                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+scope is a word that is no choice                  invalid_arguments 2 scope               invalid_arguments 2 scope
+context is a word that is no choice                invalid_arguments 2 context             invalid_arguments 2 context
+through is -1                                      invalid_arguments 2 through             invalid_arguments 2 through
+through is 9223372036854775808                     invalid_arguments 2 through             invalid_arguments 2 through
+through is a word                                  invalid_arguments 2 through             invalid_arguments 2 through
+through is 1.5                                     invalid_arguments 2 through             invalid_arguments 2 through
+through is 2.0                                     invalid_arguments 2 through             invalid_arguments 2 through
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           messages 0                              database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+thread is empty                                    invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has a line break                            invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has 1025 characters                         invalid_arguments 2 thread              invalid_arguments 2 thread
+tag is empty                                       invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a line break                               invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 65 characters                              invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has 1025 characters                            invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag has a capital letter                           invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+tag ends with a line break                         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
+thread is given without source                     invalid_arguments 2                     invalid_arguments 2
+tag and untagged are both given                    invalid_arguments 2                     invalid_arguments 2
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+through is below after                             invalid_arguments 2                     invalid_arguments 2
+tag is no name and source has a line break         invalid_tag_name 2 tag                  invalid_tag_name 2 tag
 
 == wait
-nothing wrong                                      messages 0                        database_missing 5
-after is -1                                        invalid_arguments 2               invalid_arguments 2
-after is 9223372036854775808                       invalid_arguments 2               invalid_arguments 2
-after is a word                                    invalid_arguments 2               invalid_arguments 2
-after is 1.5                                       invalid_arguments 2               invalid_arguments 2
-after is 2.0                                       invalid_arguments 2               invalid_arguments 2
-limit is 0                                         invalid_arguments 2               invalid_arguments 2
-limit is 501                                       invalid_arguments 2               invalid_arguments 2
-limit is a word                                    invalid_arguments 2               invalid_arguments 2
-limit is 1.5                                       invalid_arguments 2               invalid_arguments 2
-limit is 2.0                                       invalid_arguments 2               invalid_arguments 2
-scope is a word that is no choice                  invalid_arguments 2               invalid_arguments 2
-context is a word that is no choice                invalid_arguments 2               invalid_arguments 2
-timeout is -1                                      invalid_arguments 2               database_missing 5
-timeout is a word                                  invalid_arguments 2               invalid_arguments 2
-timeout is nan                                     invalid_arguments 2               database_missing 5
-timeout is inf                                     invalid_arguments 2               database_missing 5
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      messages 0                              database_missing 5
+after is -1                                        invalid_arguments 2 after               invalid_arguments 2 after
+after is 9223372036854775808                       invalid_arguments 2 after               invalid_arguments 2 after
+after is a word                                    invalid_arguments 2 after               invalid_arguments 2 after
+after is 1.5                                       invalid_arguments 2 after               invalid_arguments 2 after
+after is 2.0                                       invalid_arguments 2 after               invalid_arguments 2 after
+limit is 0                                         invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 501                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is a word                                    invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 1.5                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 2.0                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+scope is a word that is no choice                  invalid_arguments 2 scope               invalid_arguments 2 scope
+context is a word that is no choice                invalid_arguments 2 context             invalid_arguments 2 context
+timeout is -1                                      invalid_arguments 2 timeout             database_missing 5
+timeout is a word                                  invalid_arguments 2 timeout             invalid_arguments 2 timeout
+timeout is nan                                     invalid_arguments 2 timeout             database_missing 5
+timeout is inf                                     invalid_arguments 2 timeout             database_missing 5
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == show
-nothing wrong                                      message 0                         database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_message_id 2              invalid_message_id 2
-id has a line break                                invalid_message_id 2              invalid_message_id 2
-id has 1025 characters                             invalid_message_id 2              invalid_message_id 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-source and id each have a line break               invalid_message_id 2              invalid_message_id 2
+nothing wrong                                      message 0                               database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_message_id 2 id                 invalid_message_id 2 id
+id has a line break                                invalid_message_id 2 id                 invalid_message_id 2 id
+id has 1025 characters                             invalid_message_id 2 id                 invalid_message_id 2 id
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+source and id each have a line break               invalid_message_id 2 id                 invalid_message_id 2 id
 
 == mark
-nothing wrong                                      marked 0                          database_missing 5
-action is left out                                 invalid_arguments 2               invalid_arguments 2
-action is a word that is no choice                 invalid_arguments 2               invalid_arguments 2
-ref is empty                                       reply_ref_required 2              reply_ref_required 2
-ref has a line break                               reply_ref_required 2              reply_ref_required 2
-ref has 1025 characters                            reply_ref_required 2              reply_ref_required 2
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    message_not_found 2               database_missing 5
-source has a line break                            message_not_found 2               database_missing 5
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         message_not_found 2               database_missing 5
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_message_id 2              invalid_message_id 2
-id has a line break                                invalid_message_id 2              invalid_message_id 2
-id has 1025 characters                             invalid_message_id 2              invalid_message_id 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-read with a ref                                    invalid_mark 2                    invalid_mark 2
-replied without a ref                              reply_ref_required 2              reply_ref_required 2
-replied with a ref that is no URL                  reply_ref_required 2              reply_ref_required 2
-replied without a ref and id has a line break      invalid_message_id 2              invalid_message_id 2
+nothing wrong                                      marked 0                                database_missing 5
+action is left out                                 invalid_arguments 2                     invalid_arguments 2
+action is a word that is no choice                 invalid_arguments 2 action              invalid_arguments 2 action
+ref is empty                                       reply_ref_required 2 ref                reply_ref_required 2 ref
+ref has a line break                               reply_ref_required 2 ref                reply_ref_required 2 ref
+ref has 1025 characters                            reply_ref_required 2 ref                reply_ref_required 2 ref
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    message_not_found 2                     database_missing 5
+source has a line break                            message_not_found 2                     database_missing 5
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         message_not_found 2                     database_missing 5
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_message_id 2 id                 invalid_message_id 2 id
+id has a line break                                invalid_message_id 2 id                 invalid_message_id 2 id
+id has 1025 characters                             invalid_message_id 2 id                 invalid_message_id 2 id
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+read with a ref                                    invalid_mark 2                          invalid_mark 2
+replied without a ref                              reply_ref_required 2 ref                reply_ref_required 2 ref
+replied with a ref that is no URL                  reply_ref_required 2 ref                reply_ref_required 2 ref
+replied without a ref and id has a line break      invalid_message_id 2 id                 invalid_message_id 2 id
 
 == context
-nothing wrong                                      context 0                         database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    context 1                         database_missing 5
-source has a line break                            context 1                         database_missing 5
-source has 65 characters                           context 1                         database_missing 5
-source has 1025 characters                         context 1                         database_missing 5
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_message_id 2              invalid_message_id 2
-id has a line break                                invalid_message_id 2              invalid_message_id 2
-id has 1025 characters                             invalid_message_id 2              invalid_message_id 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-id is no UUID                                      invalid_message_id 2              database_missing 5
-id is no UUID and local                            context 1                         database_missing 5
+nothing wrong                                      context 0                               database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    context 1                               database_missing 5
+source has a line break                            context 1                               database_missing 5
+source has 65 characters                           context 1                               database_missing 5
+source has 1025 characters                         context 1                               database_missing 5
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_message_id 2 id                 invalid_message_id 2 id
+id has a line break                                invalid_message_id 2 id                 invalid_message_id 2 id
+id has 1025 characters                             invalid_message_id 2 id                 invalid_message_id 2 id
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+id is no UUID                                      invalid_message_id 2 id                 database_missing 5
+id is no UUID and local                            context 1                               database_missing 5
 
 == expand
-nothing wrong                                      expanded 0                        database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           expanded 0                        database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-thread is left out                                 invalid_arguments 2               invalid_arguments 2
-thread is empty                                    invalid_arguments 2               invalid_arguments 2
-thread has a line break                            invalid_arguments 2               invalid_arguments 2
-thread has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-through is left out                                invalid_arguments 2               invalid_arguments 2
-through is -1                                      invalid_arguments 2               invalid_arguments 2
-through is 9223372036854775808                     invalid_arguments 2               invalid_arguments 2
-through is a word                                  invalid_arguments 2               invalid_arguments 2
-through is 1.5                                     invalid_arguments 2               invalid_arguments 2
-through is 2.0                                     invalid_arguments 2               invalid_arguments 2
-after is -1                                        invalid_arguments 2               invalid_arguments 2
-after is 9223372036854775808                       invalid_arguments 2               invalid_arguments 2
-after is a word                                    invalid_arguments 2               invalid_arguments 2
-after is 1.5                                       invalid_arguments 2               invalid_arguments 2
-after is 2.0                                       invalid_arguments 2               invalid_arguments 2
-limit is 0                                         invalid_arguments 2               invalid_arguments 2
-limit is 101                                       invalid_arguments 2               invalid_arguments 2
-limit is a word                                    invalid_arguments 2               invalid_arguments 2
-limit is 1.5                                       invalid_arguments 2               invalid_arguments 2
-limit is 2.0                                       invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-through is below after                             invalid_arguments 2               invalid_arguments 2
-thread is no UUID                                  invalid_arguments 2               database_missing 5
-thread is no UUID and local                        expanded 0                        database_missing 5
+nothing wrong                                      expanded 0                              database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           expanded 0                              database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+thread is left out                                 invalid_arguments 2                     invalid_arguments 2
+thread is empty                                    invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has a line break                            invalid_arguments 2 thread              invalid_arguments 2 thread
+thread has 1025 characters                         invalid_arguments 2 thread              invalid_arguments 2 thread
+through is left out                                invalid_arguments 2 through             invalid_arguments 2 through
+through is -1                                      invalid_arguments 2 through             invalid_arguments 2 through
+through is 9223372036854775808                     invalid_arguments 2 through             invalid_arguments 2 through
+through is a word                                  invalid_arguments 2 through             invalid_arguments 2 through
+through is 1.5                                     invalid_arguments 2 through             invalid_arguments 2 through
+through is 2.0                                     invalid_arguments 2 through             invalid_arguments 2 through
+after is -1                                        invalid_arguments 2 after               invalid_arguments 2 after
+after is 9223372036854775808                       invalid_arguments 2 after               invalid_arguments 2 after
+after is a word                                    invalid_arguments 2 after               invalid_arguments 2 after
+after is 1.5                                       invalid_arguments 2 after               invalid_arguments 2 after
+after is 2.0                                       invalid_arguments 2 after               invalid_arguments 2 after
+limit is 0                                         invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 101                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is a word                                    invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 1.5                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 2.0                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+through is below after                             invalid_arguments 2                     invalid_arguments 2
+thread is no UUID                                  invalid_arguments 2 thread              database_missing 5
+thread is no UUID and local                        expanded 0                              database_missing 5
 
 == reply_list
-nothing wrong                                      reply_attempts 0                  database_missing 5
-after is -1                                        invalid_arguments 2               database_missing 5
-after is 9223372036854775808                       invalid_arguments 2               database_missing 5
-after is a word                                    invalid_arguments 2               invalid_arguments 2
-after is 1.5                                       invalid_arguments 2               invalid_arguments 2
-after is 2.0                                       invalid_arguments 2               invalid_arguments 2
-limit is 0                                         invalid_arguments 2               database_missing 5
-limit is 101                                       invalid_arguments 2               database_missing 5
-limit is a word                                    invalid_arguments 2               invalid_arguments 2
-limit is 1.5                                       invalid_arguments 2               invalid_arguments 2
-limit is 2.0                                       invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      reply_attempts 0                        database_missing 5
+after is -1                                        invalid_arguments 2 after               database_missing 5
+after is 9223372036854775808                       invalid_arguments 2 after               database_missing 5
+after is a word                                    invalid_arguments 2 after               invalid_arguments 2 after
+after is 1.5                                       invalid_arguments 2 after               invalid_arguments 2 after
+after is 2.0                                       invalid_arguments 2 after               invalid_arguments 2 after
+limit is 0                                         invalid_arguments 2 limit               database_missing 5
+limit is 101                                       invalid_arguments 2 limit               database_missing 5
+limit is a word                                    invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 1.5                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+limit is 2.0                                       invalid_arguments 2 limit               invalid_arguments 2 limit
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == reply_prepare
-nothing wrong                                      reply_attempt 0                   database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-body is left out                                   invalid_arguments 2               invalid_arguments 2
-body is empty                                      invalid_reply_body 2              invalid_reply_body 2
-body has 65537 characters                          invalid_reply_body 2              invalid_reply_body 2
-replace_key is empty                               invalid_arguments 2               invalid_arguments 2
-replace_key has a line break                       invalid_arguments 2               invalid_arguments 2
-replace_key has 1025 characters                    invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-body of spaces                                     invalid_reply_body 2              invalid_reply_body 2
-body with a NUL                                    invalid_reply_body 2              invalid_reply_body 2
-body of 65536 characters that take two bytes each  invalid_reply_body 2              invalid_reply_body 2
-body file that is not there                        invalid_reply_body 2              invalid_reply_body 2
-body file that is not UTF-8                        invalid_reply_body 2              invalid_reply_body 2
-body of spaces and source has a line break         invalid_reply_body 2              invalid_reply_body 2
+nothing wrong                                      reply_attempt 0                         database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+body is left out                                   invalid_arguments 2 body                invalid_arguments 2 body
+body is empty                                      invalid_reply_body 2 body               invalid_reply_body 2 body
+body has 65537 characters                          invalid_reply_body 2 body               invalid_reply_body 2 body
+replace_key is empty                               invalid_arguments 2 replace_key         invalid_arguments 2 replace_key
+replace_key has a line break                       invalid_arguments 2 replace_key         invalid_arguments 2 replace_key
+replace_key has 1025 characters                    invalid_arguments 2 replace_key         invalid_arguments 2 replace_key
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+body of spaces                                     invalid_reply_body 2 body               invalid_reply_body 2 body
+body with a NUL                                    invalid_reply_body 2 body               invalid_reply_body 2 body
+body of 65536 characters that take two bytes each  invalid_reply_body 2 body               invalid_reply_body 2 body
+body file that is not there                        invalid_reply_body 2 body               invalid_reply_body 2 body
+body file that is not UTF-8                        invalid_reply_body 2 body               invalid_reply_body 2 body
+body of spaces and source has a line break         invalid_reply_body 2 body               invalid_reply_body 2 body
 
 == reply_begin
-nothing wrong                                      reply_attempt 0                   database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-key is left out                                    invalid_arguments 2               invalid_arguments 2
-key is empty                                       invalid_arguments 2               invalid_arguments 2
-key has a line break                               invalid_arguments 2               invalid_arguments 2
-key has 1025 characters                            invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      reply_attempt 0                         database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+key is left out                                    invalid_arguments 2 key                 invalid_arguments 2 key
+key is empty                                       invalid_arguments 2 key                 invalid_arguments 2 key
+key has a line break                               invalid_arguments 2 key                 invalid_arguments 2 key
+key has 1025 characters                            invalid_arguments 2 key                 invalid_arguments 2 key
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == reply_show
-nothing wrong                                      reply_attempt 0                   database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      reply_attempt 0                         database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
 
 == reply_confirm
-nothing wrong                                      reply_attempt 0                   database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-key is left out                                    invalid_arguments 2               invalid_arguments 2
-key is empty                                       invalid_arguments 2               invalid_arguments 2
-key has a line break                               invalid_arguments 2               invalid_arguments 2
-key has 1025 characters                            invalid_arguments 2               invalid_arguments 2
-ref is left out                                    invalid_arguments 2               invalid_arguments 2
-ref is empty                                       reply_ref_required 2              reply_ref_required 2
-ref has a line break                               reply_ref_required 2              reply_ref_required 2
-ref has 1025 characters                            reply_ref_required 2              reply_ref_required 2
-readback_body is left out                          invalid_arguments 2               invalid_arguments 2
-readback_body is empty                             invalid_reply_body 2              invalid_reply_body 2
-readback_body has 65537 characters                 invalid_reply_body 2              invalid_reply_body 2
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-ref is no URL                                      reply_ref_required 2              reply_ref_required 2
-ref is no URL and the readback is spaces           invalid_reply_body 2              invalid_reply_body 2
-the readback is spaces and key has a line break    invalid_reply_body 2              invalid_reply_body 2
+nothing wrong                                      reply_attempt 0                         database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+key is left out                                    invalid_arguments 2 key                 invalid_arguments 2 key
+key is empty                                       invalid_arguments 2 key                 invalid_arguments 2 key
+key has a line break                               invalid_arguments 2 key                 invalid_arguments 2 key
+key has 1025 characters                            invalid_arguments 2 key                 invalid_arguments 2 key
+ref is left out                                    invalid_arguments 2 ref                 invalid_arguments 2 ref
+ref is empty                                       reply_ref_required 2 ref                reply_ref_required 2 ref
+ref has a line break                               reply_ref_required 2 ref                reply_ref_required 2 ref
+ref has 1025 characters                            reply_ref_required 2 ref                reply_ref_required 2 ref
+readback_body is left out                          invalid_arguments 2 readback_body       invalid_arguments 2 readback_body
+readback_body is empty                             invalid_reply_body 2 readback_body      invalid_reply_body 2 readback_body
+readback_body has 65537 characters                 invalid_reply_body 2 readback_body      invalid_reply_body 2 readback_body
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+ref is no URL                                      reply_ref_required 2 ref                reply_ref_required 2 ref
+ref is no URL and the readback is spaces           invalid_reply_body 2 readback_body      invalid_reply_body 2 readback_body
+the readback is spaces and key has a line break    invalid_reply_body 2 readback_body      invalid_reply_body 2 readback_body
 
 == reply_verify
-nothing wrong                                      reply_attempt 0                   database_missing 5
-source is left out                                 invalid_arguments 2               invalid_arguments 2
-source is empty                                    invalid_arguments 2               invalid_arguments 2
-source has a line break                            invalid_arguments 2               invalid_arguments 2
-source has 65 characters                           message_not_found 2               database_missing 5
-source has 1025 characters                         invalid_arguments 2               invalid_arguments 2
-id is left out                                     invalid_arguments 2               invalid_arguments 2
-id is empty                                        invalid_arguments 2               invalid_arguments 2
-id has a line break                                invalid_arguments 2               invalid_arguments 2
-id has 1025 characters                             invalid_arguments 2               invalid_arguments 2
-key is left out                                    invalid_arguments 2               invalid_arguments 2
-key is empty                                       reply_key_mismatch 2              database_missing 5
-key has a line break                               reply_key_mismatch 2              database_missing 5
-key has 1025 characters                            reply_key_mismatch 2              database_missing 5
-ref is left out                                    invalid_arguments 2               invalid_arguments 2
-ref is empty                                       reply_reference_unsupported 2     database_missing 5
-ref has a line break                               reply_reference_unsupported 2     database_missing 5
-ref has 1025 characters                            reply_reference_unsupported 2     database_missing 5
-an argument that the command does not have         invalid_arguments 2               invalid_arguments 2
-ref is no URL                                      reply_reference_unsupported 2     database_missing 5
-ref is no URL and source has a line break          invalid_arguments 2               invalid_arguments 2
+nothing wrong                                      reply_attempt 0                         database_missing 5
+source is left out                                 invalid_arguments 2                     invalid_arguments 2
+source is empty                                    invalid_arguments 2 source              invalid_arguments 2 source
+source has a line break                            invalid_arguments 2 source              invalid_arguments 2 source
+source has 65 characters                           message_not_found 2                     database_missing 5
+source has 1025 characters                         invalid_arguments 2 source              invalid_arguments 2 source
+id is left out                                     invalid_arguments 2                     invalid_arguments 2
+id is empty                                        invalid_arguments 2 id                  invalid_arguments 2 id
+id has a line break                                invalid_arguments 2 id                  invalid_arguments 2 id
+id has 1025 characters                             invalid_arguments 2 id                  invalid_arguments 2 id
+key is left out                                    invalid_arguments 2 key                 invalid_arguments 2 key
+key is empty                                       reply_key_mismatch 2                    database_missing 5
+key has a line break                               reply_key_mismatch 2                    database_missing 5
+key has 1025 characters                            reply_key_mismatch 2                    database_missing 5
+ref is left out                                    invalid_arguments 2 ref                 invalid_arguments 2 ref
+ref is empty                                       reply_reference_unsupported 2 ref       database_missing 5
+ref has a line break                               reply_reference_unsupported 2 ref       database_missing 5
+ref has 1025 characters                            reply_reference_unsupported 2 ref       database_missing 5
+an argument that the command does not have         invalid_arguments 2                     invalid_arguments 2
+ref is no URL                                      reply_reference_unsupported 2 ref       database_missing 5
+ref is no URL and source has a line break          invalid_arguments 2 source              invalid_arguments 2 source
 
 == nope
-a command that is not there                        invalid_arguments 2               invalid_arguments 2
+a command that is not there                        invalid_arguments 2                     invalid_arguments 2

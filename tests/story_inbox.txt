@@ -508,7 +508,7 @@ exit code 2
 {
   "event": "error",
   "error": "message_not_found",
-  "next_action": "check_command_help_and_returned_message_ids",
+  "next_action": "use_the_source_and_id_of_a_listed_message",
   "history_complete": false,
   "identifier_hint": "Use the source and remote message id returned by list. arrival_seq is a local arrival cursor, not a remote message id."
 }
@@ -519,7 +519,8 @@ exit code 2
 {
   "event": "error",
   "error": "invalid_message_id",
-  "next_action": "check_command_help_and_returned_message_ids",
+  "argument": "id",
+  "next_action": "use_the_exact_id_of_a_returned_message",
   "history_complete": false
 }
 
@@ -578,7 +579,8 @@ exit code 2
 {
   "event": "error",
   "error": "reply_ref_required",
-  "next_action": "check_command_help_and_returned_message_ids",
+  "argument": "ref",
+  "next_action": "supply_the_url_of_the_published_reply_as_ref",
   "history_complete": false
 }
 
@@ -749,6 +751,7 @@ exit code 2
 {
   "event": "error",
   "error": "invalid_tag_name",
+  "argument": "tag",
   "next_action": "use_1_to_64_lowercase_letters_digits_hyphens_or_underscores_starting_with_a_letter_or_digit",
   "history_complete": false
 }
@@ -1081,6 +1084,7 @@ exit code 2
 {
   "event": "error",
   "error": "invalid_thread_id",
+  "argument": "thread",
   "next_action": "use_a_thread_uuid_from_a_message_or_board",
   "history_complete": false
 }
@@ -1654,7 +1658,7 @@ exit code 2
 {
   "event": "error",
   "error": "invalid_arguments",
-  "next_action": "check_command_help_and_returned_message_ids",
+  "next_action": "fix_the_arguments",
   "history_complete": false
 }
 
@@ -1903,7 +1907,7 @@ exit code 2
 {
   "event": "error",
   "error": "invalid_arguments",
-  "next_action": "check_command_help_and_returned_message_ids",
+  "next_action": "fix_the_arguments",
   "history_complete": false
 }
 

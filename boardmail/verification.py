@@ -24,7 +24,7 @@ def candidate(about, ref, thread):
             return uuid(url.fragment.removeprefix('comment-'))
         raise ValueError()
     except (MailError, ValueError, TypeError, AttributeError, KeyError):
-        raise MailError('reply_reference_unsupported') from None
+        raise MailError('reply_reference_unsupported', argument='ref') from None
 
 
 def available(original, about):

@@ -13,6 +13,10 @@ tool's schema says more about a string and refuses first. The command line does 
 a string again when they run: the reply journal, the tags and the marks do. tests/argument_errors_cli.txt and
 tests/argument_errors_mcp.txt store what each wrong argument is answered.
 
+An error names the argument whose value was refused, by the name that this table has for it. Where several are
+wrong it is the first of them in the order of order(). It names none where a call has a word that is no argument
+of the command, or breaks a rule between two arguments.
+
 Every text is written by hand for each of the two readers, and the two stand side by side. For a command,
 summary, description and epilog are its help page on the command line, and tool is the description of its MCP
 tool. For an argument, help is what the command line says and tool is what the tool says.
@@ -116,6 +120,11 @@ def fits(kind, value):
     return kind.get('minimum', value) <= value <= kind.get('maximum', value)
 
 
+def order(command):
+    """The names of the arguments of a command, in the order in which they are checked."""
+    return tuple(dict.fromkeys((*command.checked_first, *(argument.name for argument in command.arguments))))
+
+
 def checked(command, given):
     """What the function of a command gets, from what an entry point was given for its arguments: every argument
     of the command by name, checked, with its default or None where it is left out. None is left out as well."""
@@ -123,16 +132,21 @@ def checked(command, given):
     if not given.keys() <= arguments.keys():
         raise MailError('invalid_arguments')
     found = {}
-    for name in dict.fromkeys((*command.checked_first, *arguments)):
+    for name in order(command):
         argument, value = arguments[name], given.get(name)
-        if value is None and not argument.required:
+        if value is None:
+            if argument.required:
+                # Each entry point refuses this before it comes here, and with this code.
+                raise MailError('invalid_arguments', argument=name)
             value = argument.kind.get('default')
         elif not argument.late:
             if not fits(argument.kind, value):
-                raise MailError('invalid_arguments')
+                raise MailError('invalid_arguments', argument=name)
             if argument.check is not None:
-                # A required string that is left out fails its check. One without a check is left to the command.
-                value = config.converted(argument.check, value, error=argument.error)
+                try:
+                    value = config.converted(argument.check, value, error=argument.error)
+                except MailError as exc:
+                    raise MailError(str(exc), argument=name) from None
         found[name] = value
     for name, argument in arguments.items():
         if argument.not_below is not None and found[name] is not None and found[name] < found[argument.not_below]:

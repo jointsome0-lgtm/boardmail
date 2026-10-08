@@ -15,9 +15,10 @@ HANDLERS = {}
 NO_REFERENCE = object()
 
 
-def error_result(error):
-    result = {"event": "error", "error": error, "next_action": next_action(error),
-              "history_complete": False}
+def error_result(error, argument=None):
+    """The result of an error. argument is the argument whose value was refused, where the error has one."""
+    result = {"event": "error", "error": error, **({} if argument is None else {"argument": argument}),
+              "next_action": next_action(error), "history_complete": False}
     if error == "message_not_found":
         result["identifier_hint"] = ("Use the source and remote message id returned by list. "
                                      "arrival_seq is a local arrival cursor, not a remote message id.")
@@ -53,7 +54,7 @@ def outcome(operation):
     try:
         result, code = operation()
     except MailError as exc:
-        return error_result(str(exc))
+        return error_result(str(exc), exc.argument)
     except LOCAL_FAILURES as exc:
         return local_state_result(exc)
     except KeyboardInterrupt:
@@ -205,7 +206,7 @@ def run_list(store, *, after, limit, scope, context, unread, through, source, th
 def run_wait(store, *, cancelled, after, limit, scope, context, timeout):
     shown = reading(store, scope, context)
     if not table.fits(table.TIMEOUT, timeout):
-        raise MailError("invalid_arguments")
+        raise MailError("invalid_arguments", argument="timeout")
     result = store.wait(after, timeout, limit, cancelled=cancelled, **shown)
     result["collection_performed"] = False
     return result, {"messages": 0, "timeout": 3, "cancelled": 4}[result["event"]]
@@ -414,7 +415,7 @@ def context(store, source, message_id, settings, *, fetch=transport.fetch):
     adapter = boards.owner(source, settings) if settings is not None else store.adapter(source)
     board = boards.declared(adapter)
     if settings is not None:
-        config.converted(board.originals.message_id, message_id, error="invalid_message_id")
+        config.converted(board.originals.message_id, message_id, error="invalid_message_id", argument="id")
         lookup = Lookup(board.originals, settings, fetch)
     resolver = lambda mid, root=None: resolve(store, source, lookup, mid, root)
     target, relations, authoritative = resolver(message_id)
@@ -446,7 +447,7 @@ def expand(store, source, thread, after, through, limit, settings, *, fetch=tran
     adapter = boards.owner(source, settings) if settings is not None else store.adapter(source)
     board = boards.declared(adapter)
     if settings is not None:
-        config.converted(config.uuid, thread, error="invalid_arguments")
+        config.converted(config.uuid, thread, error="invalid_arguments", argument="thread")
     page = store.page(after, limit, through=through, source=source, thread=thread, scope="all", context="none")
     rows = page["messages"]
     lookup = Lookup(board.originals, settings, fetch) if settings is not None and rows else None

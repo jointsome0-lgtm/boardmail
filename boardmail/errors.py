@@ -1,5 +1,8 @@
 """One entry for each error code: its next-step hint, its exit code and, through that, its MCP error flag.
 
+A hint names a step that can work. retry_collect is the hint of a pass that could not finish, and of a code
+without an entry.
+
 A code stays a plain string where it is raised. This module imports nothing
 from the package, so every module can import it at the top. That is why the
 error itself and the checks of a value that every module shares are here too.
@@ -9,7 +12,7 @@ from uuid import UUID
 
 
 class Entry(NamedTuple):
-    next_action: str = 'retry_collect'  # Entry() is a code with no hint of its own.
+    next_action: str = 'retry_collect'  # Entry() is a code of a pass that could not finish. The next one can.
     exit_code: int = 2
 
 
@@ -20,6 +23,11 @@ UNLISTED = Entry()
 # incomplete context or an unverified reply.
 MCP_ERROR_EXIT_CODES = (1, 2, 5)
 
+# Three hints are for an outcome that another pass does not change:
+# continue_without_the_original: an original or a thread is not there to read on its board, or not whole.
+# reconcile_publication_before_retry: what a board shows of a reply does not prove that it is ours and in its
+# place. A check of a reply that failed has this hint in its result as well.
+# report_to_the_operator: the board answers in a way that this package does not take, whenever it is asked.
 CODES = {
     'account_mismatch': Entry('restore_source_identity_or_use_a_new_source'),
     'adapter_failed': Entry('check_trusted_adapter_code'),
@@ -32,53 +40,53 @@ CODES = {
     'database_exists': Entry('use_existing_database_do_not_overwrite'),
     'database_missing': Entry('run_init', 5),
     'invalid_adapter_result': Entry('check_trusted_adapter_code'),
-    'invalid_arguments': Entry('check_command_help_and_returned_message_ids'),
+    'invalid_arguments': Entry('fix_the_arguments'),
     'invalid_config': Entry('check_config_and_credentials'),
-    'invalid_mark': Entry('check_command_help_and_returned_message_ids'),
-    'invalid_message_id': Entry('check_command_help_and_returned_message_ids'),
+    'invalid_mark': Entry('give_ref_only_with_action_replied'),
+    'invalid_message_id': Entry('use_the_exact_id_of_a_returned_message'),
     'invalid_reply_body': Entry('use_nonempty_utf8_text_up_to_65536_bytes'),
-    'invalid_request': Entry(),
+    'invalid_request': Entry('report_to_the_operator'),
     'invalid_response': Entry(),
     'invalid_settings': Entry('run_settings_reset'),
     'invalid_tag_name': Entry('use_1_to_64_lowercase_letters_digits_hyphens_or_underscores_starting_with_a_letter_or_digit'),
     'invalid_thread_id': Entry('use_a_thread_uuid_from_a_message_or_board'),
     'invalid_totp_secret': Entry('check_totp_secret_and_system_clock'),
-    'message_not_found': Entry('check_command_help_and_returned_message_ids'),
+    'message_not_found': Entry('use_the_source_and_id_of_a_listed_message'),
     'network_error': Entry(),
-    'original_deleted': Entry(),
-    'original_incomplete': Entry(),
-    'original_unavailable': Entry(),
+    'original_deleted': Entry('continue_without_the_original'),
+    'original_incomplete': Entry('continue_without_the_original'),
+    'original_unavailable': Entry('continue_without_the_original'),
     'pagination_no_progress': Entry(),
     'pending_overflow': Entry(),
-    'redirect_refused': Entry(),
+    'redirect_refused': Entry('report_to_the_operator'),
     'reply_adapter_identity_unknown': Entry('restore_source_identity_before_verifying'),
     'reply_already_recorded': Entry('inspect_saved_reply_do_not_publish_again'),
     'reply_already_started': Entry('inspect_saved_reply_do_not_publish_again'),
-    'reply_author_mismatch': Entry(),
+    'reply_author_mismatch': Entry('reconcile_publication_before_retry'),
     'reply_body_conflict': Entry('show_saved_reply_before_changing_a_draft'),
     'reply_candidate_limit': Entry('inspect_saved_candidates_or_use_independent_readback_and_reply_confirm'),
-    'reply_identity_mismatch': Entry(),
-    'reply_incomplete': Entry(),
+    'reply_identity_mismatch': Entry('reconcile_publication_before_retry'),
+    'reply_incomplete': Entry('reconcile_publication_before_retry'),
     'reply_key_mismatch': Entry('show_saved_reply_before_changing_a_draft'),
     'reply_not_prepared': Entry('prepare_reply_before_publishing'),
     'reply_not_started': Entry('begin_before_publishing'),
-    'reply_not_visible': Entry(),
-    'reply_provider_not_verified': Entry(),
-    'reply_provider_status_unknown': Entry(),
+    'reply_not_visible': Entry('reconcile_publication_before_retry'),
+    'reply_provider_not_verified': Entry('reconcile_publication_before_retry'),
+    'reply_provider_status_unknown': Entry('reconcile_publication_before_retry'),
     'reply_readback_mismatch': Entry('reconcile_publication_before_confirming'),
-    'reply_ref_required': Entry('check_command_help_and_returned_message_ids'),
+    'reply_ref_required': Entry('supply_the_url_of_the_published_reply_as_ref'),
     'reply_reference_conflict': Entry('reconcile_publication_before_confirming'),
     'reply_reference_unsupported': Entry('supply_exact_reply_url_on_the_configured_board'),
-    'reply_target_mismatch': Entry(),
-    'reply_thread_mismatch': Entry(),
+    'reply_target_mismatch': Entry('reconcile_publication_before_retry'),
+    'reply_thread_mismatch': Entry('reconcile_publication_before_retry'),
     'reply_verification_unsupported': Entry('use_independent_readback_and_reply_confirm'),
-    'response_too_large': Entry(),
+    'response_too_large': Entry('report_to_the_operator'),
     'source_not_found': Entry('check_source_name_in_status_or_config'),
     'source_paused': Entry('inspect_source_pause_before_remote_verification'),
     'source_timeout': Entry(),
     'subscription_config_required': Entry('rerun_with_config_to_identify_source_adapter'),
     'subscriptions_unsupported': Entry('use_a_source_with_subscription_support'),
-    'thread_deleted': Entry(),
+    'thread_deleted': Entry('continue_without_the_original'),
     'unsupported_database': Entry('inspect_database_do_not_delete'),
 
     # The codes below are built at run time or reported without a raise, so no
@@ -105,15 +113,22 @@ CODES = {
     'fourclaw_network_error': Entry(),
     'network_timeout': Entry(),
     # What reply verification builds from a Moltbook lookup.
-    'hidden_by_provider': Entry(),
-    'reply_deleted': Entry(),
-    'reply_missing': Entry(),
-    'thread_missing': Entry(),
+    'hidden_by_provider': Entry('continue_without_the_original'),
+    'reply_deleted': Entry('reconcile_publication_before_retry'),
+    'reply_missing': Entry('reconcile_publication_before_retry'),
+    'thread_missing': Entry('continue_without_the_original'),
 }
 
 
 class MailError(Exception):
-    """A fixed safe error code, never provider prose, credentials or paths."""
+    """A fixed safe error code, never provider prose, credentials or paths.
+
+    argument is the name that the command table has for the argument whose value was refused. It is None where
+    the error is about no single argument, and it is never a word of the caller."""
+
+    def __init__(self, code, *, argument=None):
+        super().__init__(code)
+        self.argument = argument
 
 
 def uuid(value):
@@ -127,15 +142,15 @@ def identifier(value):
     return value
 
 
-def converted(convert, *values, error=None, otherwise=None):
+def converted(convert, *values, error=None, otherwise=None, argument=None):
     """convert(*values). Where convert does not take them, the error code is raised if there is one, and
-    otherwise is the answer if there is none."""
+    otherwise is the answer if there is none. argument is the argument that the values are of, for the error."""
     try:
         return convert(*values)
     except (ValueError, TypeError, AttributeError):
         if error is None:
             return otherwise
-        raise MailError(error) from None
+        raise MailError(error, argument=argument) from None
 
 
 def next_action(code):

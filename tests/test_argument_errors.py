@@ -1,4 +1,5 @@
-"""What a command answers to an argument that it must not get: the error code, through each entry point.
+"""What a command answers to an argument that it must not get: the error code and the argument that the error
+names, through each entry point.
 
 The cases come from the command table: for each argument of each command the values that its kind rules out, and
 for each rule of a command the ways to break it. MORE adds what a command checks beyond the kind of one argument,
@@ -6,6 +7,8 @@ and which code wins where two arguments are wrong. A case is one call that works
 It runs twice, on an inbox with mail and where no inbox file is. tests/argument_errors_cli.txt and
 tests/argument_errors_mcp.txt store the answers.
 """
+from contextlib import redirect_stdout
+import io
 import json
 from pathlib import Path
 import shlex
@@ -13,7 +16,7 @@ import tempfile
 from typing import NamedTuple
 import unittest
 
-from boardmail import table
+from boardmail import cli, table
 from examples.fixtures import uid
 import kit
 
@@ -40,6 +43,8 @@ RIGHT = {'source': 'moltbook', 'id': ASKED, 'thread': THREAD, 'tag': 'follow-up'
          'through': 2}
 # What a call that works is given besides the arguments that its command requires.
 ALSO = {'wait': {'timeout': 0}, 'mark': {'ref': RIGHT['ref']}}
+# Fewer calls than this with one error code through both entry points that names an argument: the lists were misread.
+NAMED_BY_BOTH = 400
 OUT = object()      # in a case: the argument is left out
 NO_FILE = object()  # in a case: the command line names a file that is not there
 
@@ -91,11 +96,18 @@ Made by tests/test_argument_errors.py.
 
 A line is one call that works, changed in what the line names. The values are in the test. After it stand the
 answers of two calls: first on an inbox with mail, then where no inbox file is. An answer is the error code and
-{outcome}. Where a call is not refused, the event of its result stands in place
-of an error code. "nothing wrong" is the call as it works.
-"""
-OUTCOME = {'cli': ('through the command line', 'the exit code'),
-           'mcp': ('through a tool call', 'whether the result is flagged as an error')}
+{outcome}, and then the argument that the error names, where it names one.
+Where a call is not refused, the event of its result stands in place of an error code. "nothing wrong" is the
+call as it works.
+
+An error names the argument whose value was refused. It names none where a call has a word that is no argument of
+the command, or breaks a rule between two arguments.
+{more}"""
+OUTCOME = {'cli': ('through the command line', 'the exit code', """\
+The command line names none for an argument by position that is left out either: the words after it take its
+place, so the line does not show which one it was.
+"""),
+           'mcp': ('through a tool call', 'whether the result is flagged as an error', '')}
 
 
 class Case(NamedTuple):
@@ -210,7 +222,8 @@ def typed(name, given, home):
 def answer(step):
     result = json.loads(step.text)
     outcome = step.outcome if type(step.outcome) is int else 'error' if step.outcome else 'ok'
-    return f'{result.get("error", result["event"])} {outcome}'
+    return ' '.join(str(part) for part in (result.get('error', result['event']), outcome, result.get('argument'))
+                    if part is not None)
 
 
 class ArgumentErrorTests(unittest.TestCase):
@@ -249,20 +262,24 @@ class ArgumentErrorTests(unittest.TestCase):
                     result = step(title, None, case.command, **given)
                 if result['event'] == 'error':
                     self.assertEqual(self.file(), start, f'{title} was refused and still changed the inbox file')
+                if 'argument' in result:
+                    # An error never repeats a word of the caller. It names an argument as the command table does.
+                    self.assertIn(result['argument'], table.order(table.COMMANDS[case.command]), title)
 
         return {step.title: answer(step) for step in kit.told(story, self.home, entry)}
 
     def check(self, entry):
         start = self.file()
         with_mail, without = self.answers(entry, start), self.answers(entry, None)
-        through, outcome = OUTCOME[entry]
-        text, wide = [ABOUT.format(entry=through, outcome=outcome)], max(len(case.title) for case in cases()) + 2
+        through, outcome, more = OUTCOME[entry]
+        text = [ABOUT.format(entry=through, outcome=outcome, more=more)]
+        wide = max(len(case.title) for case in cases()) + 2
         for case in cases():
             if f'\n== {case.command}\n' not in text:
                 text.append(f'\n== {case.command}\n')
             title = f'{case.command}: {case.title}'
             if title in with_mail:
-                text.append(f'{case.title:{wide}}{with_mail[title]:34}{without[title]}\n')
+                text.append(f'{case.title:{wide}}{with_mail[title]:40}{without[title]}\n')
         kit.check_stored(self, f'argument_errors_{entry}.txt', ''.join(text))
 
     def test_the_command_line(self):
@@ -271,6 +288,58 @@ class ArgumentErrorTests(unittest.TestCase):
     @unittest.skipIf(kit.mcp_missing(), kit.NO_EXTRA)
     def test_tool_calls(self):
         self.check('mcp')
+
+    def test_both_entry_points_name_the_same_argument(self):
+        # Read from the two stored lists, which the tests above hold to what the entry points answer.
+        wide, stored = max(len(case.title) for case in cases()) + 2, {}
+        for entry in ENTRIES:
+            answers, command = stored.setdefault(entry, {}), None
+            for line in (kit.TESTS / f'argument_errors_{entry}.txt').read_text(encoding='utf-8').splitlines():
+                if line.startswith('== '):
+                    command = line[3:]
+                elif command is not None and line:
+                    answers[command, line[:wide].rstrip()] = line[wide:wide + 40].split(), line[wide + 40:].split()
+        named = 0
+        for command, title in sorted(stored['cli'].keys() & stored['mcp'].keys()):
+            for typed, called in zip(stored['cli'][command, title], stored['mcp'][command, title]):
+                if typed[0] != called[0] or len(called) < 3:
+                    continue  # the entry points call it differently, or the error is about no argument
+                named += 1
+                if len(typed) == 3:
+                    self.assertEqual(typed[2], called[2], (command, title))
+                else:
+                    # The command line cannot say which argument by position was left out.
+                    by_position = [argument.name for argument in table.COMMANDS[command].arguments
+                                   if not argument.typed.startswith('-')]
+                    self.assertEqual((title, called[2] in by_position), (f'{called[2]} is left out', True), command)
+        self.assertGreater(named, NAMED_BY_BOTH)
+
+class CommandLineTests(unittest.TestCase):
+    """What the command line names where its parser takes no line: argparse says only that it took none."""
+
+    def test_a_line_that_the_parser_does_not_take_is_read_again_for_its_argument(self):
+        for line, named in (('list --limit many', 'limit'),          # a word that is no number
+                            ('list --scope other', 'scope'),         # a word that is no choice
+                            ('reply begin moltbook an-id', 'key'),   # an option that is left out
+                            ('reply list --after many', 'after'),    # an argument that its command looks at late
+                            ('list --tag Bad --limit many', 'tag'),  # the first in the order of the command table
+                            ('reply begin moltbook', None),          # an argument by position that is left out
+                            ('list --nope 1', None),                 # a word that is no argument
+                            ('list --tag x --untagged', None),       # a rule between two
+                            ('list --limit', None),                  # an option without its value
+                            ('nope', None)):                         # no command
+            with self.subTest(line=line):
+                printed = io.StringIO()
+                with redirect_stdout(printed):
+                    code = cli.main(shlex.split(line))
+                result = json.loads(printed.getvalue())
+                self.assertEqual((code, result['error'], result.get('argument')), (2, 'invalid_arguments', named))
+
+    def test_a_refused_line_that_asks_for_help_gets_no_help_page(self):
+        printed = io.StringIO()
+        with redirect_stdout(printed):
+            code = cli.main(['list', '--limit', 'many', '--help'])
+        self.assertEqual((code, json.loads(printed.getvalue())['error']), (2, 'invalid_arguments'))
 
 
 if __name__ == '__main__':

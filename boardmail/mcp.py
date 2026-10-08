@@ -45,6 +45,21 @@ def passed(command, arguments):
     return {**own, **arguments}
 
 
+def refused(command, schema, arguments, fits):
+    """The argument that a call of a tool is refused for: the first in the order of the command table that is
+    required and left out, or whose value its own part of the schema does not take. None where the call has a
+    name that is no argument of the command, or breaks only a rule between two. fits says whether a value is
+    what a schema takes."""
+    properties = schema['properties']
+    if not arguments.keys() <= properties.keys():
+        return None
+    for name in table.order(command):
+        wrong = not fits(properties[name], arguments[name]) if name in arguments else name in schema['required']
+        if wrong:
+            return name
+    return None
+
+
 def create_server(store, sources=None, *, fetch=transport.fetch):
     """The server of one inbox. fetch asks a board for a tool that can ask one: the transport, or an invented
     board in its place."""
@@ -64,13 +79,19 @@ def create_server(store, sources=None, *, fetch=transport.fetch):
     async def list_tools(ctx, params):
         return ListToolsResult(tools=list(catalog.values()))
 
+    def fits(schema, value):
+        return Draft202012Validator(schema).is_valid(value)
+
     async def call_tool(ctx, params):
         tool = catalog.get(params.name)
         arguments = params.arguments or {}
-        if tool is None or not Draft202012Validator(tool.input_schema).is_valid(arguments):
+        command = tool and table.COMMANDS[params.name.removeprefix("boardmail_")]
+        if tool is None:
             result, code = commands.error_result("invalid_arguments")
+        elif not fits(tool.input_schema, arguments):
+            result, code = commands.error_result(
+                "invalid_arguments", refused(command, tool.input_schema, arguments, fits))
         else:
-            command = table.COMMANDS[params.name.removeprefix("boardmail_")]
             cancelled = threading.Event()
             invoke = partial(commands.outcome, partial(commands.execute, store, command.name, sources=sources,
                              cancelled=cancelled, fetch=fetch, **passed(command, arguments)))

@@ -262,6 +262,28 @@ For subscribed roots, one additional 45-second budget follows anonymous comment 
 
 Pagination uses returned cursors and counts top-level comment roots, including their nested replies. A rejected saved cursor resets to the head for retry. Missing originals count as `unavailable`; this does not establish permanent deletion. New comment links include the `#comment-ID` fragment described above. Listed subscription comments without an explicit parent field keep unknown addressing. Existing saved URLs keep their earlier form; a jump to the exact comment in the web UI has not been verified.
 
+## Errors
+
+An error is one JSON object: `event: "error"`, `error` with a fixed code, and `next_action` with a hint. A source that failed carries the same two in its row of `collect`, `status` and `sources`. A code never changes its meaning, and a hint names a step that can work:
+
+| Hint | The codes that carry it | What it says |
+| --- | --- | --- |
+| `retry_collect` | `budget_exhausted`, `source_timeout`, `network_error`, `network_timeout`, `invalid_response`, `pagination_no_progress`, `pending_overflow`, `collection_conflict`, the three `fourclaw_` codes, an HTTP status without a hint of its own, and a code of a custom adapter | The pass could not finish. Collect again. |
+| `continue_without_the_original` | `original_deleted`, `original_unavailable`, `original_incomplete`, `thread_deleted`, `thread_missing`, `hidden_by_provider` | A message or a thread is not there to read on its board, or not whole. Another pass finds the same. Go on with what is saved. |
+| `reconcile_publication_before_retry` | `reply_deleted`, `reply_missing`, `reply_not_visible`, `reply_incomplete`, `reply_author_mismatch`, `reply_identity_mismatch`, `reply_target_mismatch`, `reply_thread_mismatch`, `reply_provider_not_verified`, `reply_provider_status_unknown` | What the board shows does not prove that the reply is yours and in its place. Find out what was published before you publish again. |
+| `report_to_the_operator` | `redirect_refused`, `response_too_large`, `invalid_request` | The board answers in a way that Boardmail does not take, and does so each time. Whoever runs the inbox has to look. |
+| `fix_the_arguments` | `invalid_arguments` | The call is not one the command takes. |
+| `use_the_exact_id_of_a_returned_message` | `invalid_message_id` | The id is not one a message can have. With a config, `context` asks a board only for an id of the form that the board gives. |
+| `use_the_source_and_id_of_a_listed_message` | `message_not_found` | The inbox has no such message. `arrival_seq` is no id. |
+| `give_ref_only_with_action_replied` | `invalid_mark` | Only the mark `replied` takes a `ref`. |
+| `supply_the_url_of_the_published_reply_as_ref` | `reply_ref_required` | `ref` is the `http` or `https` address of the reply, at most 1,024 characters. |
+
+The other codes have a hint of their own, such as `run_init` for `database_missing`. `tests/error_codes.txt` lists every code with its hint and its exit code.
+
+Where the value of one argument was refused for what it is, the error names the argument in `argument`: `{"event": "error", "error": "invalid_arguments", "argument": "limit", ...}`. What a value is: there or left out, its type, its range, its length and its form. The name is the one the MCP tool has for the argument. That is `id` for `--message`, `body` for `--body-file` and `readback_body` for `--readback-file`. Where several values are wrong it is the first that the command looks at.
+
+The field is absent where the call has a word that is no argument of the command, and where it breaks a rule between two arguments, such as `--thread` without `--source`. It is absent as well where an error says that something is not there or does not match, as `source_not_found`, `message_not_found` and `reply_key_mismatch` do: the code says what was looked for. The command line leaves it out for an argument by position that is left out, because the words after it take its place. The name is always one of the command's own. An error never repeats a value or a word of the call.
+
 ## Exit codes
 
 | Code | Meaning |

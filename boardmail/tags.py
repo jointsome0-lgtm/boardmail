@@ -4,7 +4,7 @@ import re
 import time
 
 from . import schema
-from .config import MailError, identifier
+from .config import MailError, converted, identifier
 
 NAME_PATTERN = r"[a-z0-9][a-z0-9_-]{0,63}"
 
@@ -125,11 +125,8 @@ def execute(store, action, *, tag=None, source=None, thread=None, id=None):
     else:
         if (thread is None) == (id is None):
             raise MailError('invalid_arguments')
-        try:
-            identifier(source)
-            identifier(thread if thread is not None else id)
-        except (ValueError, TypeError, AttributeError):
-            raise MailError('invalid_arguments') from None
+        for name, value in (('source', source), ('thread', thread) if thread is not None else ('id', id)):
+            converted(identifier, value, error='invalid_arguments', argument=name)
     with store.connect(write=action in ('add', 'remove')) as db:
         if action == 'list':
             return overview(db), 0

@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from . import boards, reader, schema
-from .config import MailError, identifier
+from .config import MailError, converted, identifier
 
 MAX_BODY_BYTES = 65536
 PAGE_SIZE = 20
@@ -23,7 +23,8 @@ RECOVERY_GUIDANCE = (
 )
 
 
-def digest(body):
+def digest(body, argument=None):
+    """The SHA-256 of a reply text. argument is the argument that the text was given as, for the error."""
     try:
         if not isinstance(body, str) or not body.strip() or '\0' in body:
             raise ValueError()
@@ -31,22 +32,23 @@ def digest(body):
         if len(raw) > MAX_BODY_BYTES:
             raise ValueError()
     except (ValueError, UnicodeError):
-        raise MailError('invalid_reply_body') from None
+        raise MailError('invalid_reply_body', argument=argument) from None
     return hashlib.sha256(raw).hexdigest()
 
 
-def read_body(path):
-    """Bounded UTF-8 read; preserve line endings and the final newline exactly."""
+def read_body(path, argument=None):
+    """Bounded UTF-8 read; preserve line endings and the final newline exactly. argument is the argument that
+    names the file, for the error."""
     try:
         with path.open('rb') as stream:
             raw = stream.read(MAX_BODY_BYTES + 1)
         if len(raw) > MAX_BODY_BYTES:
             raise ValueError()
         body = raw.decode('utf-8')
-        digest(body)
+        digest(body, argument)
         return body
     except (OSError, ValueError, UnicodeError):
-        raise MailError('invalid_reply_body') from None
+        raise MailError('invalid_reply_body', argument=argument) from None
 
 
 def reference(ref):
@@ -57,7 +59,7 @@ def reference(ref):
             raise ValueError()
         url.port
     except (ValueError, TypeError, AttributeError):
-        raise MailError('reply_ref_required') from None
+        raise MailError('reply_ref_required', argument='ref') from None
     return ref
 
 
@@ -107,9 +109,9 @@ def summary(source, message_id, attempt):
 
 def pending(db, after=0, limit=PAGE_SIZE):
     """Bounded discovery in the caller's read transaction; never creates a journal."""
-    if (type(after) is not int or not 0 <= after <= 2**63-1
-            or type(limit) is not int or not 1 <= limit <= 100):
-        raise MailError('invalid_arguments')
+    for name, value, least, most in (('after', after, 0, 2**63-1), ('limit', limit, 1, 100)):
+        if type(value) is not int or not least <= value <= most:
+            raise MailError('invalid_arguments', argument=name)
     counts = {state: 0 for state in NEXT_ACTION}
     counts.update(db.execute('SELECT state, COUNT(*) FROM reply_attempts GROUP BY state'))
     rows = db.execute("""SELECT m.arrival_seq, a.source, a.message_id id, a.state
@@ -153,21 +155,16 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
     """One SQLite transaction binds each transition to a saved incoming and key."""
     if action not in ('prepare', 'begin', 'show', 'confirm'):
         raise MailError('invalid_arguments')
-    try:
-        identifier(source)
-        identifier(message_id)
-        for value in (key, replace_key):
-            if value is not None:
-                identifier(value)
-    except (ValueError, TypeError, AttributeError):
-        raise MailError('invalid_arguments') from None
+    for name, value in (('source', source), ('id', message_id), ('key', key), ('replace_key', replace_key)):
+        if value is not None or name in ('source', 'id'):
+            converted(identifier, value, error='invalid_arguments', argument=name)
     if (action != 'prepare' and (body is not None or replace_key is not None)
             or action not in ('begin', 'confirm') and key is not None
             or action != 'confirm' and (ref is not None or readback_body is not None)
             or action in ('begin', 'confirm') and key is None):
         raise MailError('invalid_arguments')
-    body_sha = digest(body) if action == 'prepare' else None
-    readback_sha = digest(readback_body) if action == 'confirm' else None
+    body_sha = digest(body, 'body') if action == 'prepare' else None
+    readback_sha = digest(readback_body, 'readback_body') if action == 'confirm' else None
     if action == 'confirm':
         reference(ref)
 
