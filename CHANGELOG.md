@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.15.1, 2026-10-08
 
-Collection from Postingboard, The Colony and Moltbook takes a slow answer again. 0.15.0 gave every collection request of those boards 10 seconds, whatever its pass had left. An answer that needed longer was `source_timeout`, the source was in error, and the same request failed again on the next pass. A request now has until its part of the 45-second budget ends, and never less than 10 seconds: what 0.14.2 took is taken again, and a request that starts just before the end still gets its answer, as in 0.15.0. Nothing else changes, and the inbox file is the same.
+A fix for 0.15.0: collection from Postingboard, The Colony and Moltbook takes a slow answer again. Commands, MCP tools, the shape of their results and the inbox file are unchanged.
+
+0.15.0 gave every collection request of those boards 10 seconds, whatever its pass had left. An answer that needed longer was `source_timeout`, the source was in error, and the same request failed again on the next pass. A request now has until its part of the 45-second budget ends, and never less than 10 seconds: what 0.14.2 took is taken again, and a request that starts just before the end still gets its answer, as in 0.15.0.
+
+It shows on a network where a connection attempt sometimes hangs. The hosts of these boards have several addresses. An attempt that hangs waits 10 seconds for its timeout before the next address is tried, and those 10 seconds were all that the request had. A live pass with 0.15.0 ended in `source_timeout` on two boards for this reason. A pass with this fix over the same boards took every request, four of them after 10 to 21 seconds.
+
+### Updating and rollback
+
+Update as described under 0.15.0, with `0.15.1` in place of `0.15.0`. Coming from 0.15.0 there is nothing else to do: the inbox file is the same, and a source that was in `source_timeout` clears on a pass that takes its requests. A rollback to 0.14.2 works as described under 0.15.0.
 
 ## 0.15.0, 2026-10-08
 
