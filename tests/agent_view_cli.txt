@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18409
+  help text: 18330
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -141,77 +141,80 @@ boardmail subscriptions:
 
 boardmail tags:
   summary: List local topics and unread counts without message bodies
-  description: Group selected threads across boards; always includes an untagged queue.
-  epilog: |
-    Run collect separately, then tags. Copy a topic read action to read only its unread mail.
-    Tags may overlap; read marks are shared. No collection, marking or migration on this read.
+  description: >
+    List local topics and unread counts without message bodies.
+    The untagged queue is always listed.
+    No collection, read marks or migration.
+    Each has a read route to its unread mail; start from it at each visit, since a late tag includes older mail.
+    Topics can overlap; counts.unread is tagged_unread plus untagged_unread and counts a message once.
+  formatter: HelpFormatter
 
 boardmail tag:
   summary: Group whole threads for local reading
   description: Tags group saved mail. Subscriptions independently control collection.
   commands:
-    add: Add a thread membership
-    remove: Remove a thread membership
-    show: Show the saved threads belonging to a tag
+    add: Add one local tag to a whole thread of a source
+    remove: Remove one local tag from a thread
+    show: Show the threads saved under a tag, also those with no saved message
   command required: true
   epilog: |
     Names: 1 to 64 lowercase letters, digits, underscores or hyphens; start with a letter or digit.
     Examples: htalk, agent-memory. Tagging never subscribes, fetches or marks mail.
 
 boardmail tag add:
-  summary: Add a thread membership
-  description: Local and idempotent. Select exactly one thread ID or saved message ID.
+  summary: Add one local tag to a whole thread of a source
+  description: >
+    Add one local tag to a whole thread of a source.
+    Give exactly one of THREAD and --message.
+    The source must belong to this inbox; the thread needs no saved or remote root.
+    Older saved mail joins the topic at once.
+    Local and idempotent; never subscribes, collects or marks mail.
   arguments:
     TAG:
-      help: Local topic name, e.g. htalk or agent-memory
+      help: Local topic, e.g. htalk or agent-memory
     SOURCE:
-      help: Source name in this inbox, from status
+      help: Its name in status
     THREAD:
-      help: Exact local thread_id; omit with --message
+      help: Exact local thread_id, also that of a custom adapter
       takes: one value or none
   options:
     --message ID:
-      help: Use this saved message's local thread_id
-  epilog: |
-    Examples:
-      boardmail tag add htalk SOURCE THREAD
-      boardmail tag add htalk SOURCE --message ID
-    Use the exact local thread_id, including non-UUID custom-adapter IDs.
-    The source must already belong to this inbox. The root need not be saved.
-    Adding a tag includes older unread messages immediately, without collection.
+      help: Id of a saved message, whose local thread_id is used
+  formatter: HelpFormatter
 
 boardmail tag remove:
-  summary: Remove a thread membership
-  description: Local and idempotent. Select exactly one thread ID or saved message ID.
+  summary: Remove one local tag from a thread
+  description: >
+    Remove one local tag from a thread.
+    Give exactly one of THREAD and --message.
+    Idempotent.
+    Keeps messages, marks, other tags, subscriptions and collection progress.
+    Makes no remote request.
   arguments:
     TAG:
-      help: Local topic name, e.g. htalk or agent-memory
+      help: Local topic, e.g. htalk or agent-memory
     SOURCE:
-      help: Source name in this inbox, from status
+      help: Its name in status
     THREAD:
-      help: Exact local thread_id; omit with --message
+      help: Exact local thread_id, also that of a custom adapter
       takes: one value or none
   options:
     --message ID:
-      help: Use this saved message's local thread_id
-  epilog: |
-    Examples:
-      boardmail tag remove htalk SOURCE THREAD
-      boardmail tag remove htalk SOURCE --message ID
-    Use the exact local thread_id, including non-UUID custom-adapter IDs.
-    The source must already belong to this inbox. The root need not be saved.
-    Adding a tag includes older unread messages immediately, without collection.
+      help: Id of a saved message, whose local thread_id is used
+  formatter: HelpFormatter
 
 boardmail tag show:
-  summary: Show the saved threads belonging to a tag
-  description: Local titles, known links, unread counts and subscription state; no message bodies.
+  summary: Show the threads saved under a tag, also those with no saved message
+  description: >
+    Show the threads saved under a tag, also those with no saved message.
+    Each has its local title and known link with their provenance, counts and local subscription state; no bodies, no remote lookup.
+    A missing label or link is null.
+    subscribed does not guarantee collection or complete history.
+    The read route of a thread opens its saved mail, read messages too.
   arguments:
     TAG:
-      help: Local topic name
-  epilog: |
-    Example: boardmail tag show agent-memory
-    Includes threads with no saved messages. Missing labels and links stay null.
-    Local subscription state does not guarantee collection or complete history.
+      help: A topic that tags lists
+  formatter: HelpFormatter
 
 boardmail pause:
   summary: Stop collection and other remote reads for one source

@@ -255,19 +255,13 @@ FOLLOWED_EPILOG = ('Example: boardmail {} SOURCE THREAD\n'
                    'Source pauses still apply. Run collect/check separately; this command makes no requests.')
 PAUSED = (Argument('source', 'SOURCE', SOURCE, required=True, text='Its name in {status} or config'),)
 MEMBERSHIP = (
+    # What a name of a tag may be is in TAG for a tool, and on the help page of the group for the command line.
     Argument('tag', 'TAG', TAG, required=True, check=tags.validate_name,
-             help='Local topic name, e.g. htalk or agent-memory', tool=TAG_TOOL),
-    Argument('source', 'SOURCE', SOURCE, required=True, help='Source name in this inbox, from status'),
-    Argument('thread', 'THREAD', ID, help='Exact local thread_id; omit with --message',
-             tool='Exact local thread_id, including custom-adapter IDs. Use thread or id, not both.'),
-    Argument('id', '--message ID', ID, help="Use this saved message's local thread_id",
-             tool='Saved message ID whose local thread_id should be used. Omit thread.'),
+             text='Local topic, e.g. htalk or agent-memory'),
+    Argument('source', 'SOURCE', SOURCE, required=True, text='Its name in {status}'),
+    Argument('thread', 'THREAD', ID, text='Exact local thread_id, also that of a custom adapter'),
+    Argument('id', '--message ID', ID, text='Id of a saved message, whose local thread_id is used'),
 )
-MEMBERSHIP_EPILOG = ('Examples:\n  boardmail tag {0} htalk SOURCE THREAD\n'
-                     '  boardmail tag {0} htalk SOURCE --message ID\n'
-                     'Use the exact local thread_id, including non-UUID custom-adapter IDs.\n'
-                     'The source must already belong to this inbox. The root need not be saved.\n'
-                     'Adding a tag includes older unread messages immediately, without collection.')
 ATTEMPT = (Argument('source', 'SOURCE', SOURCE, required=True, help='Source from the saved incoming message'),
            Argument('id', 'ID', ID, required=True, help='Exact incoming message ID'))
 KEY = Argument('key', '--key KEY', ID, required=True, help='Exact saved idempotency_key; stale keys are rejected')
@@ -334,45 +328,29 @@ COMMANDS = {command.name: command for command in (
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'tags',
-        summary='List local topics and unread counts without message bodies',
-        description='Group selected threads across boards; always includes an untagged queue.',
-        epilog='Run collect separately, then tags. Copy a topic read action to read only its unread mail.\n'
-               'Tags may overlap; read marks are shared. No collection, marking or migration on this read.',
-        tool='List local topics with thread and unread counts, plus an always-present untagged queue. '
-             'No message bodies, collection, read marks or migration. Copy a read action to boardmail_list; '
-             'start each new topic visit at after=0 so late tags include older unread mail. '
-             'Topics can overlap; counts.unread equals tagged_unread plus untagged_unread, counting messages once.',
+        text='List local topics and unread counts without message bodies. The untagged queue is always listed. '
+             'No collection, read marks or migration. Each has a read route to its unread mail; start from it at '
+             'each visit, since a late tag includes older mail. '
+             'Topics can overlap; counts.unread is tagged_unread plus untagged_unread and counts a message once.',
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'tag_add',
-        summary='Add a thread membership',
-        description='Local and idempotent. Select exactly one thread ID or saved message ID.',
-        epilog=MEMBERSHIP_EPILOG.format('add'),
-        tool='Add one local tag to an entire source/thread. Use exactly one of thread or saved message id. '
-             'The source must already belong to this inbox; no stored or remote root is required. '
-             'Older saved mail joins the topic immediately. Local and idempotent; never subscribes, collects or marks mail.',
+        text='Add one local tag to a whole thread of a source. Give exactly one of {.thread} and {.id}. '
+             'The source must belong to this inbox; the thread needs no saved or remote root. '
+             'Older saved mail joins the topic at once. Local and idempotent; never subscribes, collects or marks mail.',
         arguments=MEMBERSHIP, rules=((ONE_OF, 'thread', 'id'),), hints=(IDEMPOTENT,)),
     Command(
         'tag_remove',
-        summary='Remove a thread membership',
-        description='Local and idempotent. Select exactly one thread ID or saved message ID.',
-        epilog=MEMBERSHIP_EPILOG.format('remove'),
-        tool='Remove one local thread membership, selected by thread or saved message id. '
-             'Idempotent. Keeps messages, marks, other tags, subscriptions and collection progress. Makes no remote request.',
+        text='Remove one local tag from a thread. Give exactly one of {.thread} and {.id}. Idempotent. '
+             'Keeps messages, marks, other tags, subscriptions and collection progress. Makes no remote request.',
         arguments=MEMBERSHIP, rules=((ONE_OF, 'thread', 'id'),), hints=(IDEMPOTENT,)),
     Command(
         'tag_show',
-        summary='Show the saved threads belonging to a tag',
-        description='Local titles, known links, unread counts and subscription state; no message bodies.',
-        epilog='Example: boardmail tag show agent-memory\n'
-               'Includes threads with no saved messages. Missing labels and links stay null.\n'
-               'Local subscription state does not guarantee collection or complete history.',
-        tool='Read the threads saved under a tag, including threads with no messages. Returns local titles, known links, '
-             'their provenance, counts and local subscription state without bodies or remote lookup. '
-             'Missing labels/links stay null. subscribed does not guarantee collection or complete history. '
-             'Each thread read action opens saved mail including already-read messages.',
-        arguments=(Argument('tag', 'TAG', TAG, required=True, check=tags.validate_name, help='Local topic name',
-                            tool=TAG_TOOL),),
+        text='Show the threads saved under a tag, also those with no saved message. Each has its local title and '
+             'known link with their provenance, counts and local subscription state; no bodies, no remote lookup. '
+             'A missing label or link is null. subscribed does not guarantee collection or complete history. '
+             'The read route of a thread opens its saved mail, read messages too.',
+        arguments=(Argument('tag', 'TAG', TAG, required=True, check=tags.validate_name, text='A topic that {tags} lists'),),
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'pause',

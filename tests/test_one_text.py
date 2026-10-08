@@ -10,7 +10,7 @@ import kit
 from test_agent_view import view
 
 
-ONE_TEXT = {'init', 'collect', 'status', 'settings', 'pause', 'resume'}
+ONE_TEXT = {'init', 'collect', 'status', 'settings', 'pause', 'resume', 'tags', 'tag_show', 'tag_add', 'tag_remove'}
 # What a command without the one text says to each reader apart. Its description is the fourth, and it may have none.
 APART = ('summary', 'epilog', 'tool')
 
