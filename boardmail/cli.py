@@ -24,12 +24,13 @@ def number(kind):
     return {'integer': int, 'number': float}.get(kind['type'])
 
 
-def add(holder, argument, strict=True):
-    """Give a parser, or a group of its options, one argument of the command table. A parser that is not strict
-    takes the argument whatever its word is, and takes a line that leaves out an option."""
+def add(holder, argument, said, strict=True):
+    """Give a parser, or a group of its options, one argument of the command table. said is what its help page
+    says about it. A parser that is not strict takes the argument whatever its word is, and takes a line that
+    leaves out an option."""
     kind, positional = argument.kind, not argument.typed.startswith('-')
     flag, _, word = ('', '', argument.typed) if positional else argument.typed.partition(' ')
-    given = {'help': argument.help}
+    given = {'help': said}
     if kind['type'] == 'boolean':
         given['action'] = 'store_true'
     elif strict:
@@ -48,7 +49,7 @@ def parser(strict=True):
     p = Parser(prog="boardmail", description=table.FIRST_PAGE.description, epilog=table.FIRST_PAGE.epilog,
                add_help=strict)
     for argument in table.BEFORE:
-        add(p, argument, strict)
+        add(p, argument, argument.help, strict)
     sub = p.add_subparsers(dest="command",required=True)
     groups = {}
     for command in table.COMMANDS.values():
@@ -61,14 +62,18 @@ def parser(strict=True):
                                    add_help=strict)
                 groups[group] = s.add_subparsers(dest=group + '_action', required=True)
             holder, word = groups[group], word.removeprefix(group + '_')
-        s = holder.add_parser(word, help=command.summary, epilog=command.epilog, add_help=strict,
-                              description=command.description or command.summary + '.')
+        page = table.page(command)
+        # A page that ends in lines of its own is shown in the lines that it is written in. A page that is one
+        # text has none, and the parser breaks it into lines as wide as the terminal.
+        formatter = {} if page.epilog else {'formatter_class': argparse.HelpFormatter}
+        s = holder.add_parser(word, help=page.summary, description=page.description, epilog=page.epilog,
+                              add_help=strict, **formatter)
         either = {}
         for rule, *names in command.rules:
             if strict and rule == table.NOT_BOTH:
                 either.update(dict.fromkeys(names, s.add_mutually_exclusive_group()))
         for argument in command.arguments:
-            add(either.get(argument.name, s), argument, strict)
+            add(either.get(argument.name, s), argument, table.told(command, argument, typed=True), strict)
     return p
 
 

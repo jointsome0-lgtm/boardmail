@@ -17,15 +17,23 @@ An error names the argument whose value was refused, by the name that this table
 wrong it is the first of them in the order of order(). It names none where a call has a word that is no argument
 of the command, or breaks a rule between two arguments.
 
-Every text is written by hand for each of the two readers, and the two stand side by side. For a command,
-summary, description and epilog are its help page on the command line, and tool is the description of its MCP
-tool. For an argument, help is what the command line says and tool is what the tool says.
+A command has one text, and an argument has one or none: text. Both entry points show it, the command line on
+the help page of the command and the MCP server as the description of its tool and in the schema of the tool.
+The first sentence of the text of a command is its line in the list of commands. A text names a command or an
+argument in braces, by the name that this table has for it, and shown() writes the name for each of the two
+readers: as it is typed on the command line, and as it is called for a tool.
+
+A command that has no text has a text for each of the two readers instead, written by hand, and the two stand
+side by side. Its summary, description and epilog are its help page on the command line, and tool is the
+description of its MCP tool. For its arguments, help is what the command line says and tool is what the tool
+says.
 
 Where the entry points differ in more than a text, an entry says so: typed, file, tool_kind, tool_first, GROUPS
 and BEFORE. The command line lists the commands in the order of this table, and the MCP server lists the tools
 by name.
 """
 import math
+import re
 from typing import NamedTuple
 
 from . import config, reader, replies, tags
@@ -36,8 +44,9 @@ class Argument(NamedTuple):
     name: str               # what both entry points and the function of the command call it
     typed: str              # on the command line: 'SOURCE' is given by position, '--after N' is an option
     kind: dict              # its type, bounds and default, in the words of JSON Schema
-    help: str               # what the command line says about it
-    tool: str = None        # what the tool says about it
+    text: str = None        # what both entry points say about it, see shown(); None is nothing
+    help: str = None        # for a command without text: what the command line says about it
+    tool: str = None        # for a command without text: what the tool says about it
     required: bool = False
     file: bool = False      # the command line takes the path of a file here, and a tool takes the text in it
     tool_kind: dict = None  # where a tool takes another kind: the words that its schema has more or other than kind
@@ -50,9 +59,10 @@ class Argument(NamedTuple):
 
 class Command(NamedTuple):
     name: str               # the tool is boardmail_<name>; a command of a group is typed as two words, see GROUPS
-    summary: str            # command line: its line in the list of commands
-    epilog: str             # command line: the end of its help page
-    tool: str               # MCP: the description of its tool
+    text: str = None        # what both entry points say about it, see shown(); without it, the next four say it
+    summary: str = None     # command line: its line in the list of commands
+    epilog: str = None      # command line: the end of its help page
+    tool: str = None        # MCP: the description of its tool
     description: str = None  # command line: the start of its help page; None is the summary with a full stop
     arguments: tuple = ()   # in the order of the command line
     hints: tuple = ()       # what a client may assume about the tool; none of HINTS unless named here
@@ -65,9 +75,10 @@ class Command(NamedTuple):
 
 
 class Page(NamedTuple):
-    """A help page of the command line that is no command."""
+    """A help page of the command line: what it says before its arguments and after them. page() gives the page
+    of a command, and the pages that are no command are written here."""
     description: str
-    epilog: str
+    epilog: str             # None is a page that ends with its arguments
     summary: str = None     # its line in the list of commands; the first page is in no list
 
 
@@ -157,6 +168,49 @@ def checked(command, given):
     return {name: found[name] for name in arguments}
 
 
+# How a text names a command, {reply_show}, an argument of the command that the text belongs to, {.key}, and an
+# argument of another command, {list.unread}.
+NAMED = re.compile(r'\{(?:(\w*)\.)?(\w+)\}')
+
+
+def shown(text, command, typed):
+    """A text of this table as one of its two readers sees it: the reader of the command line where typed, and
+    the reader of a tool otherwise. command is the command that the text belongs to. A name in braces is written
+    as that reader uses it. A command is typed as its words, reply show, and called by its name, reply_show. An
+    argument is typed as its option, --replace-key, or as its word where it is given by position, SOURCE, and
+    called by its name, replace_key and source. A name that the table does not have is a KeyError."""
+    def written(mark):
+        owner, name = mark.groups()
+        if owner is None:
+            name = COMMANDS[name].name
+            return name.replace('_', ' ', 1) if typed and name.partition('_')[0] in GROUPS else name
+        arguments = {argument.name: argument for argument in (COMMANDS[owner] if owner else command).arguments}
+        return arguments[name].typed.split()[0] if typed else arguments[name].name
+    return NAMED.sub(written, text)
+
+
+def told(command, argument=None, *, typed):
+    """What a reader is told about a command, or about one of its arguments: the reader of the command line where
+    typed, and the reader of a tool otherwise. None where an argument has no text."""
+    entry = command if argument is None else argument
+    if entry.text is not None:
+        return shown(entry.text, command, typed)
+    # A command without the one text has a text for each reader, and so have its arguments.
+    if argument is not None:
+        return argument.help if typed else argument.tool
+    return (command.description or command.summary + '.') if typed else command.tool
+
+
+def page(command):
+    """The help page of a command on the command line. Where the command has one text the page is that text, and
+    the line of the command in the list of commands is its first sentence: what stands before the first full stop
+    that a space follows."""
+    text = told(command, typed=True)
+    if command.text is None:
+        return Page(text, command.epilog, command.summary)
+    return Page(text, None, text.partition('. ')[0].removesuffix('.'))
+
+
 # Arguments and texts that several commands share.
 SCOPE_TOOL = 'Override saved scope once. Default addressed summarizes only proven thread activity; unknown remains visible.'
 CONTEXT_TOOL = 'Override saved context once. Default brief adds bounded local excerpts; no network.'
@@ -199,9 +253,7 @@ FOLLOWED_EPILOG = ('Example: boardmail {} SOURCE THREAD\n'
                    'Ordinary activity is summarized in addressed scope; unknown recipients remain visible.\n'
                    'Unsubscribe preserves saved mail and marks; an in-flight source pass may finish.\n'
                    'Source pauses still apply. Run collect/check separately; this command makes no requests.')
-PAUSED = (Argument('source', 'SOURCE', SOURCE, required=True, help='Source name from status or config'),)
-PAUSED_EPILOG = ('Example: boardmail {} SOURCE\n'
-                 'Use a source name from status. This command does not collect mail.')
+PAUSED = (Argument('source', 'SOURCE', SOURCE, required=True, text='Its name in {status} or config'),)
 MEMBERSHIP = (
     Argument('tag', 'TAG', TAG, required=True, check=tags.validate_name,
              help='Local topic name, e.g. htalk or agent-memory', tool=TAG_TOOL),
@@ -229,38 +281,24 @@ CANDIDATES_EPILOG = ('\nFor an unknown attempt, verify saves up to eight distinc
 COMMANDS = {command.name: command for command in (
     Command(
         'init',
-        summary='Create a new inbox database',
-        description='Create a new database. Never overwrites an existing file; not for upgrades.',
-        epilog='Example: boardmail --config /path/config.json init\n'
-               'Configure the account first. An existing inbox is ready for check; do not init it again.\n'
-               'Setup: https://github.com/jointsome0-lgtm/boardmail#install-and-configure',
-        tool='Create the configured database once. Refuses to overwrite any existing file.',
+        text='Create the inbox database once. Never overwrites a file; not for upgrades.',
         sources=GIVEN),
     Command(
         'collect',
-        summary='Fetch one pass of remote mail',
-        description='Collect from configured sources. Partial failure can still save messages.',
-        epilog='Example: boardmail collect\n'
-               'Inspect added, failed and errors. Partial failure can still save mail.\n'
-               'Use list to read saved messages, or check to combine collection and reading.',
-        tool='Fetch one bounded pass of configured public mail. May save messages despite errors. '
-             'Run periodically, separately from wait. Never publishes or marks remote mail.',
+        text='Fetch one bounded pass of configured public mail. May save messages despite errors. '
+             'Run periodically, separately from {wait}. Never publishes or marks remote mail.',
         hints=(OPEN_WORLD,), sources=NEEDED, collects=True),
     Command(
         'settings',
-        summary="Read or save this inbox's reading preferences",
-        description='One consumer per database. Defaults: addressed scope, brief local context.',
-        epilog='Examples:\n  boardmail settings\n  boardmail settings --scope all --context none\n'
-               '  boardmail settings --reset\n'
-               'Preferences affect check/list/wait only. Their flags override a saved preference once.',
-        tool="Read or explicitly save this database's reading preferences for its single consumer. "
-             'Affects check/list/wait only. With no arguments, returns defaults or saved values without writing. '
-             'reset restores defaults and cannot combine with scope/context; command flags override settings once.',
+        text="Read or save this inbox's reading preferences. They affect {check}, {list} and {wait} only, where "
+             '{check.scope} and {check.context} override them once. Without arguments it writes nothing and '
+             'returns the saved values, or the defaults: addressed scope and brief context.',
         arguments=(
-            Argument('scope', '--scope', SCOPE, help='Default scope for check/list/wait', tool=SCOPE_TOOL),
+            Argument('scope', '--scope', SCOPE,
+                     text='Scope to save. addressed summarizes only proven thread activity; unknown remains visible.'),
             Argument('context', '--context', CONTEXT,
-                     help='Default local context for check/list/wait', tool=CONTEXT_TOOL),
-            Argument('reset', '--reset', FLAG, help='Restore defaults; cannot combine with other settings flags'))),
+                     text='Context to save. brief adds bounded local excerpts; no network.'),
+            Argument('reset', '--reset', FLAG, text='Restore the defaults. Not with {.scope} or {.context}.'))),
     Command(
         'subscribe',
         summary='Collect activity in a selected thread',
@@ -338,41 +376,24 @@ COMMANDS = {command.name: command for command in (
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'pause',
-        summary='Stop collection and remote context for one source',
-        description='Stop collection and remote context for one source. Keeps messages and progress.',
-        epilog=PAUSED_EPILOG.format('pause'),
-        tool='Pause a source in this inbox. Future collection and remote context lookups skip it. '
-             'Keeps messages, marks and progress; an already running source pass may finish.',
+        text='Stop collection and other remote reads for one source. '
+             'Keeps messages, marks and progress; a running pass or lookup may finish.',
         arguments=PAUSED, hints=(IDEMPOTENT,), sources=GIVEN),
     Command(
         'resume',
-        summary='Enable a source for the next collection',
-        description='Enable a source for the next collection. Keeps messages and progress.',
-        epilog=PAUSED_EPILOG.format('resume'),
-        tool='Resume a source in this inbox. The next collection uses its saved progress. '
-             'This local command fetches no mail.',
+        text='Enable a source for the next collection. Keeps its progress and fetches no mail.',
         arguments=PAUSED, hints=(IDEMPOTENT,), sources=GIVEN),
     Command(
         'status',
-        summary='Show local counts, pending reply attempts and source health',
-        description='Read collection health and pending reply attempts without contacting a board.',
-        epilog='Examples:\n'
-               '  boardmail status\n'
-               '  boardmail status --require-fresh --stale-after 540\n'
-               'A health read exits 0; --require-fresh makes unhealthy active sources exit 1.\n'
-               'reply_attempts shows prepared/unknown attempts and journal routes, 20 per page.\n'
-               'Follow its next route for more. Replied counts are local marks and do not resolve unknown.',
-        tool="Read local counts and collection health with each source's last_ok_age and stale_after. "
-             'latest_arrival is diagnostic, not a checkpoint. require_fresh makes stale, error or unknown '
-             'active sources an error result; paused sources are excluded. A fresh poll proves nothing about a consumer. '
-             'reply_attempts includes global state counts and the first 20 prepared/unknown attempts with journal routes; '
-             'follow its next route for more. Replied counts are local marks and do not resolve unknown.',
+        text='Show local counts, pending reply attempts and source health. Contacts no board. '
+             'latest_arrival is diagnostic, not a checkpoint. A fresh poll proves nothing about a consumer. '
+             'reply_attempts has state counts and the prepared and unknown attempts with journal routes, '
+             '20 per page; follow its next route for more. Replied counts are local marks and do not resolve unknown.',
         arguments=(
             Argument('require_fresh', '--require-fresh', FLAG,
-                     help='Exit 1 if an active source is unknown, errored or stale; exclude paused sources'),
+                     text='Fail unless fresh: there is a source, and each is ok or paused.'),
             Argument('stale_after', '--stale-after SECONDS', {'type': 'integer', 'minimum': 0, 'maximum': 2**31-1},
-                     help='Age after which collection is stale; nonnegative seconds, default 540',
-                     tool='Seconds; default 540.')),
+                     text='Seconds after which a source is stale; default 540.')),
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'check',

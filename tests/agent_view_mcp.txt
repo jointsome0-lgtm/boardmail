@@ -3,10 +3,10 @@
 
 size:
   tools: 26
-  tool descriptions: 10733
-  input schemas: 9376
+  tool descriptions: 10511
+  input schemas: 9601
   server instructions: 1493
-  tool catalog as JSON: 24433
+  tool catalog as JSON: 24436
 
 server:
   name: boardmail
@@ -122,7 +122,7 @@ tool boardmail_expand:
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true}
 
 tool boardmail_init:
-  description: Create the configured database once. Refuses to overwrite any existing file.
+  description: Create the inbox database once. Never overwrites a file; not for upgrades.
   inputSchema: {type: object, properties: {}, required: [], additionalProperties: false}
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false}
 
@@ -204,12 +204,16 @@ tool boardmail_mark:
 
 tool boardmail_pause:
   description: >
-    Pause a source in this inbox.
-    Future collection and remote context lookups skip it.
-    Keeps messages, marks and progress; an already running source pass may finish.
+    Stop collection and other remote reads for one source.
+    Keeps messages, marks and progress; a running pass or lookup may finish.
   inputSchema:
     type: object
-    properties: {source: {type: string, minLength: 1, maxLength: 64}}
+    properties:
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Its name in status or config
     required: [source]
     additionalProperties: false
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
@@ -345,37 +349,39 @@ tool boardmail_reply_verify:
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true}
 
 tool boardmail_resume:
-  description: >
-    Resume a source in this inbox.
-    The next collection uses its saved progress.
-    This local command fetches no mail.
+  description: Enable a source for the next collection. Keeps its progress and fetches no mail.
   inputSchema:
     type: object
-    properties: {source: {type: string, minLength: 1, maxLength: 64}}
+    properties:
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Its name in status or config
     required: [source]
     additionalProperties: false
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_settings:
   description: >
-    Read or explicitly save this database's reading preferences for its single consumer.
-    Affects check/list/wait only.
-    With no arguments, returns defaults or saved values without writing.
-    reset restores defaults and cannot combine with scope/context; command flags override settings once.
+    Read or save this inbox's reading preferences.
+    They affect check, list and wait only, where scope and context override them once.
+    Without arguments it writes nothing and returns the saved values, or the defaults: addressed scope and brief context.
   inputSchema:
     type: object
     properties:
       scope:
         type: string
         enum: [addressed, all]
-        description: >
-          Override saved scope once.
-          Default addressed summarizes only proven thread activity; unknown remains visible.
+        description: Scope to save. addressed summarizes only proven thread activity; unknown remains visible.
       context:
         type: string
         enum: [brief, none]
-        description: Override saved context once. Default brief adds bounded local excerpts; no network.
-      reset: {type: boolean, default: false}
+        description: Context to save. brief adds bounded local excerpts; no network.
+      reset:
+        type: boolean
+        default: false
+        description: Restore the defaults. Not with scope or context.
     required: []
     additionalProperties: false
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false}
@@ -399,21 +405,24 @@ tool boardmail_show:
 
 tool boardmail_status:
   description: >
-    Read local counts and collection health with each source's last_ok_age and stale_after.
+    Show local counts, pending reply attempts and source health.
+    Contacts no board.
     latest_arrival is diagnostic, not a checkpoint.
-    require_fresh makes stale, error or unknown active sources an error result; paused sources are excluded.
     A fresh poll proves nothing about a consumer.
-    reply_attempts includes global state counts and the first 20 prepared/unknown attempts with journal routes; follow its next route for more.
+    reply_attempts has state counts and the prepared and unknown attempts with journal routes, 20 per page; follow its next route for more.
     Replied counts are local marks and do not resolve unknown.
   inputSchema:
     type: object
     properties:
-      require_fresh: {type: boolean, default: false}
+      require_fresh:
+        type: boolean
+        default: false
+        description: Fail unless fresh: there is a source, and each is ok or paused.
       stale_after:
         type: integer
         minimum: 0
         maximum: 2147483647
-        description: Seconds; default 540.
+        description: Seconds after which a source is stale; default 540.
     required: []
     additionalProperties: false
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}

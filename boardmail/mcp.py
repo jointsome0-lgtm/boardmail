@@ -27,7 +27,8 @@ def input_schema(command):
     properties = {}
     for name in (*command.tool_first, *(name for name in arguments if name not in command.tool_first)):
         argument = arguments[name]
-        said = {**argument.kind, **(argument.tool_kind or {}), **({'description': argument.tool} if argument.tool else {})}
+        text = table.told(command, argument, typed=False)
+        said = {**argument.kind, **(argument.tool_kind or {}), **({'description': text} if text else {})}
         properties[name] = {word: said[word] for word in sorted(said, key=WORDS.index)}
     schema = {"type": "object", "properties": properties,
               "required": [name for name in properties if arguments[name].required], "additionalProperties": False}
@@ -71,7 +72,8 @@ def create_server(store, sources=None, *, fetch=transport.fetch):
     catalog = {}
     for name, command in sorted(table.COMMANDS.items()):
         catalog["boardmail_" + name] = Tool(
-            name="boardmail_" + name, description=command.tool, input_schema=input_schema(command),
+            name="boardmail_" + name, description=table.told(command, typed=False),
+            input_schema=input_schema(command),
             annotations=ToolAnnotations(**{hint + "_hint": hint in command.hints for hint in table.HINTS}))
     # Adapter output redirection is process-wide. Do not overlap collectors.
     collection_lock = threading.Lock()
