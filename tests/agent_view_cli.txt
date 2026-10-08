@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18647
+  help text: 18849
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -53,7 +53,9 @@ boardmail:
     Exit 0: success; 1: partial collection, incomplete context or failed health check;
     2: invalid input or operation error; 3: wait timeout; 4: cancelled;
     5: missing config or database. Read the JSON result for details;
-    errors may include error and next_action.
+    an error has error and next_action, and next where its next step is one call.
+    A result names a call as a route, tool and arguments: boardmail_reply_show is the
+    command reply show, and an argument is the position or the option of its name.
     Setup: https://github.com/jointsome0-lgtm/boardmail#install-and-configure
   formatter: RawDescriptionHelpFormatter
 
@@ -378,7 +380,7 @@ boardmail show:
     Example: boardmail show SOURCE ID
     Copy source and id from a check/list result. Reading does not mark mail read.
     reply_attempt is null when no attempt was saved; otherwise it gives state, next_action
-    and arguments for reply show. A replied mark does not resolve an unknown attempt.
+    and show, the route to reply show. A replied mark does not resolve an unknown attempt.
 
 boardmail mark:
   summary: Change a local read/reply mark

@@ -5,6 +5,10 @@ exit code 5
   "event": "error",
   "error": "database_missing",
   "next_action": "run_init",
+  "next": {
+    "tool": "boardmail_init",
+    "arguments": {}
+  },
   "history_complete": false
 }
 
@@ -78,6 +82,10 @@ exit code 2
   "event": "error",
   "error": "database_exists",
   "next_action": "use_existing_database_do_not_overwrite",
+  "next": {
+    "tool": "boardmail_status",
+    "arguments": {}
+  },
   "history_complete": false
 }
 
@@ -509,8 +517,15 @@ exit code 2
   "event": "error",
   "error": "message_not_found",
   "next_action": "use_the_source_and_id_of_a_listed_message",
-  "history_complete": false,
-  "identifier_hint": "Use the source and remote message id returned by list. arrival_seq is a local arrival cursor, not a remote message id."
+  "next": {
+    "tool": "boardmail_list",
+    "arguments": {
+      "source": "example",
+      "scope": "all",
+      "context": "none"
+    }
+  },
+  "history_complete": false
 }
 
 == 12. An id the board cannot have
@@ -695,7 +710,6 @@ exit code 0
     "messages": 2,
     "unread": 1,
     "read": {
-      "command": "list",
       "tool": "boardmail_list",
       "arguments": {
         "after": 0,
@@ -768,7 +782,6 @@ exit code 0
       "messages": 1,
       "unread": 0,
       "read": {
-        "command": "list",
         "tool": "boardmail_list",
         "arguments": {
           "after": 0,
@@ -778,7 +791,6 @@ exit code 0
         }
       },
       "show": {
-        "command": "tag show",
         "tool": "boardmail_tag_show",
         "arguments": {
           "tag": "follow-up"
@@ -791,7 +803,6 @@ exit code 0
       "messages": 1,
       "unread": 1,
       "read": {
-        "command": "list",
         "tool": "boardmail_list",
         "arguments": {
           "after": 0,
@@ -801,7 +812,6 @@ exit code 0
         }
       },
       "show": {
-        "command": "tag show",
         "tool": "boardmail_tag_show",
         "arguments": {
           "tag": "later"
@@ -814,7 +824,6 @@ exit code 0
     "messages": 0,
     "unread": 0,
     "read": {
-      "command": "list",
       "tool": "boardmail_list",
       "arguments": {
         "after": 0,
@@ -860,7 +869,6 @@ exit code 0
       ],
       "subscribed": false,
       "read": {
-        "command": "list",
         "tool": "boardmail_list",
         "arguments": {
           "after": 0,
@@ -878,7 +886,6 @@ exit code 0
     "unread": 0
   },
   "read": {
-    "command": "list",
     "tool": "boardmail_list",
     "arguments": {
       "after": 0,
@@ -1248,7 +1255,7 @@ exit code 0
       "last_seq": 4,
       "reason": "thread_activity_without_confirmed_direct_reply_or_mention",
       "replay": {
-        "command": "list",
+        "tool": "boardmail_list",
         "arguments": {
           "source": "moltbook",
           "thread": "00000000-0000-0000-0000-00000000012d",
@@ -1259,7 +1266,7 @@ exit code 0
         }
       },
       "expand": {
-        "command": "expand",
+        "tool": "boardmail_expand",
         "arguments": {
           "source": "moltbook",
           "thread": "00000000-0000-0000-0000-00000000012d",
@@ -1416,7 +1423,7 @@ exit code 0
       "last_seq": 4,
       "reason": "thread_activity_without_confirmed_direct_reply_or_mention",
       "replay": {
-        "command": "list",
+        "tool": "boardmail_list",
         "arguments": {
           "source": "moltbook",
           "thread": "00000000-0000-0000-0000-00000000012d",
@@ -1427,7 +1434,7 @@ exit code 0
         }
       },
       "expand": {
-        "command": "expand",
+        "tool": "boardmail_expand",
         "arguments": {
           "source": "moltbook",
           "thread": "00000000-0000-0000-0000-00000000012d",
@@ -2101,6 +2108,10 @@ exit code 2
   "event": "error",
   "error": "source_not_found",
   "next_action": "check_source_name_in_status_or_config",
+  "next": {
+    "tool": "boardmail_status",
+    "arguments": {}
+  },
   "history_complete": false
 }
 

@@ -452,7 +452,8 @@ class CLITests(unittest.TestCase):
             self.assertEqual(reading('--config', str(broken), local=True), needed | used - {'context', 'expand'})
 
     def test_missing_state_config_bad_input_and_zero_timeout(self):
-        self.assertEqual(self.invoke('wait','--timeout','0'),(5,{'event':'error','error':'database_missing','next_action':'run_init','history_complete':False}))
+        self.assertEqual(self.invoke('wait','--timeout','0'),(5,{'event':'error','error':'database_missing','next_action':'run_init',
+            'next':{'tool':'boardmail_init','arguments':{}},'history_complete':False}))
         self.assertFalse(self.db.exists());self.assertEqual(self.invoke('init')[0],0)
         self.assertEqual(self.invoke('init')[1]['error'],'database_exists')
         self.assertEqual(self.invoke('wait','--timeout','0')[0],3)

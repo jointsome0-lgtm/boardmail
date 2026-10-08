@@ -28,7 +28,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
-from boardmail import cli, commands, config
+from boardmail import cli, commands, config, table
 from boardmail.adapters import Batch
 from boardmail.store import Store
 from examples.fixtures import uid
@@ -447,6 +447,28 @@ class Step(NamedTuple):
 
 def mcp_missing():
     return importlib.util.find_spec('mcp') is None
+
+
+def words(route):
+    """A route of a result as the words that follow boardmail on a command line: the command of its tool, then
+    its arguments as the command line takes them. It fails where the route is not the two fields of a route, or
+    has an argument that its command does not take."""
+    assert set(route) == {'tool', 'arguments'}, route
+    name = route['tool'].removeprefix('boardmail_')
+    command, group, left = table.COMMANDS[name], name.partition('_')[0], dict(route['arguments'])
+    found = [group, name.removeprefix(group + '_')] if group in table.GROUPS else [name]
+    for argument in command.arguments:
+        if argument.name not in left:
+            continue
+        value = left.pop(argument.name)
+        if not argument.typed.startswith('-'):
+            found.append(str(value))
+        elif argument.kind['type'] == 'boolean':
+            found += [argument.typed] * value
+        else:
+            found += [argument.typed.split()[0], str(value)]
+    assert not left, f'{name} does not take {sorted(left)}'
+    return found
 
 
 def told(story, home, entry):

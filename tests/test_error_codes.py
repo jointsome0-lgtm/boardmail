@@ -1,10 +1,11 @@
-"""Every error code keeps its next-step hint and its exit code, and the catalog has every code the package raises."""
+"""Every error code keeps its next-step hint, its next call and its exit code, and the catalog has every code the
+package raises."""
 import ast
 from pathlib import Path
 import unittest
 
 import boardmail
-from boardmail import adapter_colony, adapter_common, commands, errors, transport
+from boardmail import adapter_colony, adapter_common, commands, errors, table, transport
 
 
 TESTS = Path(__file__).resolve().parent
@@ -15,6 +16,16 @@ UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 UNFINISHED = {'budget_exhausted', 'collection_conflict', 'fourclaw_http_error', 'fourclaw_invalid_public_page',
               'fourclaw_network_error', 'invalid_response', 'network_error', 'network_timeout',
               'pagination_no_progress', 'pending_overflow', 'source_timeout'}
+# The codes whose next step is one call: the command of that call, and what it takes from the call that failed.
+# The read of the journal is the step after a reply command that was refused for what the journal holds, and
+# after one that could not read or write the inbox file.
+JOURNAL = ('reply_show', ('source', 'id'))
+NEXT = {'database_exists': ('status', ()), 'database_missing': ('init', ()), 'invalid_settings': ('settings', ()),
+        'local_state_error': JOURNAL, 'message_not_found': ('list', ('source',)),
+        'reply_already_recorded': JOURNAL, 'reply_already_started': JOURNAL, 'reply_body_conflict': JOURNAL,
+        'reply_candidate_limit': JOURNAL, 'reply_key_mismatch': JOURNAL, 'reply_not_prepared': JOURNAL,
+        'reply_not_started': JOURNAL, 'reply_readback_mismatch': JOURNAL, 'reply_reference_conflict': JOURNAL,
+        'source_not_found': ('status', ()), 'source_paused': ('status', ())}
 # The raises that build their code at run time. The stored table has rows for what they build.
 BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet calls a request that failed
          'adapter_common.py: code',                              # the code of a refusal that a board explains: a Colony sign-in code
@@ -89,6 +100,28 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual((str(raised.exception), raised.exception.argument), ('invalid_arguments', 'limit'))
         result, exit_code = commands.outcome(lambda: errors.converted(int, 'many', error='invalid_mark', argument='ref'))
         self.assertEqual((result['error'], result['argument'], exit_code), ('invalid_mark', 'ref', 2))
+
+    def test_an_error_names_its_next_call_where_the_step_is_one(self):
+        self.assertEqual({code: (entry.next.command, entry.next.takes) for code, entry in errors.CODES.items()
+                          if entry.next}, NEXT)
+        given = {'source': 'alias', 'id': 'numeric-20', 'key': 'an-invented-key', 'body': 'An invented answer.'}
+        for code, (command, takes) in NEXT.items():
+            with self.subTest(code=code):
+                result, _ = commands.error_result(code, call=given)
+                self.assertEqual(list(result), ['event', 'error', 'next_action', 'next', 'history_complete'])
+                self.assertEqual((sorted(result['next']), result['next']['tool']),
+                                 (['arguments', 'tool'], 'boardmail_' + command))
+                # The call has the name and the id of the call that failed, and no other word of it.
+                arguments = result['next']['arguments']
+                self.assertEqual({name: arguments[name] for name in arguments.keys() & given.keys()},
+                                 {name: given[name] for name in takes})
+                # The command takes it as it is written.
+                table.checked(table.COMMANDS[command], arguments)
+                # A call that gave no name or id, or one that cannot be one, leaves the step nothing to take.
+                for lacking in ({}, dict(given, source=None), dict(given, id='two\nlines', source='')):
+                    self.assertEqual('next' in commands.error_result(code, call=lacking)[0], not takes)
+        for code in (set(errors.CODES) | UNLISTED) - set(NEXT):
+            self.assertNotIn('next', commands.error_result(code, call=given)[0], code)
 
     def test_an_http_status_without_a_row_is_treated_like_500(self):
         table = stored()

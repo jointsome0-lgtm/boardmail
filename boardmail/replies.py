@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from . import boards, reader, schema
 from .config import MailError, converted, identifier
+from .errors import route
 
 MAX_BODY_BYTES = 65536
 PAGE_SIZE = 20
@@ -103,8 +104,7 @@ def summary(source, message_id, attempt):
     if attempt is None:
         return None
     return {'state': attempt['state'], 'next_action': NEXT_ACTION[attempt['state']],
-            'show': {'command': 'reply show', 'tool': 'boardmail_reply_show',
-                     'arguments': {'source': source, 'id': message_id}}}
+            'show': route('reply_show', source=source, id=message_id)}
 
 
 def pending(db, after=0, limit=PAGE_SIZE):
@@ -123,8 +123,7 @@ def pending(db, after=0, limit=PAGE_SIZE):
     next_after = items[-1]['arrival_seq'] if items else after
     more = len(rows) > limit
     return {'counts': counts, 'items': items, 'has_more': more, 'next_after': next_after,
-            'next': {'command': 'reply list', 'tool': 'boardmail_reply_list',
-                     'arguments': {'after': next_after, 'limit': limit}} if more else None}
+            'next': route('reply_list', after=next_after, limit=limit) if more else None}
 
 
 def check_source(db, source, settings, writing=False):
