@@ -60,7 +60,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([t.name for t in tools], sorted('boardmail_' + n for n in ('init','check','collect','status','settings','subscribe','unsubscribe','subscriptions','tags','tag_show','tag_add','tag_remove','list','show','wait','mark','context','expand','pause','resume','reply_list','reply_prepare','reply_begin','reply_show','reply_confirm','reply_verify')))
             for t in tools:
                 self.assertFalse(t.input_schema['additionalProperties'])
-                self.assertIn('event', t.output_schema['required'])
+                self.assertIsNone(t.output_schema)
                 self.assertEqual(t.annotations.destructive_hint, t.name == 'boardmail_reply_prepare')
                 self.assertEqual(t.annotations.read_only_hint, t.name in ('boardmail_status','boardmail_list','boardmail_show','boardmail_wait','boardmail_context','boardmail_expand','boardmail_subscriptions','boardmail_tags','boardmail_tag_show','boardmail_reply_show','boardmail_reply_list'))
                 self.assertEqual(t.annotations.open_world_hint, t.name in ('boardmail_collect','boardmail_check','boardmail_context','boardmail_expand','boardmail_reply_verify'))

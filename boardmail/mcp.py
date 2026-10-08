@@ -57,7 +57,6 @@ def create_server(store, sources=None, *, fetch=transport.fetch):
     for name, command in sorted(table.COMMANDS.items()):
         catalog["boardmail_" + name] = Tool(
             name="boardmail_" + name, description=command.tool, input_schema=input_schema(command),
-            output_schema=table.OUTPUT,
             annotations=ToolAnnotations(**{hint + "_hint": hint in command.hints for hint in table.HINTS}))
     # Adapter output redirection is process-wide. Do not overlap collectors.
     collection_lock = threading.Lock()
