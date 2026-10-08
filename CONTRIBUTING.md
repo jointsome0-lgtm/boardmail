@@ -26,7 +26,7 @@ A failure of the inbox file is made where SQLite is: `patch('sqlite3.connect', .
 
 ## What an agent reads before its first call
 
-`tests/agent_view_cli.txt` and `tests/agent_view_mcp.txt` hold what an agent reads before its first call: the command tree with its help strings, and the MCP server instructions and tool catalog. The test suite fails when either file differs from what the code supplies now. After a change that is meant, install the optional extra, run `python scripts/agent_view.py --update` and review the difference. Without `--update` the script prints how much text that is. The top of the script says what the files hold and what they leave out.
+`tests/agent_view_cli.txt` and `tests/agent_view_mcp.txt` hold what an agent reads before its first call: the command tree with its help strings, and the MCP server instructions and tool catalog. The test suite fails when either file differs from what the code supplies now. After a change that is meant, install the optional extra, run `python scripts/agent_view.py --update` and review the difference. Without `--update` the script prints how much text that is, and how much text the results are that the two stories store. A pull request that changes the shape of a result gives those numbers before and after. The top of the script says what the files hold and what they leave out.
 
 ## The command table
 

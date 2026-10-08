@@ -3,6 +3,7 @@ import argparse
 import difflib
 import functools
 import importlib.util
+import json
 from pathlib import Path
 import re
 import unittest
@@ -182,11 +183,79 @@ class AgentViewTests(unittest.TestCase):
         cli = view.cli_tree()['size']
         mcp = {'tools': 2, 'tool descriptions': 1234, 'input schemas': 56, 'output schema': 7,
                'output schema, once for each tool': 14, 'server instructions': 890, 'tool catalog as JSON': 2345}
-        report = view.report(cli, mcp)
+        results = {'pages of check, list and wait': (3, 4567), 'results of expand': (1, 89)}
+        report = view.report(cli, mcp, results)
         for label, number in {**mcp, **cli}.items():
             self.assertRegex(report, rf'(?m)^  {re.escape(label)} +{number:,}\b')
         self.assertRegex(report, r'(?m)^  printed help +[\d,]+ characters on \d+ pages at 80 columns, Python 3\.\d+$')
-        self.assertIn(view.EXTRA, view.report(cli, None))
+        for label, (number, together) in results.items():
+            self.assertRegex(report, rf'(?m)^  {re.escape(label)} +{number:,} with +{together:,} characters$')
+        self.assertIn(view.EXTRA, view.report(cli, None, results))
+
+    def test_results_of_a_small_story(self):
+        def compact(value):
+            return len(json.dumps(value, separators=(',', ':')))
+
+        brief = {'root': {'id': '9', 'status': 'stored'}}
+        first = {'id': '1', 'body': 'Three words here.', 'brief': brief}
+        second = {'id': '2', 'body': 'None.'}
+        source, thread = {'source': 'example', 'status': 'ok'}, {'thread_id': '9', 'count': 2}
+        page = {'event': 'messages', 'messages': [first, second], 'sources': [source, source],
+                'thread_activity': [thread]}
+        empty = {'event': 'messages', 'messages': [], 'sources': [source], 'thread_activity': []}
+        context, expanded = {'event': 'context', 'target': first}, {'event': 'expanded', 'items': [first, second]}
+        others = [{'event': 'error', 'error': 'message_not_found'}, {'event': 'timeout', 'sources': [source]},
+                  {'event': 'message', 'message': first}]
+        steps = [('list', page), ('wait --timeout 0', empty), ('context example 1', context),
+                 ('expand example 9', expanded), *(('show example 1', other) for other in others)]
+        story = '\n'.join(f'== {number}. Step {number}\n$ boardmail {typed}\nexit code 0\n{json.dumps(result, indent=2)}\n'
+                          for number, (typed, result) in enumerate(steps, 1))
+        self.assertEqual(view.told(story), [(f'boardmail {typed}', result) for typed, result in steps])
+        self.assertEqual(view.results_size([story, story]), {
+            'pages of check, list and wait': (4, 2 * (compact(page) + compact(empty))),
+            'messages on those pages': (4, 2 * (compact(first) + compact(second))),
+            'bodies of those messages': (4, 2 * (len('Three words here.') + len('None.'))),
+            'brief context of those messages': (2, 2 * compact(brief)),
+            'source rows on those pages': (6, 6 * compact(source)),
+            'thread summaries on those pages': (2, 2 * compact(thread)),
+            'results of context': (2, 2 * compact(context)),
+            'results of expand': (2, 2 * compact(expanded)),
+        })
+        with self.assertRaisesRegex(ValueError, 'not a command with its exit code'):
+            view.told('== 1. A step without its command\nexit code 0\n{}\n')
+
+    def test_results_are_counted_from_the_stored_stories(self):
+        """The report reads the stories as the story tests wrote them: every step, and every page as a page."""
+        stories = [path.read_text(encoding='utf-8') for path in view.STORIES]
+        steps = [step for story in stories for step in view.told(story)]
+        self.assertEqual(len(steps), sum(len(re.findall(r'(?m)^== \d+\. ', story)) for story in stories))
+        named = {'check': [], 'list': [], 'wait': [], 'context': [], 'expand': []}
+        for command, result in steps:
+            words = command.split()
+            self.assertEqual(words[0], 'boardmail')
+            if words[1] in named and 'error' not in result and result['event'] != 'timeout':
+                named[words[1]].append(result)
+        pages = named['check'] + named['list'] + named['wait']
+        for name, results in named.items():
+            self.assertTrue(results, f'The stories hold no result of {name}')
+        self.assertEqual({page['event'] for page in pages}, {'messages'})
+        self.assertEqual({result['event'] for result in named['context']}, {'context'})
+        self.assertEqual({result['event'] for result in named['expand']}, {'expanded'})
+        size = view.results_size()
+        counted = {kind: number for kind, (number, together) in size.items()}
+        self.assertEqual(counted, {
+            'pages of check, list and wait': len(pages),
+            'messages on those pages': sum(len(page['messages']) for page in pages),
+            'bodies of those messages': sum(len(page['messages']) for page in pages),
+            'brief context of those messages': sum('brief' in message for page in pages for message in page['messages']),
+            'source rows on those pages': sum(len(page['sources']) for page in pages),
+            'thread summaries on those pages': sum(len(page['thread_activity']) for page in pages),
+            'results of context': len(named['context']),
+            'results of expand': len(named['expand']),
+        })
+        for kind, (number, together) in size.items():
+            self.assertGreater(number, 0, kind)
+            self.assertGreater(together, 0, kind)
 
 
 if __name__ == '__main__':
