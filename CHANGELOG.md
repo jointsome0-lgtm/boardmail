@@ -1,14 +1,40 @@
 # Changelog
 
-## Unreleased
+## 0.15.0, 2026-10-08
+
+Reading with brief context is fast on a large inbox, and the end of a collection pass on Postingboard, The Colony and Moltbook no longer turns an ordinary answer into a timeout. Inside the package every board is now one adapter module. Commands, MCP tools and the shape of their results are unchanged.
 
 Reading with brief context stays fast on a large inbox. Brief context is the default, so this covers a plain `list`, `check` and `wait` and the matching MCP tools. For each message it shows, Boardmail looks up saved messages by reply reference, and that lookup read every saved message of the source. An index on source and reply reference now answers it. On a synthetic inbox of 200,000 messages a page of 100 took 3.9 s before and 3 ms after. `context` and `expand` use the same index for the previous exchange.
 
 A new inbox has the index after `init`. An existing inbox gets it on the next `collect` or `check`, which builds it once: about 0.2 s and 4.5% more file at 200,000 messages. Local reads never add it. The database version stays 2 and no JSON result changes. Versions 0.14.2 and earlier read and write a file that has the index, so a package rollback needs no database change.
 
+Collection from Postingboard, The Colony and Moltbook no longer reports `source_timeout` for an ordinary answer at the end of a pass. The 45-second budget of a Postingboard root or of a Colony or Moltbook source was also the time left for each request, so a request that started a few milliseconds before the end failed although the board answered at once. The budget now only says when a request may start. A request that starts in time has 10 seconds of its own to complete, and none starts after the budget. What a pass did not get to stays queued without an error: the source stays `ok` with `backlog_pending: true`, and the next `collect` continues there. A request that fails or is refused is still an error. So is one that does not complete in its 10 seconds: `source_timeout` when the answer is still arriving, `network_error` when the board has gone silent.
+
+An answer now has to arrive whole. On every board, an answer that ends before the length that its headers declare is a network failure: `network_error`, or `fourclaw_network_error` on 4claw. Before, the part that had arrived was read as if it were the whole answer. For Postingboard, The Colony and Moltbook the time of a request now runs until the end of the answer, in collection and in the remote reads of `context`, `expand` and `reply verify`: an answer that is still arriving when its time is over is `source_timeout`, also when only its end was missing.
+
 When the collector of Postingboard, The Colony or Moltbook raises an error that it does not handle itself, `collect` now reports `adapter_failed` for that source and goes on with the others, as it already did for the other four boards and for an adapter file. Before, the command stopped with a traceback.
 
 For Python callers only: `collect_all` and `from_file` are now in `boardmail.boards`, and `boardmail.adapters` no longer has them. The module `boardmail.providers` is gone: Postingboard, The Colony and Moltbook each have a module of their own, `boardmail.adapter_postingboard`, `boardmail.adapter_colony` and `boardmail.adapter_moltbook`, like the other four boards. `boardmail.boards.BOARDS` gives every board by its name. What an adapter file imports, `from boardmail.adapters import Batch`, is unchanged, and so is every command and MCP tool.
+
+### Updating and rollback
+
+Stop collectors and long-lived MCP servers before replacing their environment. With writers stopped, back up the config and SQLite database, and preserve any optional consumer ledger and delivery checkpoint. For an unpinned registry installation:
+
+```sh
+uv tool upgrade boardmail
+```
+
+To replace a Git checkout, local wheel or old version constraint with a registry installation that allows future upgrades, choose the command matching your installation:
+
+```sh
+uv tool install --force 'boardmail>=0.15.0'
+# With MCP support:
+uv tool install --force 'boardmail[mcp]>=0.15.0'
+```
+
+Check `uv tool list`, `boardmail --help` and, when installed, `boardmail-mcp --help`. Inspect the retained inbox with `boardmail --db /path/to/inbox.sqlite3 status`, substituting its actual path, then restart the collector or MCP server. This release needs no `init` for an existing inbox: the first `collect` or `check` adds the index. Saved messages, read/reply marks, subscriptions, pauses, continuation state and checkpoints remain. Upgrade every collector sharing the inbox before resuming.
+
+For a package rollback, stop all writers again, preserve the current state and reinstall `boardmail==0.14.2` (or `boardmail[mcp]==0.14.2`) with `uv tool install --force`. Version 0.14.2 reads and writes the same database, index included, so a rollback needs no database change. It brings back the request timing of 0.14.2 and its acceptance of an answer that was cut short. Do not use `init` as a repair. If restoring a pre-upgrade snapshot, keep the current files too: later arrivals, marks and checkpoints require separate reconciliation. See [optional-ledger recovery](docs/reference.md#recover-a-damaged-optional-ledger).
 
 ## 0.14.2, 2026-10-03
 
