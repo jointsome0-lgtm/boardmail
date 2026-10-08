@@ -244,6 +244,56 @@ class BotnetTests(unittest.TestCase):
         with fixed(clock) if clock else nullcontext():
             return commands.execute(self.store, "collect", sources={"botnet": self.settings}, fetch=self.board)
 
+    def test_an_original_that_is_gone_is_unavailable_and_no_error_of_the_source(self):
+        asked_for = "/topic-messages/" + quote(mid(12), safe="")
+        for name, gone in (("deleted", original(12, is_deleted=True)), ("hidden", original(12, is_hidden=True)),
+                           ("refused", 403), ("missing", 404), ("removed", 410)):
+            with self.subTest(gone=name):
+                self.store, self.board = new_inbox(self.path / (name + ".sqlite3")), Board()
+                for number in (10, 11, 12):
+                    self.board.add(number)
+                self.board.originals[mid(12)] = gone
+                for added in (2, 0):
+                    self.board.calls.clear()
+                    result, code = self.collect_command()
+                    self.assertEqual((code, result["added"], result["failed"], result["errors"]), (0, added, False, []))
+                    health = result["sources"][0]
+                    self.assertEqual((health["status"], health["error"], health["unavailable"]), ("ok", None, 1))
+                    self.assertIsNotNone(health["last_ok"])
+                    # Its reference waits, so the original is asked for on each pass.
+                    self.assertTrue(health["backlog_pending"])
+                    self.assertIn(asked_for, [path for path, _, _ in self.board.calls])
+                self.board.originals[mid(12)] = original(12)
+                result, code = self.collect_command()
+                health = result["sources"][0]
+                self.assertEqual((code, result["added"], health["unavailable"], health["backlog_pending"]),
+                                 (0, 1, 0, False))
+                self.assertEqual(self.store.show("botnet", mid(12))["body"], "Public message 12")
+
+    def test_an_original_that_fails_in_another_way_is_an_error_of_the_source(self):
+        for name, failing, error in (("busy", 429, "http_429"), ("broken", 500, "http_500"),
+                                     ("another", original(999), "invalid_response"),
+                                     ("cut", original(12, truncated=True), "original_incomplete")):
+            with self.subTest(failing=name):
+                self.store, self.board = new_inbox(self.path / (name + ".sqlite3")), Board()
+                self.board.add(12)
+                self.board.originals[mid(12)] = failing
+                result, code = self.collect_command()
+                self.assertEqual((code, result["added"], [found["error"] for found in result["errors"]]),
+                                 (1, 0, [error]))
+                health = result["sources"][0]
+                self.assertEqual((health["status"], health["error"], health["unavailable"], health["last_ok"]),
+                                 ("error", error, 0, None))
+
+    def test_an_inbox_that_refuses_the_key_is_an_error_of_the_source(self):
+        self.board.add(10)
+        for status in (401, 403):
+            self.board.page_errors[None] = status
+            result, code = self.collect_command()
+            self.assertEqual((code, result["added"]), (1, 0))
+            self.assertEqual([(found["error"], found["next_action"]) for found in result["errors"]],
+                             [("http_" + str(status), "check_config_and_credentials")])
+
     def test_real_request_cap_saves_healthy_partial_progress(self):
         state = self.pending_backlog()
         result, code = self.collect_command()
@@ -353,7 +403,8 @@ class PassTests(unittest.TestCase):
         batch = self.collect()
         self.assertEqual((batch.error, len(batch.messages)), ("pending_overflow", 1))
         batch = self.collect()
-        self.assertEqual((batch.error, len(batch.messages)), ("http_404", 1))
+        # The references that waited are still not there. That is no error of the source.
+        self.assertEqual((batch.error, len(batch.messages), batch.complete), (None, 1, False))
         self.assertEqual(self.known, {mid(10), mid(11), mid(12)})
         self.assertEqual({entry["id"] for entry in batch.state["pending"]}, {entry["id"] for entry in waiting})
 

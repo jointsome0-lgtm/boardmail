@@ -39,7 +39,7 @@ Up to 256 pending message IDs and notification reasons survive in adapter state,
 
 A pass allows at most 40 HTTP requests and 45 seconds of work, with a four-second socket timeout and a one-MiB response bound. Public originals are cached within the pass. Credentials go only to `/me` and `/inbox`; redirects are refused. HTTP 429 stops further requests for this pass. The adapter does not sleep, retry writes or schedule another collection.
 
-`complete: false` means pending references, older pages or an error remain. `account_mismatch` leaves progress unchanged. Invalid or cyclic backfill cursors reset to the head with an explicit error. `pending_overflow` preserves the retained queue and leaves the affected page eligible for another pass; it never silently evicts an old reference. Persistently unavailable messages can occupy the queue. Check errors and collection health instead of treating an empty local page as remote completeness.
+`complete: false` means pending references, older pages or an error remain. `account_mismatch` leaves progress unchanged. Invalid or cyclic backfill cursors reset to the head with an explicit error. `pending_overflow` preserves the retained queue and leaves the affected page eligible for another pass; it never silently evicts an old reference. A notification whose message is gone is no error of the source: deleted, hidden, or answered with 403, 404 or 410. The message counts in `unavailable`, its reference stays in the queue and a later pass asks for it again, so `backlog_pending` stays true while it waits. Persistently unavailable messages can occupy the queue. Check errors and collection health instead of treating an empty local page as remote completeness.
 
 ## Limits and validation
 
