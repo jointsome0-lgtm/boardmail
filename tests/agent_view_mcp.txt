@@ -5,10 +5,8 @@ size:
   tools: 26
   tool descriptions: 10784
   input schemas: 9376
-  output schema: 3459
-  output schema, once for each tool: 89934
   server instructions: 1342
-  tool catalog as JSON: 114834
+  tool catalog as JSON: 24484
 
 server:
   name: boardmail
@@ -59,7 +57,6 @@ tool boardmail_check:
         description: Override saved context once. Default brief adds bounded local excerpts; no network.
     required: []
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true}
 
 tool boardmail_collect:
@@ -69,7 +66,6 @@ tool boardmail_collect:
     Run periodically, separately from wait.
     Never publishes or marks remote mail.
   inputSchema: {type: object, properties: {}, required: [], additionalProperties: false}
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true}
 
 tool boardmail_context:
@@ -88,7 +84,6 @@ tool boardmail_context:
       local: {type: boolean, default: false}
     required: [source, id]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true}
 
 tool boardmail_expand:
@@ -122,13 +117,11 @@ tool boardmail_expand:
       local: {type: boolean, default: false}
     required: [source, thread, through]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true}
 
 tool boardmail_init:
   description: Create the configured database once. Refuses to overwrite any existing file.
   inputSchema: {type: object, properties: {}, required: [], additionalProperties: false}
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false}
 
 tool boardmail_list:
@@ -185,7 +178,6 @@ tool boardmail_list:
     additionalProperties: false
     dependentRequired: {thread: [source]}
     not: {required: [tag, untagged], properties: {untagged: {const: true}}}
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_mark:
@@ -206,7 +198,6 @@ tool boardmail_mark:
         description: HTTP(S) URL required only for replied.
     required: [source, id, action]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false}
 
 tool boardmail_pause:
@@ -219,7 +210,6 @@ tool boardmail_pause:
     properties: {source: {type: string, minLength: 1, maxLength: 64}}
     required: [source]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_reply_begin:
@@ -239,7 +229,6 @@ tool boardmail_reply_begin:
       key: {type: string, minLength: 1, maxLength: 1024}
     required: [source, id, key]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_reply_confirm:
@@ -259,7 +248,6 @@ tool boardmail_reply_confirm:
       readback_body: {type: string, minLength: 1, maxLength: 65536}
     required: [source, id, key, ref, readback_body]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_reply_list:
@@ -282,7 +270,6 @@ tool boardmail_reply_list:
       limit: {type: integer, minimum: 1, maximum: 100, default: 20}
     required: []
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_reply_prepare:
@@ -306,7 +293,6 @@ tool boardmail_reply_prepare:
       replace_key: {type: string, minLength: 1, maxLength: 1024}
     required: [source, id, body]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_reply_show:
@@ -327,7 +313,6 @@ tool boardmail_reply_show:
       id: {type: string, minLength: 1, maxLength: 1024}
     required: [source, id]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_reply_verify:
@@ -355,7 +340,6 @@ tool boardmail_reply_verify:
       ref: {type: string, minLength: 1, maxLength: 1024}
     required: [source, id, key, ref]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true}
 
 tool boardmail_resume:
@@ -368,7 +352,6 @@ tool boardmail_resume:
     properties: {source: {type: string, minLength: 1, maxLength: 64}}
     required: [source]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_settings:
@@ -393,7 +376,6 @@ tool boardmail_settings:
       reset: {type: boolean, default: false}
     required: []
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false}
 
 tool boardmail_show:
@@ -411,7 +393,6 @@ tool boardmail_show:
       id: {type: string, minLength: 1, maxLength: 1024}
     required: [source, id]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_status:
@@ -433,7 +414,6 @@ tool boardmail_status:
         description: Seconds; default 540.
     required: []
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_subscribe:
@@ -456,7 +436,6 @@ tool boardmail_subscribe:
         description: Root UUID from a message or the board; not a URL.
     required: [source, thread]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_subscriptions:
@@ -469,7 +448,6 @@ tool boardmail_subscriptions:
     properties: {source: {type: string, minLength: 1, maxLength: 64}}
     required: []
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_tag_add:
@@ -504,7 +482,6 @@ tool boardmail_tag_add:
     required: [tag, source]
     additionalProperties: false
     oneOf: [{required: [thread]}, {required: [id]}]
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_tag_remove:
@@ -538,7 +515,6 @@ tool boardmail_tag_remove:
     required: [tag, source]
     additionalProperties: false
     oneOf: [{required: [thread]}, {required: [id]}]
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_tag_show:
@@ -561,7 +537,6 @@ tool boardmail_tag_show:
           Lowercase letters, digits, _ and -; start with a letter or digit.
     required: [tag]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_tags:
@@ -571,7 +546,6 @@ tool boardmail_tags:
     Copy a read action to boardmail_list; start each new topic visit at after=0 so late tags include older unread mail.
     Topics can overlap; counts.unread equals tagged_unread plus untagged_unread, counting messages once.
   inputSchema: {type: object, properties: {}, required: [], additionalProperties: false}
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_unsubscribe:
@@ -588,7 +562,6 @@ tool boardmail_unsubscribe:
       thread: {type: string, minLength: 1, maxLength: 36}
     required: [source, thread]
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_wait:
@@ -625,115 +598,4 @@ tool boardmail_wait:
         description: Seconds; bounded to fit client tool deadlines.
     required: []
     additionalProperties: false
-  outputSchema: the common output schema
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
-
-the common output schema:
-  type: object
-  required: [event, history_complete]
-  properties:
-    event:
-      enum:
-        - initialized
-        - collected
-        - paused
-        - resumed
-        - status
-        - settings
-        - subscribed
-        - unsubscribed
-        - subscriptions
-        - thread_tag
-        - tags
-        - tag
-        - messages
-        - message
-        - marked
-        - context
-        - expanded
-        - reply_attempt
-        - reply_attempts
-        - timeout
-        - cancelled
-        - error
-    source: {type: string}
-    paused: {type: boolean}
-    changed: {type: boolean}
-    history_complete: {const: false}
-    error: {type: string}
-    next_action: {type: string}
-    next_after: {type: integer}
-    more: {type: boolean}
-    messages: {type: array, items: {type: object}}
-    message: {type: object}
-    sources: {type: array, items: {type: object}}
-    counts: {type: object}
-    added: {type: integer}
-    failed: {type: boolean}
-    errors: {type: array, items: {type: object}}
-    collection_performed: {type: boolean}
-    fresh: {type: boolean}
-    stale_after: {type: integer}
-    freshness_required: {type: boolean}
-    fetched: {type: boolean}
-    complete: {type: boolean}
-    target: {type: object}
-    parent: {type: object}
-    root: {type: object}
-    previous_exchange: {type: object}
-    thread: {type: string}
-    after: {type: integer}
-    through: {type: integer}
-    budget_exhausted: {type: boolean}
-    items: {type: array, items: {type: object}}
-    settings: {type: object}
-    reading: {type: object}
-    subscribed: {type: boolean}
-    subscriptions: {type: array, items: {type: object}}
-    history: {const: available}
-    tag: {type: string}
-    tagged: {type: boolean}
-    exists: {type: boolean}
-    tags: {type: array, items: {type: object}}
-    threads: {type: array, items: {type: object}}
-    untagged: {type: object}
-    read: {type: object}
-    reply: {type: [object, "null"]}
-    send_allowed: {type: boolean}
-    reply_attempts: {type: object}
-    has_more: {type: boolean}
-    next: {type: [object, "null"]}
-    reply_attempt:
-      type: [object, "null"]
-      required: [state, next_action, show]
-      properties: {state: {enum: [prepared, unknown, confirmed]}, next_action: {type: string}, show: {type: object}}
-    confirmation_basis: {enum: [null, caller_supplied_readback, provider_readback]}
-    remote_verified: {type: boolean}
-    verification: {type: [object, "null"], required: [key_scope], properties: {key_scope: {const: local}}}
-    verification_receipt: {type: [object, "null"], required: [key_scope], properties: {key_scope: {const: local}}}
-    last_check_saved: {type: boolean}
-    reply_candidates:
-      type: array
-      maxItems: 8
-      items:
-        type: object
-        required: [reply_ref, adapter, account_id, recorded_at, status, identity_basis, last_check]
-        properties:
-          reply_ref: {type: string}
-          adapter: {type: string}
-          account_id: {type: string}
-          recorded_at: {type: integer}
-          status: {const: unverified}
-          identity_basis: {const: parsed_reference}
-          last_check:
-            type: [object, "null"]
-            required: [checked_at, reason, status]
-            properties: {checked_at: {type: integer}, reason: {type: string}, status: {const: unverified}}
-    publication_performed: {const: false}
-    thread_activity: {type: array, items: {type: object}}
-    scanned: {type: integer}
-    checkpoint_safe: {type: boolean}
-    collection:
-      type: object
-      required: [added, failed, errors]
-      properties: {added: {type: integer}, failed: {type: boolean}, errors: {type: array, items: {type: object}}}

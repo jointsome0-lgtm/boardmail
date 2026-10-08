@@ -161,8 +161,7 @@ class AgentViewTests(unittest.TestCase):
 
         schema = len('{"type":"object"}')
         self.assertEqual(tree({}), {
-            'size': {'tools': 1, 'tool descriptions': 0, 'input schemas': schema,
-                     'output schema, once for each tool': 0, 'server instructions': 0,
+            'size': {'tools': 1, 'tool descriptions': 0, 'input schemas': schema, 'server instructions': 0,
                      'tool catalog as JSON': len('[{"name":"one","inputSchema":}]') + schema},
             'server': {'name': 'board', 'version': '1'},
             'tool one': {'inputSchema': {'type': 'object'}}})
@@ -181,8 +180,8 @@ class AgentViewTests(unittest.TestCase):
 
     def test_size_report(self):
         cli = view.cli_tree()['size']
-        mcp = {'tools': 2, 'tool descriptions': 1234, 'input schemas': 56, 'output schema': 7,
-               'output schema, once for each tool': 14, 'server instructions': 890, 'tool catalog as JSON': 2345}
+        mcp = {'tools': 2, 'tool descriptions': 1234, 'input schemas': 56, 'server instructions': 890,
+               'tool catalog as JSON': 2345}
         results = {'pages of check, list and wait': (3, 4567), 'results of expand': (1, 89)}
         report = view.report(cli, mcp, results)
         for label, number in {**mcp, **cli}.items():

@@ -62,7 +62,7 @@ is written when the parser names one; without it, a flag left out means no
 and anything else left out has no value.
 
 In the MCP part the keys of a tool are the names of the protocol:
-inputSchema, outputSchema, annotations.
+inputSchema, annotations.
 
 Each file starts with its size. Sizes count characters, and JSON is counted
 compact. Help text is the summaries, descriptions, usage lines, help
@@ -102,7 +102,6 @@ COMMAND = 'python scripts/agent_view.py --update'
 EXTRA = "The MCP part needs the optional extra. From the source checkout, run: python -m pip install '.[mcp]'"
 TITLES = {'cli': 'What an agent reads from the boardmail command line before its first call.',
           'mcp': 'What an agent reads from the Boardmail MCP server before its first call.'}
-COMMON = 'the common output schema'
 RELEASE = 'the Boardmail version'
 TAKES = {0: 'no value', '?': 'one value or none', '*': 'any number of values', '+': 'one or more values'}
 # The default argparse gives an argument of a kind when the parser names none. For every other kind it is None.
@@ -343,8 +342,8 @@ def mcp_missing():
 
 
 def mcp_tree(server=None):
-    """What an in-memory client receives from the server, as nested values: the size, the server, every tool
-    and the output schema that tools share."""
+    """What an in-memory client receives from the server, as nested values: the size, the server and every
+    tool."""
     import asyncio
     import tempfile
 
@@ -395,25 +394,14 @@ def mcp_tree(server=None):
         about['version'] = RELEASE
     about |= {'instructions': instructions, 'capabilities': supplied(capabilities, bare[1]) or None}
     entries = [supplied(tool, bare[2][0]) for tool in tools]
-    outputs = [entry['outputSchema'] for entry in entries if 'outputSchema' in entry]
-    common = max(outputs, key=outputs.count, default=None)
-    if outputs.count(common) < 2:
-        common = None
     size = {'tools': len(tools),
             'tool descriptions': sum(len(entry.get('description', '')) for entry in entries),
             'input schemas': sum(compact(entry['inputSchema']) for entry in entries),
-            'output schema': common and compact(common),
-            'output schema, once for each tool': sum(map(compact, outputs)),
             'server instructions': len(instructions or ''),
             'tool catalog as JSON': compact(entries)}
-    tree = {'size': {key: found for key, found in size.items() if found is not None},
-            'server': {key: found for key, found in about.items() if found is not None}}
+    tree = {'size': size, 'server': {key: found for key, found in about.items() if found is not None}}
     for entry in entries:
-        if common is not None and entry.get('outputSchema') == common:
-            entry['outputSchema'] = COMMON
         tree[f'tool {entry.pop("name")}'] = entry
-    if common is not None:
-        tree[COMMON] = common
     return tree
 
 
