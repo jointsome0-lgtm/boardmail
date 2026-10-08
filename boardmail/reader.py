@@ -23,10 +23,16 @@ def validate_options(scope=None, context=None):
             raise MailError("invalid_arguments")
 
 
-def excerpt(item, budget=600):
-    return {key: item.get(key) for key in ("id", "thread_id", "author", "url")} | {
-        "title": item["title"][:160], "body": item["body"][:budget],
-        "truncated": bool(item.get("truncated") or len(item["body"]) > budget or len(item["title"]) > 160)}
+def excerpt(item, message, budget=600, **first):
+    """What a brief says of another message or original: who wrote it and its text, cut to the budget. Its thread
+    and its title only where they are not those of the message that the brief belongs to."""
+    said = {"id": item.get("id"), **first, "author": item.get("author")}
+    if item.get("thread_id") != message["thread_id"]:
+        said["thread_id"] = item.get("thread_id")
+    if item["title"] != message["title"]:
+        said["title"] = item["title"][:160]
+    cut = len(item["body"]) > budget or "title" in said and len(item["title"]) > 160
+    return said | {"body": item["body"][:budget], "truncated": bool(item.get("truncated") or cut)}
 
 
 def brief(db, item):
@@ -41,12 +47,12 @@ def brief(db, item):
         if row is not None:
             if row["thread_id"] != root_id:
                 return {"id": mid, "status": "unavailable", "reason": "thread_mismatch"}
-            return {"status": "stored", **excerpt(dict(row))}
-        row = db.execute("SELECT value,fetched_at FROM originals WHERE source=? AND id=?", (source, mid)).fetchone()
+            return excerpt(dict(row), item, status="stored")
+        row = db.execute("SELECT value FROM originals WHERE source=? AND id=?", (source, mid)).fetchone()
         if row is not None:
             cached = json.loads(row["value"])
             if cached["thread_id"] == root_id:
-                return {"status": "cached", "fetched_at": row["fetched_at"], **excerpt(cached)}
+                return excerpt(cached, item, status="cached")
             return {"id": mid, "status": "unavailable", "reason": "thread_mismatch"}
         return {"id": mid, "status": "not_available_locally"}
 
@@ -71,10 +77,9 @@ def brief(db, item):
         if ref is not None:
             rows = db.execute("SELECT * FROM messages WHERE source=? AND reply_ref=? AND id<>? "
                               "ORDER BY arrival_seq LIMIT 3", (source, ref, item["id"])).fetchall()
-            exchange = {"status": "linked" if rows else "unmatched", "reply_ref": ref,
-                        "messages": [excerpt(dict(row), 200) for row in rows[:2]], "more": len(rows) > 2}
-    return {"root": root, "parent": parent, "previous_exchange": exchange,
-            "expand": {"command": "context", "arguments": {"source": source, "id": item["id"]}}}
+            exchange = {"status": "linked" if rows else "unmatched",
+                        "messages": [excerpt(dict(row), item, 200) for row in rows[:2]], "more": len(rows) > 2}
+    return {"root": root, "parent": parent, "previous_exchange": exchange}
 
 
 def present(db, result, *, scope, context):

@@ -237,6 +237,21 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(len(cached['body']), 4096)
         self.assertTrue(cached['truncated'])
 
+    def test_brief_says_of_root_and_parent_only_what_the_message_does_not(self):
+        root = dict(mail(100), title='Another title', body='the root')
+        parent = dict(mail(90), body='our public parent')  # It has the title of the message.
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(10), parent_id=uid(90), addressing='direct')],
+               originals=[root, parent])
+        message, = self.run_command()['messages']
+        self.assertEqual(message['brief']['root'], {
+            'id': uid(100), 'status': 'cached', 'author': 'example-agent', 'title': 'Another title',
+            'body': 'the root', 'truncated': False})
+        self.assertEqual(message['brief']['parent'], {
+            'id': uid(90), 'status': 'cached', 'author': 'example-agent', 'body': 'our public parent',
+            'truncated': False})
+        self.assertEqual(message['brief']['previous_exchange'], {'status': 'unknown', 'messages': []})
+        self.assertEqual(set(message['brief']), {'root', 'parent', 'previous_exchange'})
+
     def test_missing_context_and_exact_previous_exchange_are_visible_and_bounded(self):
         # Three comments under a post of the account, which answers them with one comment of its own. A fourth
         # comment then answers that one.
@@ -254,7 +269,11 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(brief['previous_exchange']['status'], 'linked')
         self.assertEqual(len(brief['previous_exchange']['messages']), 2)
         self.assertTrue(brief['previous_exchange']['more'])
-        self.assertEqual(brief['expand']['arguments'], {'source': 'the-colony', 'id': uid(10)})
+        # An earlier message of the exchange is under the same post, and has its title.
+        self.assertEqual([set(earlier) for earlier in brief['previous_exchange']['messages']],
+                         [{'id', 'author', 'body', 'truncated'}] * 2)
+        self.assertEqual(set(brief), {'root', 'parent', 'previous_exchange'})
+        self.assertEqual(set(brief['previous_exchange']), {'status', 'messages', 'more'})
 
     def test_stale_collector_keeps_newer_cache_but_retains_unique_arrivals(self):
         root = dict(mail(100), body='new context')
