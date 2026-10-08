@@ -118,7 +118,7 @@ class VerificationTests(unittest.TestCase):
         self.assertFalse(result['remote_verified'])
         self.assertEqual(result['reply']['state'], 'unknown')
         self.assertIsNone(result['confirmation_basis'])
-        self.assertIsNone(result['message']['replied_at'])
+        self.assertNotIn('replied_at', result['message'])
         if reason:
             self.assertEqual(result['verification']['reason'], reason, result)
         self.assertEqual(result['reply'], self.before_result['reply'])

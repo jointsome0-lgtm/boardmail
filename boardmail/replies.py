@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from . import boards, schema
+from . import boards, reader, schema
 from .config import MailError, identifier
 
 MAX_BODY_BYTES = 65536
@@ -253,7 +253,7 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
     basis = None
     if attempt is not None and attempt['state'] == 'confirmed':
         basis = 'provider_readback' if evidence else 'caller_supplied_readback'
-    return {'event': 'reply_attempt', 'message': message, 'reply': attempt,
+    return {'event': 'reply_attempt', 'message': reader.written(message), 'reply': attempt,
             'changed': changed, 'send_allowed': send_allowed, 'next_action': following,
             'confirmation_basis': basis, 'reply_candidates': references,
             'recovery_guidance': RECOVERY_GUIDANCE if attempt and attempt['state'] == 'unknown' and not send_allowed else None,

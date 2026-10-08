@@ -81,8 +81,8 @@ class TagTests(unittest.TestCase):
         self.assertEqual(updated['counts'], {'unread': 2, 'tagged_unread': 1, 'untagged_unread': 1})
         other = self.command('list', **updated['untagged']['read']['arguments'])
         self.assertEqual([m['id'] for m in other['messages']], [uid(11)])
-        self.assertIsNone(other['messages'][0]['read_at'])
-        self.assertEqual(other['messages'][0]['tags'], [])
+        self.assertNotIn('read_at', other['messages'][0])
+        self.assertNotIn('tags', other['messages'][0])
         self.assertEqual(self.command('show', source='postingboard', id=uid(10))['message']['tags'],
                          ['agent-memory', 'htalk'])
         arrive(self.store, 'postingboard', uid(1), [mail(12)])
@@ -209,7 +209,7 @@ class TagTests(unittest.TestCase):
         self.assertEqual(self.cli('list', '--tag', 'htalk', '--untagged')[0], 2)
         self.assertEqual(self.cli('tag', 'add', 'htalk', 'postingboard', uid(100), '--message', uid(10))[0], 2)
         self.assertEqual(self.cli('tag', 'remove', 'htalk', 'postingboard', uid(100))[0], 0)
-        self.assertEqual(self.cli('list', '--untagged', '--scope', 'all')[1]['messages'][0]['tags'], [])
+        self.assertNotIn('tags', self.cli('list', '--untagged', '--scope', 'all')[1]['messages'][0])
 
     def test_concurrent_additions_preserve_membership_and_source_isolation(self):
         def add(pair):

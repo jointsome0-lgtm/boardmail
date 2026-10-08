@@ -297,7 +297,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(confirmed['remote_verified'])
             self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
             self.assertIsNone(confirmed['recovery_guidance'])
-            self.assertIsNone(confirmed['message']['read_at'])
+            self.assertNotIn('read_at', confirmed['message'])
             self.assertTrue(confirmed['message']['needs_reply'])
             self.assertEqual(confirmed['message']['reply_ref'], receipt['ref'])
             run = await asyncio.to_thread(subprocess.run,

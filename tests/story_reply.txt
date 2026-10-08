@@ -124,8 +124,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -133,13 +131,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
     "created_at": 1767268860,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -188,8 +180,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -197,13 +187,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
     "created_at": 1767268860,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -252,8 +236,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -261,13 +243,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
     "created_at": 1767268860,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -306,8 +282,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -315,13 +289,9 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
     "created_at": 1767268860,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
     "replied_at": 1800000120,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -360,8 +330,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -369,13 +337,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -414,8 +376,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -423,13 +383,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -567,8 +521,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -576,13 +528,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": {
     "state": "unknown",
@@ -609,8 +555,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -618,13 +562,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -663,8 +601,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -672,13 +608,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -717,8 +647,6 @@ exit code 1
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -726,13 +654,7 @@ exit code 1
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -794,8 +716,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -803,13 +723,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -862,8 +776,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -871,13 +783,9 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
     "replied_at": 1800004380,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -946,8 +854,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d4",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -955,13 +861,9 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
     "created_at": 1767268920,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
     "replied_at": 1800004380,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000de",
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply": {
     "source": "moltbook",
@@ -1015,8 +917,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d5",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -1024,13 +924,9 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d5",
     "created_at": 1767268980,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
     "replied_at": 1800004380,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000df",
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": null,
   "history_complete": false

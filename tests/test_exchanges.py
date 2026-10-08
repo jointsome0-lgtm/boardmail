@@ -63,7 +63,7 @@ class ExchangeTests(unittest.TestCase):
         exchange = result['previous_exchange']
         self.assertEqual((exchange['status'], exchange['reason'], exchange['reply_ref']), ('linked', None, self.ref))
         self.assertEqual([m['id'] for m in exchange['messages']], [uid(201), uid(202)])
-        self.assertEqual([m['needs_reply'] for m in exchange['messages']], [True, False])
+        self.assertEqual([m.get('needs_reply') for m in exchange['messages']], [True, None])  # The second has none.
         self.assertEqual(exchange['messages'][1]['thread_id'], uid(777))
         self.assertEqual(self.fixture.calls, [('/comments/' + uid(130), {}, False),
                          ('/posts/' + uid(101), {}, False), ('/comments/' + uid(120), {}, False)])

@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from boardmail import commands, replies
+from boardmail import commands, reader, replies
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, uid
@@ -88,7 +88,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                     'show', 'moltbook', uid(10)], capture_output=True, text=True, timeout=10)
                 self.assertEqual(run.returncode, 0, run.stderr)
                 result = json.loads(run.stdout)
-                self.assertEqual(result['message'], self.store.show('moltbook', uid(10)))
+                self.assertEqual(result['message'], reader.written(self.store.show('moltbook', uid(10))))
                 self.assertEqual(result['event'], 'message')
                 summary = result['reply_attempt']
                 if state is None:
@@ -128,7 +128,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                         ('needs-reply', {'needs_reply'}), ('clear-reply', {'needs_reply'}),
                         ('replied', {'replied_at', 'reply_ref'})):
                     with self.subTest(action=action):
-                        before = store.show('moltbook', uid(10))
+                        before = reader.written(store.show('moltbook', uid(10)))
                         args = ['mark', action, 'moltbook', uid(10)]
                         if action == 'replied':
                             args += ['--ref', self.ref]
@@ -138,13 +138,13 @@ class ReplyRecoveryTests(unittest.TestCase):
                         result = json.loads(run.stdout)
                         self.assertEqual(result['event'], 'marked')
                         after = result['message']
-                        self.assertEqual(after, store.show('moltbook', uid(10)))
+                        self.assertEqual(after, reader.written(store.show('moltbook', uid(10))))
                         self.assertEqual({k: v for k, v in before.items() if k not in changed_fields},
                                          {k: v for k, v in after.items() if k not in changed_fields})
                         if action == 'read': self.assertIsNotNone(after['read_at'])
-                        elif action == 'unread': self.assertIsNone(after['read_at'])
+                        elif action == 'unread': self.assertNotIn('read_at', after)
                         elif action == 'needs-reply': self.assertTrue(after['needs_reply'])
-                        elif action == 'clear-reply': self.assertFalse(after['needs_reply'])
+                        elif action == 'clear-reply': self.assertNotIn('needs_reply', after)
                         else:
                             self.assertIsNotNone(after['replied_at'])
                             self.assertEqual(after['reply_ref'], self.ref)
@@ -196,7 +196,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                                 action='replied', ref=self.ref))
                         self.assertEqual((code, marked['event']), (0, 'marked'))
                         message = marked['message']
-                        self.assertEqual(message, self.store.show('moltbook', target))
+                        self.assertEqual(message, reader.written(self.store.show('moltbook', target)))
                         self.assertEqual(message['reply_ref'], self.ref)
                         self.assertIsNotNone(message['replied_at'])
                         # First-versus-latest replied_at semantics are deliberately unspecified.
@@ -645,7 +645,7 @@ os._exit(79)
         self.assertEqual(self.path.read_bytes(), before)
         shown = self.command('show')[0]
         self.assertEqual(shown['reply']['state'], 'unknown')
-        self.assertIsNone(shown['message']['replied_at'])
+        self.assertNotIn('replied_at', shown['message'])
 
     def test_every_source_uses_the_same_local_protocol_even_when_paused(self):
         for n, source in enumerate([*BOARDS, 'custom'], 1):

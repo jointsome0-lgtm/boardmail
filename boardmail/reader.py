@@ -8,6 +8,8 @@ DEFAULTS = {"scope": "addressed", "context": "brief"}
 CHOICES = {"scope": ("addressed", "all"), "context": ("brief", "none")}
 # The arrivals on a page of check, list or wait that names no limit. A replay names none, so it has this size.
 PAGE_SIZE = 20
+# What a message in a result has only where it holds something. A field that is absent is none, not unknown.
+SPARSE = ("parent_id", "provider_seq", "read_at", "needs_reply", "replied_at", "reply_ref", "discovery", "tags")
 SHOWN_BECAUSE = {
     "direct": "direct_reply_to_your_message",
     "mention": "mention_detected_may_be_quoted",
@@ -23,16 +25,24 @@ def validate_options(scope=None, context=None):
             raise MailError("invalid_arguments")
 
 
+def written(message):
+    """A message as a result has it: without the fields of SPARSE that hold nothing, which is null, false or an
+    empty list. Inside the package a message has them all."""
+    return {key: value for key, value in message.items()
+            if key not in SPARSE or not (value is None or value is False or value == [])}
+
+
 def excerpt(item, message, budget=600, **first):
     """What a brief says of another message or original: who wrote it and its text, cut to the budget. Its thread
-    and its title only where they are not those of the message that the brief belongs to."""
+    and its title only where they are not those of the message that the brief belongs to, and truncated only
+    where it was cut."""
     said = {"id": item.get("id"), **first, "author": item.get("author")}
     if item.get("thread_id") != message["thread_id"]:
         said["thread_id"] = item.get("thread_id")
     if item["title"] != message["title"]:
         said["title"] = item["title"][:160]
     cut = len(item["body"]) > budget or "title" in said and len(item["title"]) > 160
-    return said | {"body": item["body"][:budget], "truncated": bool(item.get("truncated") or cut)}
+    return said | {"body": item["body"][:budget]} | ({"truncated": True} if item.get("truncated") or cut else {})
 
 
 def brief(db, item):
@@ -97,7 +107,7 @@ def present(db, result, *, scope, context):
             item["shown_because"] = SHOWN_BECAUSE[item["addressing"]]
             if context == "brief":
                 item["brief"] = brief(db, item)
-            messages.append(item)
+            messages.append(written(item))
     for summary in activity.values():
         # An inclusive upper bound prevents newer arrivals leaking into replay.
         # Omit unread: explicit marks may have changed since the summary.

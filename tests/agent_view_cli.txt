@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18426
+  help text: 18647
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -323,6 +323,11 @@ boardmail list:
     there is no remote mail. sources names only sources that need attention:
     not ok, or backlog pending. None named means none needs it; status lists
     them all. Put --db PATH before the command.
+
+    A message has parent_id, provider_seq, read_at, needs_reply, replied_at,
+    reply_ref, discovery and tags only where they hold something, and an excerpt
+    has truncated only where it was cut. Absent means none, not unknown.
+
     With --unread, --source, --thread, --through, --tag or --untagged, checkpoint_safe is false.
     Keep your delivery checkpoint; paginate this view with the same filters and its next_after.
     Start each new topic visit at 0, so late tags include older unread messages:

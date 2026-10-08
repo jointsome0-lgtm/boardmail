@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from urllib.error import HTTPError
 
-from boardmail import adapter_moltbook, commands
+from boardmail import adapter_moltbook, commands, reader
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from boardmail import adapter_common
@@ -213,7 +213,7 @@ class PublicContextTests(unittest.TestCase):
                     self.assertEqual((result[role]['status'], result[role]['error'], result[role]['id']),
                                      ('unavailable', 'invalid_response', uid(100)))
                     self.assertIsNone(result[role]['message'])
-                self.assertEqual(result['target']['message'], saved)
+                self.assertEqual(result['target']['message'], reader.written(saved))
                 self.assertEqual(result['target']['status'], 'available')
                 self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
                 self.assertEqual(self.path.read_bytes(), before)
@@ -238,7 +238,7 @@ class PublicContextTests(unittest.TestCase):
             self.assertEqual((result[role]['status'], result[role]['origin'], result[role]['id']),
                              ('available', 'remote', expected))
             self.assertEqual(result[role]['message']['thread_id'], self.root)
-        self.assertEqual(result['target']['message'], saved)
+        self.assertEqual(result['target']['message'], reader.written(saved))
         self.assertEqual(result['target']['current_message']['body'], 'Current reply.')
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         self.assertEqual(self.path.read_bytes(), before)
