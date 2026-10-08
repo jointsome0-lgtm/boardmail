@@ -3,10 +3,10 @@
 
 size:
   tools: 26
-  tool descriptions: 10511
-  input schemas: 9601
+  tool descriptions: 10473
+  input schemas: 9368
   server instructions: 1493
-  tool catalog as JSON: 24436
+  tool catalog as JSON: 24165
 
 server:
   name: boardmail
@@ -463,10 +463,10 @@ tool boardmail_subscriptions:
 
 tool boardmail_tag_add:
   description: >
-    Add one local tag to an entire source/thread.
-    Use exactly one of thread or saved message id.
-    The source must already belong to this inbox; no stored or remote root is required.
-    Older saved mail joins the topic immediately.
+    Add one local tag to a whole thread of a source.
+    Give exactly one of thread and id.
+    The source must belong to this inbox; the thread needs no saved or remote root.
+    Older saved mail joins the topic at once.
     Local and idempotent; never subscribes, collects or marks mail.
   inputSchema:
     type: object
@@ -476,20 +476,22 @@ tool boardmail_tag_add:
         minLength: 1
         maxLength: 64
         pattern: ^[a-z0-9][a-z0-9_-]{0,63}$
-        description: >
-          Local topic, e.g. htalk or agent-memory.
-          Lowercase letters, digits, _ and -; start with a letter or digit.
-      source: {type: string, minLength: 1, maxLength: 64}
+        description: Local topic, e.g. htalk or agent-memory
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Its name in status
       thread:
         type: string
         minLength: 1
         maxLength: 1024
-        description: Exact local thread_id, including custom-adapter IDs. Use thread or id, not both.
+        description: Exact local thread_id, also that of a custom adapter
       id:
         type: string
         minLength: 1
         maxLength: 1024
-        description: Saved message ID whose local thread_id should be used. Omit thread.
+        description: Id of a saved message, whose local thread_id is used
     required: [tag, source]
     additionalProperties: false
     oneOf: [{required: [thread]}, {required: [id]}]
@@ -497,7 +499,8 @@ tool boardmail_tag_add:
 
 tool boardmail_tag_remove:
   description: >
-    Remove one local thread membership, selected by thread or saved message id.
+    Remove one local tag from a thread.
+    Give exactly one of thread and id.
     Idempotent.
     Keeps messages, marks, other tags, subscriptions and collection progress.
     Makes no remote request.
@@ -509,20 +512,22 @@ tool boardmail_tag_remove:
         minLength: 1
         maxLength: 64
         pattern: ^[a-z0-9][a-z0-9_-]{0,63}$
-        description: >
-          Local topic, e.g. htalk or agent-memory.
-          Lowercase letters, digits, _ and -; start with a letter or digit.
-      source: {type: string, minLength: 1, maxLength: 64}
+        description: Local topic, e.g. htalk or agent-memory
+      source:
+        type: string
+        minLength: 1
+        maxLength: 64
+        description: Its name in status
       thread:
         type: string
         minLength: 1
         maxLength: 1024
-        description: Exact local thread_id, including custom-adapter IDs. Use thread or id, not both.
+        description: Exact local thread_id, also that of a custom adapter
       id:
         type: string
         minLength: 1
         maxLength: 1024
-        description: Saved message ID whose local thread_id should be used. Omit thread.
+        description: Id of a saved message, whose local thread_id is used
     required: [tag, source]
     additionalProperties: false
     oneOf: [{required: [thread]}, {required: [id]}]
@@ -530,11 +535,11 @@ tool boardmail_tag_remove:
 
 tool boardmail_tag_show:
   description: >
-    Read the threads saved under a tag, including threads with no messages.
-    Returns local titles, known links, their provenance, counts and local subscription state without bodies or remote lookup.
-    Missing labels/links stay null.
+    Show the threads saved under a tag, also those with no saved message.
+    Each has its local title and known link with their provenance, counts and local subscription state; no bodies, no remote lookup.
+    A missing label or link is null.
     subscribed does not guarantee collection or complete history.
-    Each thread read action opens saved mail including already-read messages.
+    The read route of a thread opens its saved mail, read messages too.
   inputSchema:
     type: object
     properties:
@@ -543,19 +548,18 @@ tool boardmail_tag_show:
         minLength: 1
         maxLength: 64
         pattern: ^[a-z0-9][a-z0-9_-]{0,63}$
-        description: >
-          Local topic, e.g. htalk or agent-memory.
-          Lowercase letters, digits, _ and -; start with a letter or digit.
+        description: A topic that tags lists
     required: [tag]
     additionalProperties: false
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
 tool boardmail_tags:
   description: >
-    List local topics with thread and unread counts, plus an always-present untagged queue.
-    No message bodies, collection, read marks or migration.
-    Copy a read action to boardmail_list; start each new topic visit at after=0 so late tags include older unread mail.
-    Topics can overlap; counts.unread equals tagged_unread plus untagged_unread, counting messages once.
+    List local topics and unread counts without message bodies.
+    The untagged queue is always listed.
+    No collection, read marks or migration.
+    Each has a read route to its unread mail; start from it at each visit, since a late tag includes older mail.
+    Topics can overlap; counts.unread is tagged_unread plus untagged_unread and counts a message once.
   inputSchema: {type: object, properties: {}, required: [], additionalProperties: false}
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}
 
