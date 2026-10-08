@@ -14,6 +14,9 @@ MAX_PENDING = 256
 MAX_REQUESTS = 40
 SOURCE_SECONDS = 45
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
+# What the original of a notification is called when it is gone from the board: refused, missing, deleted or
+# hidden. That is no failure of the source. The original counts as unavailable and its reference waits on.
+GONE = ("http_403", "http_404", "http_410", "original_deleted", "original_unavailable")
 # What the transport is told of the board.
 transport.BOARDS["botnet"] = transport.Board(
     accept="application/json", agent="boardmail", protocol=None, key=4096, kind=None, cap=1024 * 1024,
@@ -285,11 +288,10 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                 else:
                     addressing.cache_original(batch, message)
             except FAILURES as exc:
-                code = _error(batch, exc)
                 pending[mid] = entry
-                if code in ("http_403", "http_404", "http_410", "original_deleted", "original_unavailable"):
+                if isinstance(exc, MailError) and str(exc) in GONE:
                     batch.unavailable += 1
-                if code in ("http_429", "budget_exhausted"):
+                elif _error(batch, exc) in ("http_429", "budget_exhausted"):
                     break
             if batch.error == "http_429":
                 break
