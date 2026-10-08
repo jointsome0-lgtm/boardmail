@@ -175,11 +175,27 @@ class RouteTests(unittest.TestCase):
                 self.assertIn(field, FIELDS)
                 command = table.COMMANDS[route['tool'].removeprefix('boardmail_')]
                 self.assertEqual(route['tool'], 'boardmail_' + command.name)
-                # The command takes the call as it is written, and so does the command line.
+                # The command takes the call as it is written, and the command line reads the same call.
                 table.checked(command, route['arguments'])
-                typed.parse_args(kit.words(route))
+                read = vars(typed.parse_args(kit.words(route)))
+                self.assertEqual({name: read[name] for name in route['arguments']}, route['arguments'])
         for name in STORIES:
             self.assertEqual(GONE & {field for result in stored(name) for field in fields(result)}, set(), name)
+
+    def test_a_value_that_begins_with_a_dash_is_typed_so_that_it_is_no_option(self):
+        # A custom adapter may give a message or a thread such an id.
+        typed = cli.parser()
+        for route, words in (
+                (call('reply_show', source='example', id='--question'), ['reply', 'show', '--', 'example', '--question']),
+                (call('expand', source='example', thread='-t', after=1, through=5, limit=20),
+                 ['expand', '--through', '5', '--after', '1', '--limit', '20', '--', 'example', '-t']),
+                (call('list', after=0, unread=True, scope='all', source='example', thread='--thread'),
+                 ['list', '--after', '0', '--scope', 'all', '--unread', '--source', 'example', '--thread=--thread']),
+                (call('tag_show', tag='topic'), ['tag', 'show', 'topic'])):
+            with self.subTest(route=route):
+                self.assertEqual(kit.words(route), words)
+                read = vars(typed.parse_args(words))
+                self.assertEqual({name: read[name] for name in route['arguments']}, route['arguments'])
 
     @unittest.skipIf(kit.mcp_missing(), kit.NO_EXTRA)
     def test_a_tool_takes_every_route_of_the_stored_stories(self):

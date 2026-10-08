@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 import boardmail
-from boardmail import adapter_colony, adapter_common, commands, errors, table, transport
+from boardmail import adapter_colony, adapter_common, commands, errors, mcp, table, transport
 
 
 TESTS = Path(__file__).resolve().parent
@@ -120,6 +120,12 @@ class ErrorCodeTests(unittest.TestCase):
                 # A call that gave no name or id, or one that cannot be one, leaves the step nothing to take.
                 for lacking in ({}, dict(given, source=None), dict(given, id='two\nlines', source='')):
                     self.assertEqual('next' in commands.error_result(code, call=lacking)[0], not takes)
+                # Nor does a name or an id that is longer than the tool of the step takes.
+                takes_up_to = mcp.input_schema(table.COMMANDS[command])['properties']
+                for name in takes:
+                    longest = takes_up_to[name]['maxLength']
+                    self.assertIn('next', commands.error_result(code, call=dict(given, **{name: 'x' * longest}))[0])
+                    self.assertNotIn('next', commands.error_result(code, call=dict(given, **{name: 'x' * (longest + 1)}))[0])
         for code in (set(errors.CODES) | UNLISTED) - set(NEXT):
             self.assertNotIn('next', commands.error_result(code, call=given)[0], code)
 

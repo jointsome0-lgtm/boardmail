@@ -28,6 +28,8 @@ class Entry(NamedTuple):
 
 # The next step after a reply command that was refused for what the journal holds: read the journal.
 JOURNAL = Call('reply_show', ('source', 'id'))
+# How long a value may be that a next call has from the call that failed: what a tool takes for that argument.
+LONGEST = {'source': 64, 'id': 1024}
 
 
 # A code a custom adapter reports, or an HTTP status that has no entry.
@@ -182,9 +184,11 @@ def route(command, **arguments):
 
 def following(code, call):
     """The call that is the next step after an error, as a route. call is what the command that failed was
-    given. None where the code has no such step, and where the call has no name or id to give the step."""
+    given. None where the code has no such step, and where the call has no name or id that a tool takes to give
+    the step."""
     step = CODES.get(code, UNLISTED).next
-    if step is None or not all(converted(identifier, call.get(name)) for name in step.takes):
+    if step is None or not all(converted(identifier, call.get(name)) and len(call[name]) <= LONGEST[name]
+                               for name in step.takes):
         return None
     return route(step.command, **{name: call[name] for name in step.takes}, **dict(step.more))
 
