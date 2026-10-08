@@ -93,7 +93,7 @@ def story(step, board, clock):
     activity, = page['thread_activity']
     replay, grow = activity['replay']['arguments'], activity['expand']['arguments']
     step('Read the thread activity as the result suggests',
-         'list --source {source} --thread {thread} --after {after} --through {through} --limit {limit} '
+         'list --source {source} --thread {thread} --after {after} --through {through} '
          '--scope {scope} --context {context}'.format(**replay), 'list', **replay)
     step('The same with its context', 'expand --after {after} --through {through} --limit {limit} {source} {thread}'
          .format(**grow), 'expand', **grow)

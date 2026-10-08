@@ -36,12 +36,12 @@ Run `init` once for a new database. Existing databases need no new `init`; see [
 
 ```sh
 boardmail init
-boardmail check --after 0 --limit 50
+boardmail check --after 0
 ```
 
 ## Read and wait
 
-`check` collects one pass and returns a JSON page of saved messages. Use the exact `source` and `id` from a message:
+`check` collects one pass and returns a JSON page of saved messages: at most 20 arrivals, or what `--limit` says, from 1 to 500. While `more` is true, `list --after N` with the page's `next_after` reads on. Use the exact `source` and `id` from a message:
 
 ```sh
 boardmail show SOURCE ID

@@ -37,16 +37,16 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_tag_add` | `tag`, `source`, exactly one of `thread` or `id` | Locally group a whole thread; `id` selects a saved message's thread. No subscription or collection. |
 | `boardmail_tag_remove` | `tag`, `source`, exactly one of `thread` or `id` | Remove one membership, preserving messages, marks and subscriptions. |
 | `boardmail_tag_show` | `tag` | Recover saved thread membership, labels, known links, counts and local subscription state, including empty threads. |
-| `boardmail_check` | `after=0`, `limit=100` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
+| `boardmail_check` | `after=0`, `limit=20` | Collect one pass, then return an arrival page and `collection` with `added`, `failed`, `errors`. |
 | `boardmail_collect` | None | Fetch one pass from configured sources. Partial success can save arrivals and return errors together. |
 | `boardmail_pause` | `source` | Pause collection and remote context for one source. Keeps messages, marks and progress. |
 | `boardmail_resume` | `source` | Enable the source for the next collection. Fetches nothing immediately. |
 | `boardmail_status` | `require_fresh=false`, optional `stale_after` | Local counts and source health with `last_ok_age`, `stale_after` and `fresh`. With `require_fresh`, an unknown, error or stale active source is an error result. Paused sources are excluded. |
-| `boardmail_list` | `after=0`, `limit=100`, `unread=false`, optional `tag` or `untagged=true` | Local arrival page with `next_after`, `more` and source health. |
+| `boardmail_list` | `after=0`, `limit=20`, `unread=false`, optional `tag` or `untagged=true` | Local arrival page with `next_after`, `more` and source health. |
 | `boardmail_show` | `source`, `id` | Stored original, local marks and a compact reply attempt with a route to the full journal. |
 | `boardmail_context` | `source`, `id`, `local=false` | Thread root, immediate parent and target with statuses `available`, `missing`, `deleted`, `unavailable`, `unknown` or `none`. Postingboard, Colony, Moltbook, ClawdChat and Botnet originals are fetched when the server has a config, `local` is false and the source is active. Marks nothing; an incomplete context is an error result. |
 | `boardmail_expand` | `source`, `thread`, `through`, `after=0`, `limit=20`, `local=false` | Saved thread interval with full target/parent context and one shared root. Bounded pagination; incomplete context is an error result. Never advances the delivery checkpoint. |
-| `boardmail_wait` | `after=0`, `limit=100`, `timeout=30` | Local arrival page or timeout. Timeout range is 0 to 60 seconds. |
+| `boardmail_wait` | `after=0`, `limit=20`, `timeout=30` | Local arrival page or timeout. Timeout range is 0 to 60 seconds. |
 | `boardmail_mark` | `source`, `id`, `action`, optional `ref` | Change one local mark and return the message with the current reply attempt summary and journal route. |
 | `boardmail_reply_prepare` | `source`, `id`, `body`, optional `replace_key` | Save exact reply text and a stable key; repeat without resetting an unknown outcome. |
 | `boardmail_reply_list` | `after=0`, `limit=20` | Discover prepared/unknown attempts, including independently replied messages. Global state counts, bounded items and exact journal/continuation routes; marks nothing. |
@@ -55,7 +55,7 @@ With `--db /absolute/path/mail.sqlite3` and no `--config`, the server uses only 
 | `boardmail_reply_confirm` | `source`, `id`, `key`, `ref`, `readback_body` | Compare caller readback with saved text and atomically record its receipt and replied mark. No remote verification by Boardmail. |
 | `boardmail_reply_verify` | `source`, `id`, `key`, `ref` | Read the provider original; confirm only matching identity, destination, exact body and status. Saves dated evidence; never publishes. |
 
-`limit` is 1 to 500 for check/list/wait and 1 to 100 for expand. Use the exact source and string ID returned in a message. Mark actions match the CLI: `read`, `unread`, `needs-reply`, `clear-reply`, `replied`. Only `replied` accepts and requires `ref`, an HTTP(S) URL for a reply already sent elsewhere. It does not publish, mark read or clear `needs_reply`.
+`limit` is 1 to 500 for check/list/wait and 1 to 100 for expand; left out, it is 20 for each of them. Use the exact source and string ID returned in a message. Mark actions match the CLI: `read`, `unread`, `needs-reply`, `clear-reply`, `replied`. Only `replied` accepts and requires `ref`, an HTTP(S) URL for a reply already sent elsewhere. It does not publish, mark read or clear `needs_reply`.
 
 Both `boardmail_mark` with action `replied` and `boardmail_reply_confirm` limit the entire `ref` string to 1,024 characters, not UTF-8 bytes. This is local syntax validation; neither tool fetches the URL. An overlong mark reference returns `reply_ref_required` before changing the message or attempt. An overlong confirm reference is rejected by the MCP input schema as `invalid_arguments`; the shared CLI confirmation validator returns `reply_ref_required`.
 

@@ -16,7 +16,7 @@ from boardmail.boards import BOARDS
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
-from kit import DESCRIBED, arrive, mark, notify
+from kit import DESCRIBED, arrive, described, mark, notify
 from test_mail import mail
 
 
@@ -97,6 +97,37 @@ class ReadingTests(unittest.TestCase):
         self.assertFalse(any('brief' in m for m in all_page['messages']))
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.store.status()['counts']['unread'], 6)
+
+    def test_page_without_a_limit_holds_twenty_and_its_pages_give_a_backlog_once_in_order(self):
+        backlog = [dict(mail(10 + n), addressing='direct') for n in range(45)]
+        # check collects the backlog and reads its first page. list and wait read that page from the inbox.
+        for command, options in (('check', {'sources': {'moltbook': described(uid(2), messages=backlog)}}),
+                                 ('list', {}), ('wait', {'timeout': 0})):
+            with self.subTest(command=command):
+                page = self.run_command(command, **options)
+                self.assertEqual((len(page['messages']), page['scanned'], page['next_after'], page['more']),
+                                 (20, 20, 20, True))
+        pages = [self.run_command()]
+        while pages[-1]['more'] and len(pages) < 5:
+            pages.append(self.run_command(after=pages[-1]['next_after']))
+        self.assertEqual([len(page['messages']) for page in pages], [20, 20, 5])
+        self.assertEqual([m['id'] for page in pages for m in page['messages']], [m['id'] for m in backlog])
+        # A caller that names a limit gets that many.
+        for limit, most in ((1, 1), (21, 21), (100, 45), (500, 45)):
+            page = self.run_command(limit=limit)
+            self.assertEqual((len(page['messages']), page['more']), (most, most < 45))
+
+    def test_replay_of_a_summary_names_no_limit_and_its_pages_give_the_thread_once(self):
+        self.save('direct', *['thread'] * 45)
+        summary, = self.run_command(limit=500)['thread_activity']
+        self.assertEqual((summary['count'], summary['first_seq'], summary['last_seq']), (45, 2, 46))
+        replay = summary['replay']['arguments']
+        self.assertNotIn('limit', replay)
+        pages = [self.run_command(**replay)]
+        while pages[-1]['more'] and len(pages) < 5:
+            pages.append(self.run_command(**{**replay, 'after': pages[-1]['next_after']}))
+        self.assertEqual([len(page['messages']) for page in pages], [20, 20, 5])
+        self.assertEqual([m['id'] for page in pages for m in page['messages']], [uid(11 + n) for n in range(45)])
 
     def test_interleaved_summaries_follow_first_arrival_and_share_the_page_checkpoint(self):
         arrive(self.store, 'moltbook', uid(2), [dict(mail(9), addressing='direct')])

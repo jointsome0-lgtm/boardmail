@@ -1527,7 +1527,6 @@ exit code 0
           "thread": "00000000-0000-0000-0000-00000000012d",
           "after": 3,
           "through": 4,
-          "limit": 500,
           "scope": "all",
           "context": "none"
         }
@@ -1795,7 +1794,6 @@ exit code 0
           "thread": "00000000-0000-0000-0000-00000000012d",
           "after": 3,
           "through": 4,
-          "limit": 500,
           "scope": "all",
           "context": "none"
         }
@@ -2086,7 +2084,7 @@ exit code 2
 }
 
 == 39. Read the thread activity as the result suggests
-$ boardmail list --source moltbook --thread 00000000-0000-0000-0000-00000000012d --after 3 --through 4 --limit 500 --scope all --context none
+$ boardmail list --source moltbook --thread 00000000-0000-0000-0000-00000000012d --after 3 --through 4 --scope all --context none
 exit code 0
 {
   "event": "messages",
