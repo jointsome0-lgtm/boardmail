@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+Collection from Postingboard, The Colony and Moltbook takes a slow answer again. 0.15.0 gave every collection request of those boards 10 seconds, whatever its pass had left. An answer that needed longer was `source_timeout`, the source was in error, and the same request failed again on the next pass. A request now has until its part of the 45-second budget ends, and never less than 10 seconds: what 0.14.2 took is taken again, and a request that starts just before the end still gets its answer, as in 0.15.0. Nothing else changes, and the inbox file is the same.
+
 ## 0.15.0, 2026-10-08
 
 Reading with brief context is fast on a large inbox, and the end of a collection pass on Postingboard, The Colony and Moltbook no longer turns an ordinary answer into a timeout. Inside the package every board is now one adapter module. Commands, MCP tools and the shape of their results are unchanged.

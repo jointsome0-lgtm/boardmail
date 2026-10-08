@@ -21,8 +21,9 @@ ROW = transport.Board(protocol=None, **SHARED)
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
-# A collection phase admits work for SOURCE_SECONDS. Each HTTP request that it admits gets this completion
-# window, including one admitted just before the phase ends. No further request starts after that boundary.
+# A collection phase admits work for SOURCE_SECONDS. An HTTP request that it admits may take what is left of the
+# phase, and never has less than this, so one admitted just before the phase ends still gets its answer. No
+# further request starts after that boundary.
 REQUEST_SECONDS = 10
 
 
@@ -59,7 +60,7 @@ class Client:
             raise MailError("budget_exhausted")
         try:
             return self.fetch(self.source, self.host+self.prefix+path,
-                              left=remaining if self.request_seconds is None else self.request_seconds,
+                              left=remaining if self.request_seconds is None else max(remaining, self.request_seconds),
                               headers={"Authorization": "Bearer " + token} if token else None, body=body)
         except HTTPError as exc:
             code = self.refused(exc, token, path)

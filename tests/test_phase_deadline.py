@@ -56,7 +56,8 @@ class PhaseDeadlineTests(unittest.TestCase):
         self.assertEqual({item['id'] for item in first.messages}, {uid(n) for n in (610, 611, 612)})
         self.assertEqual(list(first.state['pending']), [roots[-1]])
         self.assertAlmostEqual(requests[-1][2] - requests[0][2], 44.996, places=3)
-        self.assertEqual([request[3] for request in requests], [10] * 6)
+        # A request has what is left of its phase, and never under ten seconds.
+        self.assertEqual([round(request[3], 3) for request in requests], [45, 36.001, 27.002, 18.002, 10, 10])
         self.assertEqual({item['id'] for item in first.originals}, set(roots[:3]),
                          'The completed roots stay verified alongside the delivered replies')
         second = self.collect('moltbook', cfg, board, first.state, {item['id'] for item in first.messages})
@@ -146,7 +147,7 @@ class PhaseDeadlineTests(unittest.TestCase):
         cfg = settings(self.folder)['moltbook']
 
         def late(request):
-            self.clock.advance(10.5)
+            self.clock.advance(45.5)
             return 200, {'agent': {'id': cfg['account_id']}}
 
         for board, error in ((ConnectionRefusedError(), 'network_error'),
@@ -157,6 +158,38 @@ class PhaseDeadlineTests(unittest.TestCase):
             self.assertEqual(batch.error, error)
             self.assertEqual(batch.messages, [])
 
+    def test_slow_answer_early_in_a_phase_is_taken(self):
+        cfg = settings(self.folder)['moltbook']
+        profile = {'agent': {'id': cfg['account_id']}}
+
+        def late(request):
+            self.clock.advance(20)
+            return 200, profile
+
+        def late_end(request):
+            return 200, Pieces([json.dumps(profile).encode(), lambda: self.clock.advance(20)])
+
+        for slow in (late, late_end):
+            def board(request):
+                if request.path.endswith('/notifications'):
+                    return 200, {'notifications': [], 'has_more': False}
+                return slow(request)
+
+            with self.subTest(slow=slow.__name__):
+                with Network({'www.moltbook.com': board}):
+                    batch = self.collect('moltbook', cfg)
+                self.assertIsNone(batch.error, 'Twenty seconds of a phase of 45 are no failure')
+                self.assertTrue(batch.complete)
+
+    def test_first_request_of_each_board_has_the_whole_phase(self):
+        for source in ('postingboard', 'the-colony', 'moltbook'):
+            cfg = settings(self.folder)[source]
+            board = FixtureBoard(source, cfg)
+            with self.subTest(source=source):
+                self.assertIsNone(self.collect(source, cfg, board).error)
+                self.assertEqual(board.asked[0].left, 45)
+                self.assertGreaterEqual(min(asked.left for asked in board.asked), 10)
+
     def test_json_prefix_needs_timely_eof_and_complete_declared_body(self):
         cfg = settings(self.folder)['moltbook']
         body = json.dumps({'agent': {'id': cfg['account_id']}}).encode()
@@ -165,7 +198,7 @@ class PhaseDeadlineTests(unittest.TestCase):
             raise TimeoutError('An invented stalled body')
 
         cases = [
-            (lambda request: (200, Pieces([body, lambda: self.clock.advance(10.5)])), 'source_timeout'),
+            (lambda request: (200, Pieces([body, lambda: self.clock.advance(45.5)])), 'source_timeout'),
             (lambda request: (200, Pieces([body, timeout])), 'network_error'),
             (lambda request: b'HTTP/1.1 200 OK\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n' + body,
              'network_error'),
