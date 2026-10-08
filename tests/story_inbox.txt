@@ -354,22 +354,6 @@ exit code 0
       "history_complete": false,
       "backlog_pending": true,
       "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000000,
-      "last_ok": 1800000000,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
     }
   ],
   "checkpoint_safe": true,
@@ -1082,22 +1066,6 @@ exit code 0
       "history_complete": false,
       "backlog_pending": true,
       "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000000,
-      "last_ok": 1800000000,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
     }
   ],
   "checkpoint_safe": false,
@@ -1195,22 +1163,6 @@ exit code 0
       "coverage": "Configured adapter scope; consult its instructions.",
       "history_complete": false,
       "backlog_pending": true,
-      "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000000,
-      "last_ok": 1800000000,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
       "next_action": "collect_periodically"
     }
   ],
@@ -1475,40 +1427,7 @@ exit code 0
   ],
   "next_after": 6,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": true,
   "thread_activity": [
     {
@@ -1742,40 +1661,7 @@ exit code 0
   ],
   "next_after": 6,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": true,
   "thread_activity": [
     {
@@ -1828,40 +1714,7 @@ exit code 3
   "messages": [],
   "next_after": 6,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": true,
   "thread_activity": [],
   "reading": {
@@ -2115,40 +1968,7 @@ exit code 0
   ],
   "next_after": 4,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": false,
   "thread_activity": [],
   "reading": {
@@ -2385,40 +2205,7 @@ exit code 0
   ],
   "next_after": 6,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    },
-    {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000600,
-      "last_ok": 1800000600,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": true,
   "thread_activity": [],
   "reading": {

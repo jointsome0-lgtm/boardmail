@@ -162,7 +162,9 @@ ARRIVALS_EPILOG = ('Example: boardmail {} --after 0\n'
                'Replace 0 with your saved next_after after processing a page.\n'
                'Handle messages and thread_activity, mark explicitly, then save next_after.\n'
                'Use list to drain more pages. An empty page or timeout does not prove\n'
-               'there is no remote mail. Put --db PATH before the command.')
+               'there is no remote mail. sources names only sources that need attention:\n'
+               'not ok, or backlog pending. None named means none needs it; status lists\n'
+               'them all. Put --db PATH before the command.')
 MESSAGE = (Argument('source', 'SOURCE', SOURCE, required=True, help='Source name returned in a message'),
            Argument('id', 'ID', ID, required=True, check=config.identifier, error='invalid_message_id',
                     help='Exact message ID from a Boardmail result'))
@@ -383,7 +385,8 @@ COMMANDS = {command.name: command for command in (
              'Filtered pages have checkpoint_safe=false: retain the delivery checkpoint; paginate with the same filters. '
              'thread requires source. tag and untagged=true are mutually exclusive local thread filters, applied before LIMIT. '
              'Start each new topic visit with after=0, unread=true and scope=all; preserve the delivery checkpoint. '
-             'Read marks apply to a message in every tag.',
+             'Read marks apply to a message in every tag. check, list and wait name only sources that need '
+             'attention: status not ok, or backlog_pending. None named means none needs it; status lists every source.',
         arguments=(
             *ARRIVALS,
             Argument('unread', '--unread', FLAG, help='Only messages without a local read mark'),

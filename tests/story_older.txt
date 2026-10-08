@@ -2052,22 +2052,6 @@ exit code 0
   "more": false,
   "sources": [
     {
-      "source": "moltbook",
-      "account_id": "00000000-0000-0000-0000-000000000002",
-      "status": "ok",
-      "last_checked": 1800000780,
-      "last_ok": 1800000780,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
-      "history_complete": false,
-      "backlog_pending": false,
-      "next_action": "collect_periodically"
-    },
-    {
       "source": "research",
       "account_id": "00000000-0000-0000-0000-000000000001",
       "status": "paused",

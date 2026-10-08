@@ -16,7 +16,7 @@ from boardmail.boards import BOARDS
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
-from kit import DESCRIBED, arrive, described, mark, notify
+from kit import DESCRIBED, Clock, arrive, described, fixed, mark, notify
 from test_mail import mail
 
 
@@ -128,6 +128,34 @@ class ReadingTests(unittest.TestCase):
             pages.append(self.run_command(**{**replay, 'after': pages[-1]['next_after']}))
         self.assertEqual([len(page['messages']) for page in pages], [20, 20, 5])
         self.assertEqual([m['id'] for page in pages for m in page['messages']], [uid(11 + n) for n in range(45)])
+
+    def test_page_names_only_the_sources_that_need_attention(self):
+        well = {'well': described(uid(2), messages=[dict(mail(10), addressing='direct')])}
+        commands.execute(self.store, 'collect', sources=well)
+        self.assertEqual(self.run_command()['sources'], [])
+        store = Store(Path(self.temp.name) / 'health.sqlite3')
+        # A source that the inbox knows and that no pass has read.
+        commands.execute(store, 'init', sources={'unread': described(uid(2))})
+        commands.execute(store, 'collect', sources=well)
+        with fixed(Clock(1000)):
+            arrive(store, 'stale', uid(2))  # A pass long ago that went well.
+        arrive(store, 'behind', uid(2), complete=False)
+        arrive(store, 'failing', uid(2), error='http_503')
+        arrive(store, 'resting', uid(2))
+        commands.execute(store, 'pause', source='resting')
+        ailing = {'behind': ('ok', True), 'failing': ('error', False), 'resting': ('paused', False),
+                  'stale': ('stale', False), 'unread': ('unknown', False)}
+        for command, options in (('list', {}), ('wait', {'timeout': 0}), ('check', {'sources': well})):
+            with self.subTest(command=command):
+                page, code = commands.execute(store, command, **options)
+                self.assertEqual(code, 0, page)
+                self.assertEqual({source['source']: (source['status'], source['backlog_pending'])
+                                  for source in page['sources']}, ailing)
+        # status and collect name every source.
+        for command, options in (('status', {}), ('collect', {'sources': well})):
+            with self.subTest(command=command):
+                result, code = commands.execute(store, command, **options)
+                self.assertEqual({source['source'] for source in result['sources']}, {'well', *ailing})
 
     def test_interleaved_summaries_follow_first_arrival_and_share_the_page_checkpoint(self):
         arrive(self.store, 'moltbook', uid(2), [dict(mail(9), addressing='direct')])

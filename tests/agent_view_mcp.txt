@@ -3,12 +3,12 @@
 
 size:
   tools: 26
-  tool descriptions: 10314
+  tool descriptions: 10468
   input schemas: 9376
   output schema: 3459
   output schema, once for each tool: 89934
   server instructions: 1342
-  tool catalog as JSON: 114364
+  tool catalog as JSON: 114518
 
 server:
   name: boardmail
@@ -144,6 +144,8 @@ tool boardmail_list:
     tag and untagged=true are mutually exclusive local thread filters, applied before LIMIT.
     Start each new topic visit with after=0, unread=true and scope=all; preserve the delivery checkpoint.
     Read marks apply to a message in every tag.
+    check, list and wait name only sources that need attention: status not ok, or backlog_pending.
+    None named means none needs it; status lists every source.
   inputSchema:
     type: object
     properties:
