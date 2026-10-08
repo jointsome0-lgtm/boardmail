@@ -391,7 +391,7 @@ COMMANDS = {command.name: command for command in (
              '20 per page; follow its next route for more. Replied counts are local marks and do not resolve unknown.',
         arguments=(
             Argument('require_fresh', '--require-fresh', FLAG,
-                     text='Fail unless fresh: every source is ok or paused.'),
+                     text='Fail unless fresh: there is a source, and each is ok or paused.'),
             Argument('stale_after', '--stale-after SECONDS', {'type': 'integer', 'minimum': 0, 'maximum': 2**31-1},
                      text='Seconds after which a source is stale; default 540.')),
         hints=(READ_ONLY, IDEMPOTENT)),

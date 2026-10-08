@@ -4,9 +4,9 @@
 size:
   tools: 26
   tool descriptions: 10511
-  input schemas: 9586
+  input schemas: 9601
   server instructions: 1493
-  tool catalog as JSON: 24421
+  tool catalog as JSON: 24436
 
 server:
   name: boardmail
@@ -417,7 +417,7 @@ tool boardmail_status:
       require_fresh:
         type: boolean
         default: false
-        description: Fail unless fresh: every source is ok or paused.
+        description: Fail unless fresh: there is a source, and each is ok or paused.
       stale_after:
         type: integer
         minimum: 0

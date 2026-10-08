@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 18394
+  help text: 18409
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -242,7 +242,7 @@ boardmail status:
     Replied counts are local marks and do not resolve unknown.
   options:
     --require-fresh:
-      help: Fail unless fresh: every source is ok or paused.
+      help: Fail unless fresh: there is a source, and each is ok or paused.
       takes: no value
     --stale-after SECONDS:
       help: Seconds after which a source is stale; default 540.
