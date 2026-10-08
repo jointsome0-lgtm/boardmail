@@ -18,6 +18,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 import boardmail
+from boardmail import transport
 from examples import fixtures
 from examples.fixtures import FixtureClient, uid
 import kit
@@ -233,6 +234,8 @@ def cases(board):
 
 
 ABSENT, FOLDER = 'no file', 'a folder'
+# What a pass gives where no address of the board takes a connection, for a board that does not call it network_error.
+NO_ANSWER = {'clawdchat': 'budget_exhausted', 'fourclaw': 'fourclaw_network_error'}
 
 
 def keys():
@@ -270,9 +273,10 @@ class BoardRequestTests(unittest.TestCase):
         self.assertEqual(made.outcome, 0)
         return home, (home / 'inbox.sqlite3').read_bytes()
 
-    def collected(self, name, home, case, clock):
+    def collected(self, name, home, case, clock, addresses=None):
         """One pass over a board in the state that the case describes: (the requests with the seconds at which
-        they left, the exit code, the result)."""
+        they left, the exit code, the result). With addresses the host of the board has those, as kit.Network
+        takes them, and self.attempts has the address and the seconds of each connection attempt of the pass."""
         requests, strayed, board = [], [], case(name, BOARDS[name].healthy(), clock)
 
         def watched(request):
@@ -285,9 +289,10 @@ class BoardRequestTests(unittest.TestCase):
 
         clock.now = START
         network = kit.Network({BOARDS[name].host: board if isinstance(board, Exception) else watched,
-                               ELSEWHERE: elsewhere})
+                               ELSEWHERE: elsewhere}, addresses and {BOARDS[name].host: addresses}, clock)
         with network:
             pass_, = kit.told(lambda step: step('one pass', 'collect', 'collect'), home, 'cli')
+        self.attempts = [(number, seconds) for _, number, seconds in network.attempts]
         self.assertEqual(strayed, [], 'A request followed a redirect to another host')
         self.assertEqual(len(network.answers), len(requests))
         self.assertEqual([answer for answer in network.answers if not answer.isclosed()], [],
@@ -332,6 +337,58 @@ class BoardRequestTests(unittest.TestCase):
         with kit.fixed(clock):
             text = '\n'.join([INTRO, *(self.section(name, clock) for name in BOARDS)])
         kit.check_stored(self, 'board_requests.txt', text)
+
+    def test_an_address_that_takes_no_connection_costs_three_seconds_on_every_board(self):
+        """The host of a board has several addresses. One that takes no connection held a request for as long as
+        the socket of the board may stay silent. It has three seconds, and then the next address is tried."""
+        clock = kit.Clock(START)
+        healthy = every(lambda board, *answer: answer)
+
+        def gave(code, result):
+            source, = result['sources']
+            return code, result['added'], [error['error'] for error in result['errors']], source['status']
+
+        def one_pass(name, home, new, case, addresses=None):
+            (home / 'inbox.sqlite3').write_bytes(new)
+            requests, code, result = self.collected(name, home, case, clock, addresses)
+            return requests, gave(code, result)
+
+        with kit.fixed(clock):
+            for name in BOARDS:
+                with self.subTest(board=name):
+                    home, new = self.home(name)
+                    usual, well = one_pass(name, home, new, healthy)
+                    silent = [request.timeout for _, request in usual]
+
+                    # The first address never answers, and the second takes the connection at once.
+                    requests, outcome = one_pass(name, home, new, healthy, [None, 0])
+                    self.assertEqual(outcome, well)
+                    self.assertEqual(self.attempts, [(0, 3), (1, 3)] * len(usual))
+                    self.assertEqual(requests[0][0], 3, 'The first request leaves after three seconds')
+                    self.assertEqual([request.timeout for _, request in requests], silent,
+                                     'A socket that is reached may stay silent for as long as before')
+
+                    # The only address takes the connection after two seconds.
+                    requests, outcome = one_pass(name, home, new, healthy, [2])
+                    self.assertEqual(outcome, well)
+                    self.assertEqual((requests[0][0], self.attempts), (2, [(0, 3)] * len(usual)))
+
+                    # No address answers. The pass ends with the code that it had for this before. ClawdChat
+                    # has less time for the first answer than the two attempts take.
+                    requests, outcome = one_pass(name, home, new, healthy, [None, None])
+                    self.assertEqual((requests, outcome), ([], (1, 0, [NO_ANSWER.get(name, 'network_error')], 'error')))
+                    self.assertEqual(set(self.attempts), {(0, 3), (1, 3)}, 'Each attempt ends sooner than it did')
+
+    def test_a_connection_attempt_has_no_more_time_than_its_request(self):
+        clock = kit.Clock(START)
+        with kit.fixed(clock):
+            for name, board in BOARDS.items():
+                network = kit.Network({board.host: lambda request: (200, {})}, {board.host: [None, None]}, clock)
+                with self.subTest(board=name), network:
+                    with self.assertRaises(transport.FAILED) as failed:
+                        transport.fetch(name, f'https://{board.host}/', left=2)
+                    self.assertEqual(network.attempts, [(board.host, 0, 2), (board.host, 1, 2)])
+                    self.assertIn(transport.failure(name, failed.exception), ('network_error', 'fourclaw_network_error'))
 
 
 SENDERS = ('urllib.request', 'http.client', 'socket', 'ssl')

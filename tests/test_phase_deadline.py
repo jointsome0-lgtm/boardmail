@@ -181,6 +181,34 @@ class PhaseDeadlineTests(unittest.TestCase):
                 self.assertIsNone(batch.error, 'Twenty seconds of a phase of 45 are no failure')
                 self.assertTrue(batch.complete)
 
+    def test_request_at_the_end_of_a_phase_is_taken_past_an_address_that_does_not_answer(self):
+        cfg = settings(self.folder)['moltbook']
+        asked = []
+
+        def board(request):
+            path = request.path.removeprefix('/api/v1')
+            asked.append((path, self.clock.now - 1_790_000_000, request.timeout))
+            if path == '/agents/me':
+                return 200, {'agent': {'id': cfg['account_id']}}
+            if path == '/notifications':
+                return 200, {'notifications': [
+                    {'type': 'post_comment', 'relatedPostId': uid(600), 'relatedCommentId': uid(610)}], 'has_more': False}
+            if path.endswith('/comments'):
+                return 200, {'comments': [original(610, 600)], 'has_more': False}
+            # The thread comes after 38 seconds, so the request for its comments starts with 7 seconds of the
+            # phase left and has 10.
+            self.clock.advance(38)
+            return 200, {'post': {**original(600, 600), 'title': 'Synthetic root'}}
+
+        # The first address of the host takes no connection for that request. The second takes it after half a
+        # second. With ten seconds for the first address, the answer came half a second after the request's end.
+        addresses = {'www.moltbook.com': [lambda: None if len(asked) == 3 else 0, 0.5]}
+        with Network({'www.moltbook.com': board}, addresses, self.clock) as network:
+            batch = self.collect('moltbook', cfg)
+        self.assertEqual((batch.error, batch.complete, [item['id'] for item in batch.messages]), (None, True, [uid(610)]))
+        self.assertEqual(asked[3], ('/posts/' + uid(600) + '/comments', 41.5, 10))
+        self.assertEqual([(number, seconds) for _, number, seconds in network.attempts[3:]], [(0, 3), (1, 3)])
+
     def test_first_request_of_each_board_has_the_whole_phase(self):
         for source in ('postingboard', 'the-colony', 'moltbook'):
             cfg = settings(self.folder)[source]
