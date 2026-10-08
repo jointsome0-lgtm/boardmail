@@ -127,18 +127,18 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
--- the first answer comes half a second before its time budget of 45 s ends
+-- the first answer comes half a second before its time budget of 10 s ends
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 44.5 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 45.6 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 46.7 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 9.5 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 10.6 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 11.7 s]
     exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- the first answer comes when its time budget ends
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 45 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 46.1 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 47.2 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 10 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 11.1 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 12.2 s]
     exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- the first answer comes half a second after its time budget ends
@@ -151,10 +151,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 45.5 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 46.6 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 47.7 s]
-    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
@@ -395,19 +392,23 @@ A board that has a key file has cases for what the file holds. Its board is heal
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
--- the first answer comes half a second before its time budget of 45 s ends
+-- the first answer comes half a second before its time budget of 10 s ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
-    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 0.5 s, at 44.5 s]
-    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 44.5 s]
-    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 44.5 s]
-    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 44.5 s]
+    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 9.5 s]
+    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 9.5 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 9.5 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 9.5 s]
     exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
 
 -- the first answer comes when its time budget ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 10 s]
+    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 10 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 10 s]
+    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 10 s]
+    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
@@ -422,7 +423,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 -- the first answer is whole in time and ends half a second after its time budget ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
@@ -658,18 +659,18 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
--- the first answer comes half a second before its time budget of 45 s ends
+-- the first answer comes half a second before its time budget of 10 s ends
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 44.5 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 44.5 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 44.5 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 9.5 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 9.5 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 9.5 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
 
 -- the first answer comes when its time budget ends
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 45 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 45 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 45 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 10 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 10 s]
+    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 10 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
 
 -- the first answer comes half a second after its time budget ends
@@ -682,10 +683,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 45.5 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 45.5 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 45.5 s]
-    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]

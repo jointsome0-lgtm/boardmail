@@ -157,7 +157,7 @@ def notification_mail(client, known, batch, mention=None):
         try:
             resolve_original(client, entry, known, batch, mention)
         except FAILURES as exc:
-            if failure(batch, exc) == "http_429": break
+            if failure(batch, exc) in ("http_429", "budget_exhausted"): break
         if not entry["ids"]: del pending[key]
         elif entry.get("cursor"): batch.complete = False
     if len(pending) > MAX_PAGES: batch.complete = False
