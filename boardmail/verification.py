@@ -121,7 +121,7 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
         replies.check_source(db, source, settings)
     thread = uuid(shown['message']['thread_id'])
     mid = candidate(about, ref, thread)
-    if any(value not in (None, ref) for value in (attempt['reply_ref'], shown['message']['reply_ref'])):
+    if any(value not in (None, ref) for value in (attempt['reply_ref'], shown['message'].get('reply_ref'))):
         raise MailError('reply_reference_conflict')
     candidate_changed = False
     if attempt['state'] == 'unknown':

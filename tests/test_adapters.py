@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import cli
+from boardmail import cli, reader
 from boardmail.adapters import Batch
 from boardmail.boards import collect_all
 from boardmail.config import MailError
@@ -69,7 +69,7 @@ class AdapterTests(unittest.TestCase):
                          [('1', 1, 'unrecorded'), ('2', 1, 'unrecorded')])
         self.assertFalse(any('body' in entry or 'title' in entry for entry in entries))
         self.assertEqual(subprocess.run(loop, capture_output=True, text=True, timeout=10).stdout, '')
-        self.assertEqual(self.cli('--db', str(db), 'show', 'example', '1')[1]['message'], before)
+        self.assertEqual(self.cli('--db', str(db), 'show', 'example', '1')[1]['message'], reader.written(before))
         self.assertEqual(self.cli('--db', str(db), 'mark', 'unread', 'example', '1')[0], 0)
 
     def test_v1_read_then_additive_migration_preserves_arrivals_and_marks(self):

@@ -4,7 +4,7 @@ import errno
 from functools import wraps
 import sqlite3
 
-from . import adapter_common, boards, config, replies, table, tags, transport, verification
+from . import adapter_common, boards, config, reader, replies, table, tags, transport, verification
 from .config import MailError
 from .errors import exit_code, next_action
 
@@ -295,7 +295,7 @@ def remote_settings(store, source, sources, local):
 
 def element(status, message=None, *, origin=None, error=None, id=None):
     return {"id": message["id"] if message else id, "status": status, "origin": origin, "error": error,
-            "message": message, "current_message": None, "differs_from_saved": None}
+            "message": message and reader.written(message), "current_message": None, "differs_from_saved": None}
 
 
 class CachedClient:
@@ -370,7 +370,8 @@ def resolve(store, source, lookup, mid, root=None):
         found = element("available", stored, origin="local")
         if lookup is not None:
             found["remote_status"], found["error"] = remote[:2]
-            found["current_message"] = current = remote[2]
+            current = remote[2]
+            found["current_message"] = current and reader.written(current)
             if current is not None and (stored["id"], stored["thread_id"]) == (current["id"], current["thread_id"]):
                 # Reply titles are display labels, often inherited from the thread.
                 fields = ("title", "body") if stored["id"] == stored["thread_id"] else ("body",)
@@ -499,6 +500,6 @@ def previous_exchange(store, source, adapter, target, parent, relations):
             result["reason"] = "unsupported_source"
         else:
             result["reply_ref"] = ref
-            result["messages"] = store.replied_with(source, ref, exclude_id=target["id"])
+            result["messages"] = [reader.written(m) for m in store.replied_with(source, ref, exclude_id=target["id"])]
             result["status"] = "linked" if result["messages"] else "unmatched"
     return result

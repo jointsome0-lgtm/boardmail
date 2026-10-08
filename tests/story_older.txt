@@ -57,8 +57,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000a",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -70,9 +68,7 @@ exit code 0
       "needs_reply": true,
       "replied_at": 202,
       "reply_ref": "https://example.invalid/reply/old",
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -94,8 +90,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -103,13 +97,7 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -170,8 +158,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -179,13 +165,7 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -246,8 +226,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000a",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -259,9 +237,7 @@ exit code 0
       "needs_reply": true,
       "replied_at": 202,
       "reply_ref": "https://example.invalid/reply/old",
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -283,8 +259,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -292,13 +266,7 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -396,8 +364,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -405,13 +371,7 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply_attempt": null,
   "history_complete": false
@@ -435,8 +395,6 @@ exit code 1
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -444,13 +402,7 @@ exit code 1
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
-      "addressing": null,
-      "tags": []
+      "addressing": null
     },
     "current_message": null,
     "differs_from_saved": null
@@ -523,8 +475,6 @@ exit code 1
           "source": "moltbook",
           "id": "00000000-0000-0000-0000-00000000000a",
           "thread_id": "00000000-0000-0000-0000-000000000064",
-          "parent_id": null,
-          "provider_seq": null,
           "kind": "mention",
           "author": "example-agent",
           "title": "Legacy example",
@@ -536,9 +486,7 @@ exit code 1
           "needs_reply": true,
           "replied_at": 202,
           "reply_ref": "https://example.invalid/reply/old",
-          "discovery": null,
-          "addressing": null,
-          "tags": []
+          "addressing": null
         },
         "current_message": null,
         "differs_from_saved": null
@@ -568,8 +516,6 @@ exit code 1
           "source": "moltbook",
           "id": "00000000-0000-0000-0000-00000000000b",
           "thread_id": "00000000-0000-0000-0000-000000000064",
-          "parent_id": null,
-          "provider_seq": null,
           "kind": "mention",
           "author": "example-agent",
           "title": "Legacy example",
@@ -577,13 +523,7 @@ exit code 1
           "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
           "created_at": 111,
           "arrived_at": 200,
-          "read_at": null,
-          "needs_reply": false,
-          "replied_at": null,
-          "reply_ref": null,
-          "discovery": null,
-          "addressing": null,
-          "tags": []
+          "addressing": null
         },
         "current_message": null,
         "differs_from_saved": null
@@ -712,8 +652,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000a",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -725,9 +663,7 @@ exit code 0
       "needs_reply": true,
       "replied_at": 202,
       "reply_ref": "https://example.invalid/reply/old",
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -749,8 +685,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -758,13 +692,7 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -878,8 +806,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -887,13 +813,7 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply": null,
   "changed": false,
@@ -920,8 +840,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -929,13 +847,7 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply": {
     "source": "moltbook",
@@ -974,8 +886,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -983,13 +893,7 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply": {
     "source": "moltbook",
@@ -1028,8 +932,6 @@ exit code 1
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -1037,13 +939,7 @@ exit code 1
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply": {
     "source": "moltbook",
@@ -1105,8 +1001,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -1114,13 +1008,7 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply": {
     "source": "moltbook",
@@ -1173,8 +1061,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -1182,13 +1068,9 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
     "replied_at": 1800000720,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply": {
     "source": "moltbook",
@@ -1257,8 +1139,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-00000000000b",
     "thread_id": "00000000-0000-0000-0000-000000000064",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-agent",
     "title": "Legacy example",
@@ -1266,13 +1146,9 @@ exit code 0
     "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
     "created_at": 111,
     "arrived_at": 200,
-    "read_at": null,
-    "needs_reply": false,
     "replied_at": 1800000720,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply_attempt": {
     "state": "confirmed",
@@ -1404,8 +1280,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000a",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -1417,7 +1291,6 @@ exit code 0
       "needs_reply": true,
       "replied_at": 202,
       "reply_ref": "https://example.invalid/reply/old",
-      "discovery": null,
       "addressing": null,
       "tags": [
         "follow-up"
@@ -1443,8 +1316,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -1452,11 +1323,8 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
       "replied_at": 1800000720,
       "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
-      "discovery": null,
       "addressing": null,
       "tags": [
         "follow-up"
@@ -1544,8 +1412,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000a",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -1557,7 +1423,6 @@ exit code 0
       "needs_reply": true,
       "replied_at": 202,
       "reply_ref": "https://example.invalid/reply/old",
-      "discovery": null,
       "addressing": null,
       "tags": [
         "follow-up"
@@ -1569,8 +1434,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -1578,11 +1441,8 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
       "replied_at": 1800000720,
       "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
-      "discovery": null,
       "addressing": null,
       "tags": [
         "follow-up"
@@ -1914,8 +1774,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000a",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -1927,7 +1785,6 @@ exit code 0
       "needs_reply": true,
       "replied_at": 202,
       "reply_ref": "https://example.invalid/reply/old",
-      "discovery": null,
       "addressing": null,
       "tags": [
         "follow-up"
@@ -1939,8 +1796,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000b",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-agent",
       "title": "Legacy example",
@@ -1948,11 +1803,8 @@ exit code 0
       "url": "https://example.invalid/posts/00000000-0000-0000-0000-00000000000b",
       "created_at": 111,
       "arrived_at": 200,
-      "read_at": null,
-      "needs_reply": false,
       "replied_at": 1800000720,
       "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
-      "discovery": null,
       "addressing": null,
       "tags": [
         "follow-up"
@@ -1964,8 +1816,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000000c",
       "thread_id": "00000000-0000-0000-0000-000000000064",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "reply_to_post",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -1973,11 +1823,6 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-00000000000c",
       "created_at": 1767276000,
       "arrived_at": 1800000780,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": "direct",
       "tags": [
         "follow-up"

@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from urllib.error import URLError
 
-from boardmail import cli, commands
+from boardmail import cli, commands, reader
 from boardmail.config import MailError
 from boardmail.boards import BOARDS
 from boardmail import adapter_postingboard as postingboard
@@ -297,7 +297,7 @@ class ExpandReuseTests(unittest.TestCase):
                 self.assertEqual([item['id'] for item in result['items']], [uid(12), uid(13)])
                 self.assertEqual((code, result['complete']), (0, True) if mode == 'current' else (1, False))
                 for item in result['items']:
-                    self.assertEqual(item['target']['message'], saved[item['id']])
+                    self.assertEqual(item['target']['message'], reader.written(saved[item['id']]))
                     self.assertEqual(item['complete'], mode == 'current')
                 self.assertEqual(result['items'][0]['parent'], {'id': uid(100), 'status': 'same_as_root'})
                 if mode == 'current':

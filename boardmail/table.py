@@ -372,6 +372,9 @@ COMMANDS = {command.name: command for command in (
         'list',
         summary='Read a page of saved messages',
         epilog=ARRIVALS_EPILOG.format('list') + (
+            '\n\nA message has parent_id, provider_seq, read_at, needs_reply, replied_at,\n'
+            'reply_ref, discovery and tags only where they hold something, and an excerpt\n'
+            'has truncated only where it was cut. Absent means none, not unknown.\n'
             '\nWith --unread, --source, --thread, --through, --tag or --untagged, checkpoint_safe is false.\n'
             'Keep your delivery checkpoint; paginate this view with the same filters and its next_after.\n'
             'Start each new topic visit at 0, so late tags include older unread messages:\n'
@@ -387,7 +390,10 @@ COMMANDS = {command.name: command for command in (
              'Start each new topic visit with after=0, unread=true and scope=all; preserve the delivery checkpoint. '
              'Read marks apply to a message in every tag. check, list and wait name only sources that need '
              'attention: status not ok, or backlog_pending. None named means none needs it; status lists every source. '
-             "A brief is a short local excerpt; context with a message's source and id gives its full context.",
+             "A brief is a short local excerpt; context with a message's source and id gives its full context. "
+             'A message has parent_id, provider_seq, read_at, needs_reply, replied_at, reply_ref, discovery and tags '
+             'only where they hold something, and an excerpt has truncated only where it was cut: absent means none, '
+             'not unknown.',
         arguments=(
             *ARRIVALS,
             Argument('unread', '--unread', FLAG, help='Only messages without a local read mark'),

@@ -157,6 +157,62 @@ class ReadingTests(unittest.TestCase):
                 result, code = commands.execute(store, command, **options)
                 self.assertEqual({source['source'] for source in result['sources']}, {'well', *ailing})
 
+    def test_message_in_a_result_has_a_field_only_where_it_holds_something(self):
+        eight = ('parent_id', 'provider_seq', 'read_at', 'needs_reply', 'replied_at', 'reply_ref', 'discovery', 'tags')
+        ref = 'https://board.example.invalid/posts/' + uid(91)
+        # The first message holds each of the eight fields and the second holds none. The third answers the first.
+        arrive(self.store, 'moltbook', uid(2), [
+            dict(mail(10), parent_id=uid(90), provider_seq=7, discovery='subscription', addressing='direct'),
+            dict(mail(200), thread_id=uid(200), addressing='direct'),
+            dict(mail(14), parent_id=uid(10), addressing='direct')])
+        with fixed(Clock(1000)):
+            for action in ('read', 'needs_reply'):
+                mark(self.store, 'moltbook', uid(10), action)
+            mark(self.store, 'moltbook', uid(10), 'replied', ref=ref)
+        self.run_command('tag_add', tag='kept', source='moltbook', thread=uid(100))
+        holds = {uid(10): {'parent_id': uid(90), 'provider_seq': 7, 'read_at': 1000, 'needs_reply': True,
+                           'replied_at': 1000, 'reply_ref': ref, 'discovery': 'subscription', 'tags': ['kept']},
+                 uid(200): {}, uid(14): {'parent_id': uid(10), 'tags': ['kept']}}
+
+        def held(*carried):
+            """What each of these messages of a result has of the eight fields."""
+            return {message['id']: {field: message[field] for field in eight if field in message}
+                    for message in carried}
+
+        def of(*ids):
+            return {mid: holds[mid] for mid in ids}
+
+        pages = (('list', {}), ('list', {'scope': 'all', 'context': 'none'}), ('wait', {'timeout': 0}),
+                 ('check', {'sources': {'moltbook': described(uid(2))}}))
+        for command, options in pages:
+            with self.subTest(command=command, options=sorted(options)):
+                self.assertEqual(held(*self.run_command(command, **options)['messages']), holds)
+        for mid in holds:
+            for command in ('show', 'reply_show'):
+                with self.subTest(command=command, id=mid):
+                    self.assertEqual(held(self.run_command(command, source='moltbook', id=mid)['message']), of(mid))
+        # Each of these marks is one that the message has already, so the message is as it was.
+        self.assertEqual(held(mark(self.store, 'moltbook', uid(10), 'needs_reply')['message']), of(uid(10)))
+        self.assertEqual(held(mark(self.store, 'moltbook', uid(200), 'clear_reply')['message']), of(uid(200)))
+        prepared = self.run_command('reply_prepare', source='moltbook', id=uid(200), body='An invented answer.')
+        self.assertEqual(held(prepared['message']), of(uid(200)))
+
+        def context(mid):
+            return commands.execute(self.store, 'context', source='moltbook', id=mid, local=True)[0]
+
+        answer, root = context(uid(14)), context(uid(200))
+        self.assertEqual(held(answer['target']['message'], answer['parent']['message']), of(uid(14), uid(10)))
+        self.assertEqual(held(root['target']['message'], root['root']['message']), of(uid(200)))
+        for thread, ids in ((uid(100), (uid(10), uid(14))), (uid(200), (uid(200),))):
+            expanded = commands.execute(self.store, 'expand', source='moltbook', thread=thread, through=3, local=True)[0]
+            self.assertEqual(held(*(item['target']['message'] for item in expanded['items'])), of(*ids))
+        self.assertEqual(held(expanded['root']['message']), of(uid(200)))
+        # What a page and a thread summary have of their own stays, also where it holds nothing.
+        arrive(self.store, 'moltbook', uid(2), [dict(mail(15), thread_id=uid(300), addressing='thread')])
+        page = self.run_command(after=3)
+        self.assertEqual((page['messages'], page['more'], page['sources']), ([], False, []))
+        self.assertEqual((page['thread_activity'][0]['tags'], page['thread_activity'][0]['unread']), ([], 1))
+
     def test_interleaved_summaries_follow_first_arrival_and_share_the_page_checkpoint(self):
         arrive(self.store, 'moltbook', uid(2), [dict(mail(9), addressing='direct')])
         arrive(self.store, 'moltbook', uid(2), [dict(mail(10, created=900), addressing='thread')])
@@ -245,10 +301,9 @@ class ReadingTests(unittest.TestCase):
         message, = self.run_command()['messages']
         self.assertEqual(message['brief']['root'], {
             'id': uid(100), 'status': 'cached', 'author': 'example-agent', 'title': 'Another title',
-            'body': 'the root', 'truncated': False})
+            'body': 'the root'})
         self.assertEqual(message['brief']['parent'], {
-            'id': uid(90), 'status': 'cached', 'author': 'example-agent', 'body': 'our public parent',
-            'truncated': False})
+            'id': uid(90), 'status': 'cached', 'author': 'example-agent', 'body': 'our public parent'})
         self.assertEqual(message['brief']['previous_exchange'], {'status': 'unknown', 'messages': []})
         self.assertEqual(set(message['brief']), {'root', 'parent', 'previous_exchange'})
 
@@ -271,7 +326,7 @@ class ReadingTests(unittest.TestCase):
         self.assertTrue(brief['previous_exchange']['more'])
         # An earlier message of the exchange is under the same post, and has its title.
         self.assertEqual([set(earlier) for earlier in brief['previous_exchange']['messages']],
-                         [{'id', 'author', 'body', 'truncated'}] * 2)
+                         [{'id', 'author', 'body'}] * 2)
         self.assertEqual(set(brief), {'root', 'parent', 'previous_exchange'})
         self.assertEqual(set(brief['previous_exchange']), {'status', 'messages', 'more'})
 

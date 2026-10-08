@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import boards, cli, commands, config
+from boardmail import boards, cli, commands, config, reader
 from boardmail.config import MailError
 from boardmail.store import Store
 from boardmail import adapter_postingboard as postingboard
@@ -407,9 +407,10 @@ class ContextTests(unittest.TestCase):
                 result, code = self.context(uid(610), self.cfg)
                 self.assertEqual((code, result['complete']), (0, True))
                 self.assertEqual(result['target'], result['root'])
-                self.assertEqual(result['target']['message'], snapshot)
+                self.assertEqual(result['target']['message'], reader.written(snapshot))
                 self.assertEqual(result['target']['current_message']['body'], body)
                 self.assertEqual(result['target']['current_message']['source'], 'postingboard')
+                self.assertNotIn('parent_id', result['target']['current_message'])  # A root answers nothing.
                 self.assertIs(result['target']['differs_from_saved'], differs)
                 self.assertIsNone(result['parent']['current_message'])
                 self.assertIsNone(result['parent']['differs_from_saved'])
@@ -478,7 +479,7 @@ class ContextTests(unittest.TestCase):
             self.fixture.get = failing_target
             result, code = self.context(uid(602), self.cfg)
             self.assertEqual((code, result['target']['status'], result['target']['remote_status']), (0, 'available', expected))
-            self.assertEqual(result['target']['message'], snapshot)
+            self.assertEqual(result['target']['message'], reader.written(snapshot))
             self.assertIsNone(result['target']['current_message'])
             self.assertIsNone(result['target']['differs_from_saved'])
             self.assertEqual(self.path.read_bytes(), before)

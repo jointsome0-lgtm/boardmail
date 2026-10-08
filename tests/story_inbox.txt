@@ -245,8 +245,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000d3",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "reply_to_post",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -254,21 +252,14 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
       "created_at": 1767269100,
       "arrived_at": 1800000000,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": "direct",
-      "tags": [],
       "shown_because": "direct_reply_to_your_message",
       "brief": {
         "root": {
           "id": "00000000-0000-0000-0000-0000000000c9",
           "status": "cached",
           "author": "sample-agent",
-          "body": "An invented post of ours.",
-          "truncated": false
+          "body": "An invented post of ours."
         },
         "parent": {
           "id": null,
@@ -285,8 +276,6 @@ exit code 0
       "source": "example",
       "id": "1",
       "thread_id": "42",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-writer",
       "title": "Example thread",
@@ -294,13 +283,7 @@ exit code 0
       "url": "https://example.invalid/item/1",
       "created_at": 100,
       "arrived_at": 1800000000,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -360,8 +343,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -369,13 +350,7 @@ exit code 0
     "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
     "created_at": 1767269100,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": null,
   "history_complete": false
@@ -399,8 +374,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000d3",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "reply_to_post",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -408,19 +381,12 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
       "created_at": 1767269100,
       "arrived_at": 1800000000,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
-      "addressing": "direct",
-      "tags": []
+      "addressing": "direct"
     },
     "current_message": {
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000d3",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
       "author": "sample-writer",
       "title": "Example discussion",
       "body": "An invented reply to the post.",
@@ -439,7 +405,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000c9",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
       "author": "sample-agent",
       "title": "Example discussion",
       "body": "An invented post of ours.",
@@ -459,7 +424,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000c9",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
       "author": "sample-agent",
       "title": "Example discussion",
       "body": "An invented post of ours.",
@@ -498,8 +462,6 @@ exit code 1
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000d3",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "reply_to_post",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -507,13 +469,7 @@ exit code 1
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d3",
       "created_at": 1767269100,
       "arrived_at": 1800000000,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
-      "addressing": "direct",
-      "tags": []
+      "addressing": "direct"
     },
     "current_message": null,
     "differs_from_saved": null
@@ -577,8 +533,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -587,12 +541,7 @@ exit code 0
     "created_at": 1767269100,
     "arrived_at": 1800000000,
     "read_at": 1800000000,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": null,
   "history_complete": false
@@ -608,8 +557,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -619,11 +566,7 @@ exit code 0
     "arrived_at": 1800000000,
     "read_at": 1800000000,
     "needs_reply": true,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": null,
   "history_complete": false
@@ -649,8 +592,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -662,9 +603,7 @@ exit code 0
     "needs_reply": true,
     "replied_at": 1800000000,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": null,
   "history_complete": false
@@ -680,8 +619,6 @@ exit code 0
     "source": "moltbook",
     "id": "00000000-0000-0000-0000-0000000000d3",
     "thread_id": "00000000-0000-0000-0000-0000000000c9",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "reply_to_post",
     "author": "sample-writer",
     "title": "Example discussion",
@@ -690,12 +627,9 @@ exit code 0
     "created_at": 1767269100,
     "arrived_at": 1800000000,
     "read_at": 1800000000,
-    "needs_reply": false,
     "replied_at": 1800000000,
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-    "discovery": null,
-    "addressing": "direct",
-    "tags": []
+    "addressing": "direct"
   },
   "reply_attempt": null,
   "history_complete": false
@@ -711,8 +645,6 @@ exit code 0
     "source": "example",
     "id": "1",
     "thread_id": "42",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-writer",
     "title": "Example thread",
@@ -721,12 +653,7 @@ exit code 0
     "created_at": 100,
     "arrived_at": 1800000000,
     "read_at": 1800000000,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply_attempt": null,
   "history_complete": false
@@ -742,8 +669,6 @@ exit code 0
     "source": "example",
     "id": "1",
     "thread_id": "42",
-    "parent_id": null,
-    "provider_seq": null,
     "kind": "mention",
     "author": "example-writer",
     "title": "Example thread",
@@ -751,13 +676,7 @@ exit code 0
     "url": "https://example.invalid/item/1",
     "created_at": 100,
     "arrived_at": 1800000000,
-    "read_at": null,
-    "needs_reply": false,
-    "replied_at": null,
-    "reply_ref": null,
-    "discovery": null,
-    "addressing": null,
-    "tags": []
+    "addressing": null
   },
   "reply_attempt": null,
   "history_complete": false
@@ -981,8 +900,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000d3",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "reply_to_post",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -991,10 +908,8 @@ exit code 0
       "created_at": 1767269100,
       "arrived_at": 1800000000,
       "read_at": 1800000000,
-      "needs_reply": false,
       "replied_at": 1800000000,
       "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-      "discovery": null,
       "addressing": "direct",
       "tags": [
         "follow-up"
@@ -1005,8 +920,7 @@ exit code 0
           "id": "00000000-0000-0000-0000-0000000000c9",
           "status": "cached",
           "author": "sample-agent",
-          "body": "An invented post of ours.",
-          "truncated": false
+          "body": "An invented post of ours."
         },
         "parent": {
           "id": null,
@@ -1077,8 +991,6 @@ exit code 0
       "source": "example",
       "id": "1",
       "thread_id": "42",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "example-writer",
       "title": "Example thread",
@@ -1086,13 +998,7 @@ exit code 0
       "url": "https://example.invalid/item/1",
       "created_at": 100,
       "arrived_at": 1800000000,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -1219,7 +1125,6 @@ exit code 0
       "id": "00000000-0000-0000-0000-0000000000d4",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
       "parent_id": "00000000-0000-0000-0000-0000000000dd",
-      "provider_seq": null,
       "kind": "reply_to_comment",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -1227,11 +1132,6 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
       "created_at": 1767270000,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": "direct",
       "tags": [
         "follow-up"
@@ -1242,15 +1142,13 @@ exit code 0
           "id": "00000000-0000-0000-0000-0000000000c9",
           "status": "cached",
           "author": "sample-agent",
-          "body": "An invented post of ours.",
-          "truncated": false
+          "body": "An invented post of ours."
         },
         "parent": {
           "id": "00000000-0000-0000-0000-0000000000dd",
           "status": "cached",
           "author": "sample-agent",
-          "body": "An invented answer of ours.",
-          "truncated": false
+          "body": "An invented answer of ours."
         },
         "previous_exchange": {
           "status": "linked",
@@ -1258,8 +1156,7 @@ exit code 0
             {
               "id": "00000000-0000-0000-0000-0000000000d3",
               "author": "sample-writer",
-              "body": "An invented reply to the post.",
-              "truncated": false
+              "body": "An invented reply to the post."
             }
           ],
           "more": false
@@ -1272,7 +1169,6 @@ exit code 0
       "id": "00000000-0000-0000-0000-000000000138",
       "thread_id": "00000000-0000-0000-0000-00000000012d",
       "parent_id": "00000000-0000-0000-0000-000000000137",
-      "provider_seq": null,
       "kind": "thread_activity",
       "author": "sample-writer",
       "title": "Another discussion",
@@ -1280,28 +1176,21 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000138",
       "created_at": 1767273000,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
       "discovery": "subscription",
       "addressing": "mention",
-      "tags": [],
       "shown_because": "mention_detected_may_be_quoted",
       "brief": {
         "root": {
           "id": "00000000-0000-0000-0000-00000000012d",
           "status": "cached",
           "author": "sample-writer",
-          "body": "An invented post of theirs.",
-          "truncated": false
+          "body": "An invented post of theirs."
         },
         "parent": {
           "id": "00000000-0000-0000-0000-000000000137",
           "status": "stored",
           "author": "another-writer",
-          "body": "An invented comment for nobody in particular.",
-          "truncated": false
+          "body": "An invented comment for nobody in particular."
         },
         "previous_exchange": {
           "status": "unmatched",
@@ -1315,8 +1204,6 @@ exit code 0
       "source": "example",
       "id": "2",
       "thread_id": "42",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "another-writer",
       "title": "Example thread",
@@ -1324,13 +1211,7 @@ exit code 0
       "url": "https://example.invalid/item/2",
       "created_at": 101,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -1412,7 +1293,6 @@ exit code 0
       "id": "00000000-0000-0000-0000-0000000000d4",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
       "parent_id": "00000000-0000-0000-0000-0000000000dd",
-      "provider_seq": null,
       "kind": "reply_to_comment",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -1420,11 +1300,6 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
       "created_at": 1767270000,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": "direct",
       "tags": [
         "follow-up"
@@ -1435,15 +1310,13 @@ exit code 0
           "id": "00000000-0000-0000-0000-0000000000c9",
           "status": "cached",
           "author": "sample-agent",
-          "body": "An invented post of ours.",
-          "truncated": false
+          "body": "An invented post of ours."
         },
         "parent": {
           "id": "00000000-0000-0000-0000-0000000000dd",
           "status": "cached",
           "author": "sample-agent",
-          "body": "An invented answer of ours.",
-          "truncated": false
+          "body": "An invented answer of ours."
         },
         "previous_exchange": {
           "status": "linked",
@@ -1451,8 +1324,7 @@ exit code 0
             {
               "id": "00000000-0000-0000-0000-0000000000d3",
               "author": "sample-writer",
-              "body": "An invented reply to the post.",
-              "truncated": false
+              "body": "An invented reply to the post."
             }
           ],
           "more": false
@@ -1465,7 +1337,6 @@ exit code 0
       "id": "00000000-0000-0000-0000-000000000138",
       "thread_id": "00000000-0000-0000-0000-00000000012d",
       "parent_id": "00000000-0000-0000-0000-000000000137",
-      "provider_seq": null,
       "kind": "thread_activity",
       "author": "sample-writer",
       "title": "Another discussion",
@@ -1473,28 +1344,21 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000138",
       "created_at": 1767273000,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
       "discovery": "subscription",
       "addressing": "mention",
-      "tags": [],
       "shown_because": "mention_detected_may_be_quoted",
       "brief": {
         "root": {
           "id": "00000000-0000-0000-0000-00000000012d",
           "status": "cached",
           "author": "sample-writer",
-          "body": "An invented post of theirs.",
-          "truncated": false
+          "body": "An invented post of theirs."
         },
         "parent": {
           "id": "00000000-0000-0000-0000-000000000137",
           "status": "stored",
           "author": "another-writer",
-          "body": "An invented comment for nobody in particular.",
-          "truncated": false
+          "body": "An invented comment for nobody in particular."
         },
         "previous_exchange": {
           "status": "unmatched",
@@ -1508,8 +1372,6 @@ exit code 0
       "source": "example",
       "id": "2",
       "thread_id": "42",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "another-writer",
       "title": "Example thread",
@@ -1517,13 +1379,7 @@ exit code 0
       "url": "https://example.invalid/item/2",
       "created_at": 101,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default",
       "brief": {
         "root": {
@@ -1635,7 +1491,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-0000000000c9",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
-      "parent_id": null,
       "author": "sample-agent",
       "title": "Example discussion",
       "body": "An invented post of ours.",
@@ -1660,8 +1515,6 @@ exit code 0
           "source": "moltbook",
           "id": "00000000-0000-0000-0000-0000000000d3",
           "thread_id": "00000000-0000-0000-0000-0000000000c9",
-          "parent_id": null,
-          "provider_seq": null,
           "kind": "reply_to_post",
           "author": "sample-writer",
           "title": "Example discussion",
@@ -1670,10 +1523,8 @@ exit code 0
           "created_at": 1767269100,
           "arrived_at": 1800000000,
           "read_at": 1800000000,
-          "needs_reply": false,
           "replied_at": 1800000000,
           "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-          "discovery": null,
           "addressing": "direct",
           "tags": [
             "follow-up"
@@ -1683,7 +1534,6 @@ exit code 0
           "source": "moltbook",
           "id": "00000000-0000-0000-0000-0000000000d3",
           "thread_id": "00000000-0000-0000-0000-0000000000c9",
-          "parent_id": null,
           "author": "sample-writer",
           "title": "Example discussion",
           "body": "An invented reply to the post.",
@@ -1719,7 +1569,6 @@ exit code 0
           "id": "00000000-0000-0000-0000-0000000000d4",
           "thread_id": "00000000-0000-0000-0000-0000000000c9",
           "parent_id": "00000000-0000-0000-0000-0000000000dd",
-          "provider_seq": null,
           "kind": "reply_to_comment",
           "author": "sample-writer",
           "title": "Example discussion",
@@ -1727,11 +1576,6 @@ exit code 0
           "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
           "created_at": 1767270000,
           "arrived_at": 1800000600,
-          "read_at": null,
-          "needs_reply": false,
-          "replied_at": null,
-          "reply_ref": null,
-          "discovery": null,
           "addressing": "direct",
           "tags": [
             "follow-up"
@@ -1781,8 +1625,6 @@ exit code 0
             "source": "moltbook",
             "id": "00000000-0000-0000-0000-0000000000d3",
             "thread_id": "00000000-0000-0000-0000-0000000000c9",
-            "parent_id": null,
-            "provider_seq": null,
             "kind": "reply_to_post",
             "author": "sample-writer",
             "title": "Example discussion",
@@ -1791,10 +1633,8 @@ exit code 0
             "created_at": 1767269100,
             "arrived_at": 1800000000,
             "read_at": 1800000000,
-            "needs_reply": false,
             "replied_at": 1800000000,
             "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000dd",
-            "discovery": null,
             "addressing": "direct",
             "tags": [
               "follow-up"
@@ -1829,8 +1669,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-000000000137",
       "thread_id": "00000000-0000-0000-0000-00000000012d",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "thread_activity",
       "author": "another-writer",
       "title": "Another discussion",
@@ -1838,13 +1676,8 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
       "created_at": 1767272700,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
       "discovery": "subscription",
       "addressing": "thread",
-      "tags": [],
       "shown_because": "thread_activity_without_confirmed_direct_reply_or_mention"
     }
   ],
@@ -1889,7 +1722,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-00000000012d",
       "thread_id": "00000000-0000-0000-0000-00000000012d",
-      "parent_id": null,
       "author": "sample-writer",
       "title": "Another discussion",
       "body": "An invented post of theirs.",
@@ -1914,8 +1746,6 @@ exit code 0
           "source": "moltbook",
           "id": "00000000-0000-0000-0000-000000000137",
           "thread_id": "00000000-0000-0000-0000-00000000012d",
-          "parent_id": null,
-          "provider_seq": null,
           "kind": "thread_activity",
           "author": "another-writer",
           "title": "Another discussion",
@@ -1923,19 +1753,13 @@ exit code 0
           "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
           "created_at": 1767272700,
           "arrived_at": 1800000600,
-          "read_at": null,
-          "needs_reply": false,
-          "replied_at": null,
-          "reply_ref": null,
           "discovery": "subscription",
-          "addressing": "thread",
-          "tags": []
+          "addressing": "thread"
         },
         "current_message": {
           "source": "moltbook",
           "id": "00000000-0000-0000-0000-000000000137",
           "thread_id": "00000000-0000-0000-0000-00000000012d",
-          "parent_id": null,
           "author": "another-writer",
           "title": "Another discussion",
           "body": "An invented comment for nobody in particular.",
@@ -1996,7 +1820,6 @@ exit code 0
       "id": "00000000-0000-0000-0000-0000000000d4",
       "thread_id": "00000000-0000-0000-0000-0000000000c9",
       "parent_id": "00000000-0000-0000-0000-0000000000dd",
-      "provider_seq": null,
       "kind": "reply_to_comment",
       "author": "sample-writer",
       "title": "Example discussion",
@@ -2004,11 +1827,6 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-0000000000c9#comment-00000000-0000-0000-0000-0000000000d4",
       "created_at": 1767270000,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": "direct",
       "tags": [
         "follow-up"
@@ -2020,8 +1838,6 @@ exit code 0
       "source": "moltbook",
       "id": "00000000-0000-0000-0000-000000000137",
       "thread_id": "00000000-0000-0000-0000-00000000012d",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "thread_activity",
       "author": "another-writer",
       "title": "Another discussion",
@@ -2029,13 +1845,8 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000137",
       "created_at": 1767272700,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
       "discovery": "subscription",
       "addressing": "thread",
-      "tags": [],
       "shown_because": "thread_activity_without_confirmed_direct_reply_or_mention"
     },
     {
@@ -2044,7 +1855,6 @@ exit code 0
       "id": "00000000-0000-0000-0000-000000000138",
       "thread_id": "00000000-0000-0000-0000-00000000012d",
       "parent_id": "00000000-0000-0000-0000-000000000137",
-      "provider_seq": null,
       "kind": "thread_activity",
       "author": "sample-writer",
       "title": "Another discussion",
@@ -2052,13 +1862,8 @@ exit code 0
       "url": "https://www.moltbook.com/post/00000000-0000-0000-0000-00000000012d#comment-00000000-0000-0000-0000-000000000138",
       "created_at": 1767273000,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
       "discovery": "subscription",
       "addressing": "mention",
-      "tags": [],
       "shown_because": "mention_detected_may_be_quoted"
     },
     {
@@ -2066,8 +1871,6 @@ exit code 0
       "source": "example",
       "id": "2",
       "thread_id": "42",
-      "parent_id": null,
-      "provider_seq": null,
       "kind": "mention",
       "author": "another-writer",
       "title": "Example thread",
@@ -2075,13 +1878,7 @@ exit code 0
       "url": "https://example.invalid/item/2",
       "created_at": 101,
       "arrived_at": 1800000600,
-      "read_at": null,
-      "needs_reply": false,
-      "replied_at": null,
-      "reply_ref": null,
-      "discovery": null,
       "addressing": null,
-      "tags": [],
       "shown_because": "recipient_unconfirmed_shown_by_default"
     }
   ],
