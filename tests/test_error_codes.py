@@ -150,7 +150,7 @@ class ErrorCodeTests(unittest.TestCase):
         # What a failure is called is asked without the board, and the row of a board says nothing of it: it
         # holds what the board is asked for, and how large and how slow its answer may be.
         self.assertEqual(list(inspect.signature(transport.failure).parameters), ['exc'])
-        self.assertEqual(transport.Board._fields, ('accept', 'protocol', 'kind', 'cap', 'silence', 'budget'))
+        self.assertEqual(transport.Board._fields, ('accept', 'protocol', 'cap', 'silence'))
         for exc, code in ((errors.MailError('source_timeout'), 'source_timeout'), (status(418), 'http_418'),
                           (ConnectionRefusedError(), 'network_error'), (TimeoutError(), 'network_error'),
                           (HTTPException(), 'network_error'), (ValueError(), 'invalid_response'),

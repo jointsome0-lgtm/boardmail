@@ -96,10 +96,9 @@ class Board:
     to fetch. It raises ValueError for ids that are not the board's, and is None for a board that has no such
     identity.
 
-    The last three are how its threads are read. rooted: a reply that names no parent answers the root of its
+    The last two are how its threads are read. rooted: a reply that names no parent answers the root of its
     thread. parents_since_discovery: a row with no discovery was stored before the reply targets of the board
-    were kept, so only a fetched original says what it answers. parent_is_membership: a parent_id that an inbox
-    holds for the board was made from thread membership and is no reply target, so a local read does not use it.
+    were kept, so only a fetched original says what it answers.
     """
     name: str
     coverage: str
@@ -115,7 +114,6 @@ class Board:
     reference: Callable | None = None
     rooted: bool = True
     parents_since_discovery: bool = False
-    parent_is_membership: bool = False
 
 
 def validate(batch):

@@ -15,9 +15,9 @@ from boardmail.config import MailError
 from boardmail.boards import BOARDS
 from boardmail import adapter_postingboard as postingboard
 from examples.fixtures import FakeBoard, FixtureBoard, named, original, settings, uid
-from kit import Clock, Network, edge, fixed, mark, new_inbox
+from kit import Clock, Network, arrive, described, edge, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file as clawd_key_file, original as clawd_original
-from test_fourclaw import THREAD, page, threads
+from test_mail import mail
 
 
 class ExpandTests(unittest.TestCase):
@@ -161,11 +161,10 @@ class ExpandTests(unittest.TestCase):
         self.assertEqual(len(self.fixture.calls), 5)
 
     def test_local_paused_unconfigured_and_unsupported_reads_never_build_a_client(self):
-        # On 4claw the opening post of a thread of another account names this account, and is its mail.
-        fourclaw = {'fourclaw': {'adapter': 'fourclaw', 'account_id': 'demo', 'watched_threads': [THREAD]}}
-        result, code = commands.execute(self.store, 'collect', sources=fourclaw,
-                                        fetch=threads({THREAD: page(opening='@demo an opening.')}))
-        self.assertEqual((code, result['added']), (0, 1), result)
+        # A source of an adapter file has no lookup on a board. Its mail here is the opening post of a thread.
+        filed = {'filed': described('demo')}
+        result = arrive(self.store, 'filed', 'demo', [{**mail(700), 'thread_id': uid(700)}])
+        self.assertEqual(result['added'], 1, result)
         board = FakeBoard([])  # It has no answer, and it is asked nothing.
         cases = [('local', dict(local=True)), ('unconfigured', dict(sources=None)), ('other source', dict(sources={'moltbook': settings()['moltbook']}))]
         for name, args in cases:
@@ -181,8 +180,8 @@ class ExpandTests(unittest.TestCase):
         result, code = self.expand(board=board)
         self.assertEqual((code, result['fetched'], result['items'][3]['complete']), (1, False, True))
         commands.execute(self.store, 'resume', source='postingboard')
-        result, code = commands.execute(self.store, 'expand', source='fourclaw', thread=THREAD, through=10,
-                                        sources=fourclaw, fetch=board)
+        result, code = commands.execute(self.store, 'expand', source='filed', thread=uid(700), through=10,
+                                        sources=filed, fetch=board)
         self.assertEqual((code, result['fetched'], result['complete'], result['items'][0]['target']['origin']), (0, False, True, 'local'))
         self.assertEqual(board.asked, [])
 

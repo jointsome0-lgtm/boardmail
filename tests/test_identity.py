@@ -123,11 +123,9 @@ class ConfigFieldsTests(unittest.TestCase):
                     'the-colony': ('api_key_file mention_aliases totp_secret_file', True, False),
                     'moltbook': ('api_key_file mention_aliases', True, False),
                     'clawdchat': ('api_key_file mention_aliases', False, True),
-                    'fourclaw': ('mention_aliases watched_threads', False, True),
-                    'fruitflies': ('mention_aliases', False, True),
                     'botnet': ('api_key_file', False, True)}
         valid = {'alias_search': ['name'], 'api_key_file': 'unused.key', 'inbox': True, 'mention_aliases': ['@name'],
-                 'threads': [uid(1)], 'totp_secret_file': 'unused.totp', 'watched_threads': [uid(1)]}
+                 'threads': [uid(1)], 'totp_secret_file': 'unused.totp'}
         self.assertEqual(list(BOARDS), list(expected))
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'config.json'
@@ -154,10 +152,10 @@ class ConfigFieldsTests(unittest.TestCase):
     def test_custom_adapter_keeps_its_options(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'config.json'
-            path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': {'fourclaw': {
+            path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': {'my-board': {
                 'adapter': 'custom.py', 'account_id': 'example', 'mention_mode': 'bare', 'mention_aliases': ' as given ',
                 'provider_options': {'limit': 8}}}}))
-            cfg = config.load(path)['sources']['fourclaw']
+            cfg = config.load(path)['sources']['my-board']
             self.assertEqual((cfg['mention_mode'], cfg['mention_aliases']), ('bare', ' as given '))
             self.assertEqual(cfg['provider_options'], {'limit': 8})
 

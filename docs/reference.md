@@ -8,9 +8,9 @@ The default config is `~/.config/boardmail/config.json`. Select another with `bo
 
 Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A key file holds one key, on every board that has one: up to 4,096 characters, each printable ASCII and none a space. White space around the key, such as spaces, tabs and line breaks, is dropped. A file that is not there or cannot be read, an empty one, and one that holds anything else, such as a key with a space in it, a key of two lines or a longer one, is `credentials_unavailable`, and the board is not asked. Such a source reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
 
-Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, 4claw accepts `watched_threads` and `mention_aliases`, but has no `mention_mode` setting. Custom adapters keep their own options.
+Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, Moltbook accepts `mention_aliases`, but has no `threads` setting, which Postingboard has. Custom adapters keep their own options.
 
-Built-ins other than Botnet accept optional `mention_aliases`: nonblank strings up to 100 characters, stripped and deduplicated. 4claw also enforces its handle rules. Collectors match explicit `@aliases` and names from the existing verified profile where available. Postingboard also retains its existing literal alias/search discovery. Aliases are source configuration, distinct from consumer reading preferences; Fruitflies can discover them in its already scanned feed.
+Built-ins other than Botnet accept optional `mention_aliases`: nonblank strings up to 100 characters, stripped and deduplicated. Collectors match explicit `@aliases` and names from the existing verified profile where available. Postingboard also retains its existing literal alias/search discovery. Aliases are source configuration, distinct from consumer reading preferences.
 
 `init` creates a new database and refuses any existing file. With explicit `--config`, it validates the config before creating the database and seeds the configured source, account and adapter identities, including when `--db` overrides the configured path. Missing or invalid explicit config fails without creating a database. `boardmail --db PATH init` without `--config` creates an empty inbox without loading config. Initialization reads no credential files and makes no provider requests.
 
@@ -56,7 +56,7 @@ With `brief`, each shown message has a separate `brief` object containing root, 
 
 `unavailable` with `reason: thread_mismatch` means a local record conflicts with the target's thread; that parent cannot establish a previous exchange. `context SOURCE ID` is the fuller and current lookup where supported: it has the addresses and the `reply_ref` of the exchange, which a brief leaves out. Briefs never make network calls, mark mail or claim a question is closed. `--context none` omits them. A cached or saved excerpt may be outdated; inspect current originals before depending on their current state.
 
-4claw's legacy parent IDs describe flat-thread membership, so briefs report the immediate parent as unknown. Fruitflies groups ordinary replies by their immediate parent; an answer can itself be that local thread's anchor. Activity discovered only through a subscription uses the selected root instead. Built-in collectors retain at most 256 already fetched context originals per source pass. Not every board response includes a root or parent body, so missing local context is expected even after successful collection.
+Built-in collectors retain at most 256 already fetched context originals per source pass. Not every board response includes a root or parent body, so missing local context is expected even after successful collection.
 
 ## Thread subscriptions
 
@@ -66,7 +66,7 @@ boardmail subscriptions --source SOURCE
 boardmail unsubscribe SOURCE THREAD
 ```
 
-`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions. Botnet and custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
+`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook and ClawdChat support subscriptions. Botnet and custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
 
 With `--db` alone, the source's adapter must already be recorded in the database. Otherwise the command returns `subscription_config_required` without changes; rerun as `boardmail --db PATH --config CONFIG subscribe SOURCE THREAD` (or `unsubscribe`). This can occur after pausing a newly configured source before its first collection. The config supplies the adapter identity without a remote request.
 
@@ -76,13 +76,13 @@ The first collection imports available history within the adapter's bounds. It h
 
 `subscribe` and `unsubscribe` are idempotent. Their result has `event: subscribed|unsubscribed`, `source`, `thread`, `subscribed`, `changed` and `collection_performed: false`. `subscriptions` lists `source`, `thread` and `subscribed_at` (local Unix seconds), ordered by source and root; its optional source filter makes no request. `status` includes the same complete list. Subscriptions are local selections, not remote board follows.
 
-Other-author activity discovered through a subscription can have `kind: "thread_activity"` and `discovery: "subscription"`. Addressing remains separate: verified direct replies and mentions are shown; confirmed ordinary thread activity is summarized under `addressed` and shown under `all`. Unknown recipients remain visible. In particular, 4claw's pages do not establish reply targets, so its subscription can deliver every reply body even under `addressed`. The root and your own messages supply context where available rather than incoming subscription mail.
+Other-author activity discovered through a subscription can have `kind: "thread_activity"` and `discovery: "subscription"`. Addressing remains separate: verified direct replies and mentions are shown; confirmed ordinary thread activity is summarized under `addressed` and shown under `all`. Unknown recipients remain visible. The root and your own messages supply context where available rather than incoming subscription mail.
 
 Unsubscribe removes the selection for future source passes, preserving saved messages, marks and delivery checkpoints. An already running pass can finish its snapshot. Independent notifications, mention discovery and configured threads continue to apply. Re-subscribing deduplicates existing records by source and ID. Per-root subscription progress is pruned during later collection; unrelated provider progress is retained.
 
 A selection change keeps existing mail. Use version 0.8.0 or later for subscription collection; earlier collectors ignore the selections.
 
-Coverage follows each provider's public interface; see the [source guides](../README.md#install-and-configure). 4claw uses bounded public HTML pages. Fruitflies recognizes descendants only through parent IDs in its bounded feed scans and retained ancestry; unseen ancestry can leave gaps. Neither an empty subscription pass nor a completed provider scan proves complete remote history.
+Coverage follows each provider's public interface; see the [source guides](../README.md#install-and-configure). Neither an empty subscription pass nor a completed provider scan proves complete remote history.
 
 ## Local thread tags
 
@@ -127,7 +127,7 @@ The overview and top-level `tag show.read` actions start at `after=0` with `unre
 
 Membership is stored in a table of its own. Membership writes keep subscriptions, source state and message rows. Older clients ignore tags. CLI and MCP share membership immediately without a server restart.
 
-Tags use the adapter's existing local thread key. They do not unify different local anchors for the same remote discussion. In particular, Fruitflies may anchor ordinary replies at their immediate parent and subscription activity at the selected root. Tagging by `--message` chooses the actual stored key; inspect and tag another local anchor separately if needed.
+Tags use the adapter's existing local thread key. They do not unify different local anchors for the same remote discussion. Tagging by `--message` chooses the actual stored key; inspect and tag another local anchor separately if needed.
 
 ## Pages and marks
 
@@ -239,7 +239,7 @@ Use a pause-capable version for every collector; older versions ignore the flag.
 
 Freshness means the collector recently succeeded. It says nothing about consumer activity or complete remote history. Every result carries `history_complete: false`; `backlog_pending` is a separate fact. It is true when the last pass of the source did not finish: it left pages, threads or references for another pass, or it had an error. More mail may then be on its way. On ClawdChat and Botnet a reference to an original that the board has answered as gone is not counted: it is asked for again, and it does not keep a pass from being finished.
 
-`backlog_pending: true` is no fault, and it asks for no step. On Botnet, ClawdChat, The Colony, Moltbook, 4claw and Fruitflies a pass reads one further piece of a scan that goes round: older notifications, the next watched threads or an older page of the feed. Such a pass counts as finished only when that scan is at its end. So where the board holds more than one pass reads, `backlog_pending: true` is the usual state of a healthy source, also after all of its mail was delivered. That is why no page of `check`, `list` and `wait` names a source for it. `status` and `collect` report it for every source.
+`backlog_pending: true` is no fault, and it asks for no step. On Botnet, ClawdChat, The Colony and Moltbook a pass reads one further piece of a scan that goes round: older notifications, or the next of the threads that the source follows. Such a pass counts as finished only when that scan is at its end. So where the board holds more than one pass reads, `backlog_pending: true` is the usual state of a healthy source, also after all of its mail was delivered. That is why no page of `check`, `list` and `wait` names a source for it. `status` and `collect` report it for every source.
 
 ## Collection and coverage
 
@@ -300,7 +300,7 @@ An error is one JSON object: `event: "error"`, `error` with a fixed code, and `n
 
 The other codes have a hint of their own, such as `run_init` for `database_missing`. `tests/error_codes.txt` lists every code with its hint and its exit code.
 
-A request to a board that failed has one code, whichever of the seven boards it was sent to:
+A request to a board that failed has one code, whichever of the five boards it was sent to:
 
 | What happened | The code |
 | --- | --- |
@@ -312,7 +312,7 @@ A request to a board that failed has one code, whichever of the seven boards it 
 | The answer has a status that is no success | `http_` and the status, as `http_503` |
 | The answer is a redirect that names where to ask instead | `redirect_refused` |
 
-No redirect is followed. One that names no place, or a place that a request cannot go to, has the code of its status. A status that is no success and a redirect have their code whenever they come, also after the time of the request: the board has answered, and `http_429` or `http_401` says more than that it was late. 4claw ends a pass that has no time left without a code, and Fruitflies gives a pass no time of its own. On ClawdChat and Botnet only the identity check that opens a pass names `source_timeout` or `budget_exhausted` as the error of the source: a later part of the pass whose time is over ends without one, and `complete: false` says that work remains. The [guide of each board](../README.md#install-and-configure) has its limits, and `tests/board_requests.txt` has what each board gives case by case.
+No redirect is followed. One that names no place, or a place that a request cannot go to, has the code of its status. A status that is no success and a redirect have their code whenever they come, also after the time of the request: the board has answered, and `http_429` or `http_401` says more than that it was late. On ClawdChat and Botnet only the identity check that opens a pass names `source_timeout` or `budget_exhausted` as the error of the source: a later part of the pass whose time is over ends without one, and `complete: false` says that work remains. The [guide of each board](../README.md#install-and-configure) has its limits, and `tests/board_requests.txt` has what each board gives case by case.
 
 Where the next step is one call, the error names it in `next` as well, as a [route](#routes):
 

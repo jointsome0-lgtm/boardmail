@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import warnings
 import zipfile
 
-from boardmail import adapter_fruitflies, transport
+from boardmail import adapter_moltbook, transport
 import kit
 
 
@@ -56,7 +56,7 @@ class CheckSdistTests(unittest.TestCase):
         """The tests of the source distribution run under the guard. A socket of the standard library can neither
         connect nor bind there. A test that invents the socket itself, as the kit does for a host with several
         addresses, runs as it does anywhere else."""
-        url, clock = adapter_fruitflies.BASE, kit.Clock(1790000000)
+        url, clock = adapter_moltbook.HOST + '/api/v1/home', kit.Clock(1790000000)
         host = urlsplit(url).hostname
         with contextlib.ExitStack() as stack:
             # What the guard replaces is as it was when this test is over, also where the guard is on already.
@@ -79,7 +79,7 @@ class CheckSdistTests(unittest.TestCase):
             # The first address of the host takes no connection, and the second one does.
             network = kit.Network({host: lambda request: (200, {'invented': True})}, {host: [None, 0]}, clock)
             with kit.fixed(clock), network:
-                self.assertEqual(transport.fetch('fruitflies', url, left=5), {'invented': True})
+                self.assertEqual(transport.fetch('moltbook', url, left=5), {'invented': True})
             self.assertEqual([number for _, number, _ in network.attempts], [0, 1])
 
     def test_the_tests_are_given_what_the_source_distribution_holds_but_for_the_package(self):

@@ -16,8 +16,6 @@ from urllib.error import HTTPError, URLError
 from uuid import UUID
 
 from boardmail import adapter_clawdchat as clawd
-from boardmail import adapter_fourclaw as fourclaw
-from boardmail import adapter_fruitflies as fruit
 from boardmail import addressing, commands, subscriptions
 from boardmail.adapters import Batch, validate
 from boardmail.boards import collect_all
@@ -28,8 +26,6 @@ from boardmail import adapter_common
 from examples.fixtures import FixtureBoard, named, original, settings, status, uid
 from kit import Clock, failing, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
-from test_fourclaw import THREAD, page as claw_page, post as claw_post, thread as claw_thread, threads as claw_threads
-from test_fruitflies import feed as fly_feed, post as fly_post
 
 PREVIEW = "PRIVATE NOTIFICATION PREVIEW"
 
@@ -1095,153 +1091,13 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
                         self.assertEqual(progress, {"skip": 0, "pending": []})
 
 
-class FourclawSubscriptionTests(unittest.TestCase):
-    OTHER = "00000000-0000-4000-8000-000000000002"
-
-    def collect(self, pages, subscribed, state=None, known=frozenset(), **cfg):
-        board = claw_threads(pages)
-        batch = fourclaw.collect(dict(account_id="Reader", watched_threads=[THREAD], subscriptions=subscribed, **cfg),
-                                 state or {}, known, fetch=board)
-        shape(self, batch)
-        return batch, [claw_thread(asked) for asked in board.asked]
-
-    def test_subscribed_page_delivers_untagged_replies_with_unknown_recipient(self):
-        pages = {THREAD: claw_page(replies=[claw_post("Other", "@Reader hi"), claw_post("Other", "not for you")]),
-                 self.OTHER: claw_page(replies=[claw_post("Other", "untagged reply"), claw_post("Another", "@Reader hey"),
-                                                claw_post("Reader", "our own"), claw_post("Other", "second untagged")],
-                                       ids=[f"20000000-0000-4000-8000-{n:012d}" for n in range(4)])}
-        batch, fetched = self.collect(pages, [self.OTHER])
-        self.assertEqual(sorted(fetched), sorted([THREAD, self.OTHER]))
-        watched = [m for m in batch.messages if m["thread_id"] == THREAD]
-        self.assertEqual([m["kind"] for m in watched], ["mention"], "An unsubscribed watched foreign page keeps mentions only")
-        subscribed = [m for m in batch.messages if m["thread_id"] == self.OTHER]
-        self.assertTrue(all(m['discovery'] == 'subscription' for m in subscribed))
-        self.assertEqual([(m["kind"], m["addressing"], m["body"]) for m in subscribed],
-                         [("thread_activity", None, "untagged reply"), ("mention", "mention", "@Reader hey"),
-                          ("thread_activity", None, "second untagged")])
-        self.assertTrue(all(m["parent_id"] is None for m in subscribed), "The page shows no reply targets")
-        self.assertIn(self.OTHER, {o["id"] for o in batch.originals})
-        replay, _ = self.collect(pages, [self.OTHER], batch.state, known={m["id"] for m in batch.messages})
-        self.assertEqual(replay.messages, [])
-
-    def test_union_rotation_keeps_config_cap_and_advances(self):
-        threads = [f"00000000-0000-4000-8000-{n:012d}" for n in range(1, 101)]
-        extra = "30000000-0000-4000-8000-000000000001"
-        pages = {t: claw_page(replies=[claw_post("Other", "quiet")]) for t in [*threads, extra]}
-        pages[extra] = claw_page(replies=[claw_post("Other", "subscribed activity")])
-        board = claw_threads(pages)
-        first = fourclaw.collect(dict(account_id="Reader", watched_threads=threads, subscriptions=[extra]),
-                                 {"next_thread": 98}, frozenset(), fetch=board)
-        shape(self, first)
-        self.assertIsNone(first.error, "101 runtime roots do not violate the configured cap of 100")
-        self.assertEqual([m["body"] for m in first.messages], ["subscribed activity"])
-        self.assertEqual(first.state, {"next_thread": 1})
-        second = fourclaw.collect(dict(account_id="Reader", watched_threads=threads, subscriptions=[]), first.state,
-                                  frozenset(), fetch=board)
-        self.assertEqual(second.state, {"next_thread": 5})
-
-    def test_invalid_subscription_value_is_a_config_error(self):
-        pages = {THREAD: claw_page(replies=[claw_post("Other", "@Reader hi")])}
-        batch, fetched = self.collect(pages, ["not-a-uuid"])
-        self.assertEqual((batch.error, fetched), ("invalid_config", []))
-
-    def test_subscription_only_setup_without_watched_threads(self):
-        pages = {self.OTHER: claw_page(replies=[claw_post("Other", "untagged reply")])}
-        for cfg in ({"account_id": "Reader", "subscriptions": [self.OTHER]},
-                    {"account_id": "Reader", "watched_threads": [], "subscriptions": [self.OTHER]}):
-            with self.subTest(cfg=cfg):
-                board = claw_threads(pages)
-                batch = fourclaw.collect(cfg, {}, frozenset(), fetch=board)
-                shape(self, batch)
-                self.assertIsNone(batch.error)
-                self.assertEqual([m["kind"] for m in batch.messages], ["thread_activity"])
-                self.assertEqual([claw_thread(asked) for asked in board.asked], [self.OTHER])
-                self.assertEqual(batch.state, {"next_thread": 0})
-        for cfg in ({"account_id": "Reader"}, {"account_id": "Reader", "watched_threads": [], "subscriptions": []},
-                    {"account_id": "Reader", "watched_threads": "x", "subscriptions": [self.OTHER]},
-                    {"account_id": "Reader", "watched_threads": ["bad"], "subscriptions": [self.OTHER]},
-                    {"account_id": "Reader", "subscriptions": [self.OTHER, 5]},
-                    {"account_id": "Reader", "watched_threads": [f"00000000-0000-4000-8000-{n:012d}" for n in range(1, 102)]}):
-            with self.subTest(cfg=cfg):
-                board = claw_threads(pages)
-                batch = fourclaw.collect(cfg, {}, frozenset(), fetch=board)
-                self.assertEqual((batch.error, board.asked), ("invalid_config", []))
-
-
-class FruitfliesSubscriptionTests(unittest.TestCase):
-    ROOT, OTHER = str(UUID(int=50)), str(UUID(int=60))
-
-    def collect(self, pages, subscribed, state=None, known=frozenset()):
-        board = fly_feed(*pages)
-        batch = fruit.collect({"account_id": "alice", "subscriptions": subscribed}, state or {}, known, fetch=board)
-        shape(self, batch)
-        return batch, len(board.asked)
-
-    def test_newest_first_ancestry_own_parents_and_bounded_memory(self):
-        own = [fly_post(1, author="alice", kind="question"), fly_post(12, author="alice", parent=50, kind="answer")]
-        newest = [fly_post(7, "grandchild", author="bob", parent=6, kind="answer"), fly_post(13, "to us", author="bob", parent=12, kind="answer"),
-                  fly_post(6, "child", author="carol", parent=50, kind="answer"), fly_post(9, "elsewhere", parent=777, kind="answer"),
-                  fly_post(61, "other root child", author="dan", parent=60, kind="answer")]
-        history = [fly_post(50, "the root", author="root-author"), fly_post(60, "another root", author="eve")]
-        batch, requests = self.collect([own, newest, history], [self.ROOT])
-        self.assertEqual(requests, 3, "Subscriptions add no feed request")
-        got = by_id(batch)
-        self.assertEqual({int(UUID(k)): (m["kind"], m["addressing"], m["thread_id"]) for k, m in got.items()},
-                         {6: ("thread_activity", "thread", self.ROOT), 7: ("thread_activity", "thread", self.ROOT),
-                          13: ("reply_to_comment", "direct", str(UUID(int=12)))})
-        members = batch.state["subscriptions"]["roots"][self.ROOT]["members"]
-        self.assertEqual({mid: value[0] for mid, value in members.items()},
-                         {self.ROOT: False, str(UUID(int=12)): True, str(UUID(int=13)): False,
-                                   str(UUID(int=6)): False, str(UUID(int=7)): False})
-        self.assertNotIn(str(UUID(int=61)), members, "Another root's activity is not a member")
-        # Next pass: only a new descendant is visible, its ancestry comes from memory.
-        later = [fly_post(10, "later", author="bob", parent=7, kind="answer")]
-        second, _ = self.collect([own, later, []], [self.ROOT], batch.state, known=set(got))
-        self.assertEqual({k: (m["kind"], m["addressing"]) for k, m in by_id(second).items()},
-                         {str(UUID(int=10)): ("thread_activity", "thread")})
-        # Two full pages of children: six members and 200 more are over what the memory of a thread holds.
-        crowd = [[fly_post(n, parent=50, kind="answer") for n in range(first, first + 100)] for first in (1000, 1100)]
-        third, _ = self.collect([own, *crowd], [self.ROOT], second.state, known=set(got) | set(by_id(second)))
-        self.assertEqual(len(by_id(third)), 200)
-        kept = third.state["subscriptions"]["roots"][self.ROOT]["members"]
-        self.assertEqual(len(kept), 200)
-        self.assertIn(self.ROOT, kept)
-
-    def test_unseen_root_author_and_parent_stay_unknown(self):
-        newest = [fly_post(6, "child", author="carol", parent=50, kind="answer")]
-        batch, _ = self.collect([[], newest, []], [self.ROOT])
-        self.assertEqual([(m["kind"], m["addressing"]) for m in batch.messages], [("thread_activity", None)])
-        empty, _ = self.collect([[], newest, []], [])
-        self.assertEqual((empty.messages, "subscriptions" in empty.state), ([], False))
-
-    def test_newest_members_survive_older_history_before_a_later_child_arrives(self):
-        def dated(n, minute, parent=50, author="other"):
-            # minute: of the day. A later one is a newer post, whatever the number of the post.
-            return {**fly_post(n, parent=parent, author=author, kind="answer" if parent else "post"),
-                    "created_at": "2026-09-07T{:02d}:{:02d}:00Z".format(*divmod(minute, 60))}
-
-        # The memory of a thread holds the root and 199 members. The recent members come first and have the
-        # smallest numbers; only their dates say that they are the newest.
-        recent = [dated(n, 1000 + n) for n in range(399, 299, -1)]
-        old = [dated(n, n - 400) for n in range(498, 399, -1)]
-        first, requests = self.collect([[], recent, [dated(50, 0, parent=None), *old]], [self.ROOT])
-        self.assertEqual(requests, 3)
-        self.assertEqual(set(by_id(first)), {str(UUID(int=n)) for n in range(300, 499)})
-        # A restart sees only older historical members, not the recent parents.
-        second, requests = self.collect([[], [], [dated(n, n - 400) for n in range(598, 498, -1)]],
-                                        [self.ROOT], json.loads(json.dumps(first.state)), set(by_id(first)))
-        self.assertEqual(requests, 3)
-        members = second.state["subscriptions"]["roots"][self.ROOT]["members"]
-        self.assertEqual(set(members), {str(UUID(int=n)) for n in (50, *range(300, 400), *range(500, 599))},
-                         "The root, the 100 recent members and the 99 newest of the others")
-        # The recent parent is absent from every current page. Retained ancestry
-        # must recognize its child; older history must not have displaced it.
-        third, requests = self.collect([[], [dated(700, 1420, parent=300), dated(701, 1421)], []],
-                                       [self.ROOT], json.loads(json.dumps(second.state)),
-                                       set(by_id(first)) | set(by_id(second)))
-        self.assertEqual(requests, 3)
-        self.assertEqual({m["id"]: (m["thread_id"], m["addressing"]) for m in third.messages},
-                         {str(UUID(int=n)): (self.ROOT, "thread") for n in (700, 701)})
+class SelectionTests(unittest.TestCase):
+    def test_a_selection_that_is_no_list_of_thread_ids_is_refused(self):
+        for bad in ("x", ["bad"], [1], {"a": 1}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(MailError, "^invalid_config$"):
+                subscriptions.selected({"subscriptions": bad})
+        self.assertEqual(subscriptions.selected({"subscriptions": [uid(2), uid(1), uid(2)]}), [uid(1), uid(2)])
+        self.assertEqual(subscriptions.selected({}), [])
 
 
 if __name__ == "__main__":

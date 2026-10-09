@@ -50,8 +50,6 @@ def brief(db, item):
     source, root_id, parent_id = item["source"], item["thread_id"], item["parent_id"]
     row = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
     board = boards.declared(source if row is None else row[0])
-    if board.parent_is_membership:
-        parent_id = None
 
     def resolve(mid):
         row = db.execute("SELECT * FROM messages WHERE source=? AND id=?", (source, mid)).fetchone()

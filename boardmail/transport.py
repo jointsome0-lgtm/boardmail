@@ -1,7 +1,7 @@
 """The one HTTP path of the board clients.
 
 A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
-the size cap and when the time is over, and reads the answer as what it must be. It gives each address of the
+the size cap and when the time is over, and reads the answer as JSON. It gives each address of the
 host ATTEMPT seconds to take the connection. Four things are the same on every board: the user agent that a
 board is told, AGENT; the moment from which an answer is late; what a request that failed is called, which
 failure() says; and what the key of an account is, which key() reads from its file. BOARDS holds what differs
@@ -32,11 +32,8 @@ class Board(NamedTuple):
     """What a request to one board carries and what its answer may take."""
     accept: str             # the Accept header
     protocol: str | None    # the X-Agent-Protocol header. None: the board gets none.
-    kind: str | None        # the content type that an answer must have; it is then UTF-8 text.
-                            # None: an answer is JSON, whatever type it gives.
     cap: int                # the most bytes of an answer that are read. One more is too large.
     silence: float          # the seconds that the socket may stay silent, and never more than the time has left
-    budget: float | None    # the seconds that a request may take. None: the client says how many it has left.
 
 
 # The User-Agent header of every request: the name and the version of the package.
@@ -120,14 +117,13 @@ def key(file):
     return key
 
 
-def fetch(board, url, *, left=None, headers=None, body=None):
-    """The answer of a board to a request for this URL: text where an answer must be a page, and what the JSON
-    says everywhere else.
+def fetch(board, url, *, left, headers=None, body=None):
+    """The answer of a board to a request for this URL: what its JSON says, whatever type the answer gives.
 
-    left is the completion window of this request, where the board has no time budget of its own. A collection
-    client checks admission separately; its phase's remaining time need not be this window. headers are sent
-    with the headers of the board, and none of them takes the place of one of those. A body is sent as JSON, and
-    the request is then a POST. Without one it is a GET.
+    left is the completion window of this request, in seconds. A collection client checks admission separately;
+    its phase's remaining time need not be this window. headers are sent with the headers of the board, and none
+    of them takes the place of one of those. A body is sent as JSON, and the request is then a POST. Without one
+    it is a GET.
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
     that cannot be read, and a MailError for a redirect that is refused and for an answer that is too large or
@@ -141,8 +137,6 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     if body is not None:
         send['Content-Type'] = 'application/json'
     request = Request(url, headers=send, data=None if body is None else json.dumps(body).encode())
-    if left is None:
-        left = about.budget
     end = time.monotonic() + left
 
     def in_time():
@@ -153,8 +147,6 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     with build_opener(NoRedirect(), Attempts()).open(request, timeout=min(about.silence, left)) as answer:
         # Before anything is asked of the answer: one that begins late is late, whatever else it is.
         in_time()
-        if about.kind and answer.headers.get_content_type() != about.kind:
-            raise ValueError('The answer is not ' + about.kind)
         content = bytearray()
         while True:
             chunk = answer.read1(min(65536, about.cap + 1 - len(content)))
@@ -169,7 +161,7 @@ def fetch(board, url, *, left=None, headers=None, body=None):
             content += chunk
             if len(content) > about.cap:
                 raise MailError('response_too_large')
-    return content.decode('utf-8') if about.kind else json.loads(content)
+    return json.loads(content)
 
 
 def failure(exc):

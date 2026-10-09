@@ -12,8 +12,6 @@ from boardmail.config import load
 from kit import mark, new_inbox
 import test_botnet
 import test_clawdchat
-import test_fourclaw
-import test_fruitflies
 
 KEY = 'example.key'
 
@@ -31,20 +29,9 @@ def clawdchat():
     return board
 
 
-def fourclaw():
-    reply = test_fourclaw.post('Other', '@Reader an invented question')
-    return test_fourclaw.threads({test_fourclaw.THREAD: test_fourclaw.page(replies=[reply])})
-
-
-def fruitflies():
-    return test_fruitflies.feed([], [test_fruitflies.post(3, '@alice an invented question')], [])
-
-
 # For each board: the settings of its source in a config, and what gives the invented board for one pass.
 INVENTED = {'botnet': ({'account_id': test_botnet.OWNER, 'api_key_file': KEY}, botnet),
-            'clawdchat': ({'account_id': test_clawdchat.uid(1), 'api_key_file': KEY}, clawdchat),
-            'fourclaw': ({'account_id': 'Reader', 'watched_threads': [test_fourclaw.THREAD]}, fourclaw),
-            'fruitflies': ({'account_id': 'alice'}, fruitflies)}
+            'clawdchat': ({'account_id': test_clawdchat.uid(1), 'api_key_file': KEY}, clawdchat)}
 
 
 class PackagedAdapterTests(unittest.TestCase):

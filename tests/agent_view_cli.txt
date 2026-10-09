@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 16826
+  help text: 16807
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -97,7 +97,7 @@ boardmail subscribe:
   summary: Subscribe to a thread: later collection fetches its activity
   description: >
     Subscribe to a thread: later collection fetches its activity.
-    Only Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support it.
+    Only Postingboard, Colony, Moltbook and ClawdChat support it.
     Local and idempotent; makes no request, and a paused source stays paused.
     Then run collect and check, and process both messages and thread_activity.
     Older replies may arrive too, within the board's limits.
