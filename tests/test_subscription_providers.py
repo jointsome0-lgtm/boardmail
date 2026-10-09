@@ -676,6 +676,13 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
                                  ("budget_exhausted", "source_timeout") if number == 1 else (None, None))
                 self.assertEqual(late, spent)
                 self.assertFalse(late["complete"])
+        # The phase ends at that answer. The first of the two new references fails: the second is not asked for
+        # in this pass and both wait, and the pass goes on to the subscribed thread.
+        paths = [path for path, _, _ in board.calls[:len(asked)]]
+        del board.calls[:]
+        late = self.collect(failing(board, 4, MailError("source_timeout")), [100], state)
+        self.assertEqual([path for path, _, _ in board.calls], paths[:3] + paths[5:])
+        self.assertEqual([entry["id"] for entry in late.state["pending"]], [uid(21), uid(20)])
 
     def test_listed_tree_deep_children_and_shown_ownership(self):
         board = ClawdThreads()

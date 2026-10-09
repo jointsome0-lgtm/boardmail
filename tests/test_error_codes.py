@@ -156,7 +156,7 @@ class ErrorCodeTests(unittest.TestCase):
                           (KeyError('id'), 'invalid_response')):
             with self.subTest(failed=type(exc).__name__):
                 self.assertEqual(transport.failure(exc), code)
-        # The codes that only one board had are nowhere in the package, so no result has one.
+        # The codes that only one board had are nowhere in the package, so no pass and no command gives one.
         package = ''.join(path.read_text(encoding='utf-8') for path in sorted(PACKAGE.glob('*.py')))
         self.assertEqual([code for code in GONE if code in package], [])
 

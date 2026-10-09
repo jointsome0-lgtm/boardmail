@@ -431,6 +431,16 @@ class PassTests(unittest.TestCase):
                                  ("budget_exhausted", "source_timeout") if number == 1 else (None, None))
                 self.assertEqual(late, spent)
                 self.assertFalse(late["complete"])
+        # The phase ends at that answer. The first of the references that waited fails, in the last phase of the
+        # pass: nothing is asked after it, it goes to the end of the queue, and the others keep their place.
+        paths = [path for path, _, _ in self.board.calls[:len(asked)]]
+        first = paths.index("/topic-messages/" + quote(mid(30), safe="")) + 1
+        del self.board.calls[:]
+        late = adapter.collect(self.settings, self.state, frozenset(),
+                               fetch=failing(self.board, first, MailError("source_timeout")))
+        self.assertEqual([path for path, _, _ in self.board.calls], paths[:first - 1])
+        self.assertEqual([entry["id"] for entry in late.state["pending"]],
+                         [mid(n) for n in (31, 32, 17, 16, 15, 14, 13, 12, 11, 10, 30)])
 
     def test_a_rejected_or_broken_cursor_is_explicit_and_keeps_what_was_found(self):
         for n in (*range(10, 17), *range(18, 30)):
