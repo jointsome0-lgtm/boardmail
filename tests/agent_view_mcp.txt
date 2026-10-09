@@ -3,10 +3,10 @@
 
 size:
   tools: 26
-  tool descriptions: 10466
+  tool descriptions: 10468
   input schemas: 10596
   server instructions: 1493
-  tool catalog as JSON: 25386
+  tool catalog as JSON: 25388
 
 server:
   name: boardmail
@@ -378,7 +378,7 @@ tool boardmail_reply_show:
     confirmation_basis tells caller readback from a provider verification_receipt.
     key_scope of a receipt is local: the key binds the local attempt, not a provider request.
     remote_verified is absent here: an earlier receipt is no fresh remote check.
-    The result of a reply command has confirmation_basis, reply_candidates, recovery_guidance, remote_verified, verification and verification_receipt, and its reply has attempted_at, confirmed_at, reply_ref and readback_sha256, only where they hold something: absent means none, not unknown.
+    A reply result that is no error has confirmation_basis, reply_candidates, recovery_guidance, remote_verified, verification and verification_receipt, and its reply has attempted_at, confirmed_at, reply_ref and readback_sha256, only where they hold something: absent means none, not unknown.
   inputSchema:
     type: object
     properties:

@@ -17,7 +17,7 @@ from boardmail.store import Store
 from examples.fixtures import KEY, FixtureBoard, named, original, uid
 from kit import Clock, Network, edge, fixed, mark, new_inbox, notify, on_statement
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file as clawd_key_file, original as clawd_original
-from test_replies import run_reply_workers
+from test_replies import LATER, SPARSE, run_reply_workers
 
 # The boards on which a reply can be verified.
 VERIFIED = tuple(name for name, about in BOARDS.items() if about.replies)
@@ -133,17 +133,17 @@ class VerificationTests(unittest.TestCase):
 
     def test_a_result_has_a_field_of_a_verification_only_where_it_holds_something(self):
         self.setup_source('postingboard')
-        sides = {name: set() for name in replies.SPARSE + replies.LATER}
+        sides = {name: set() for name in SPARSE + LATER}
 
         def held(result):
-            for name in replies.SPARSE:
+            for name in SPARSE:
                 sides[name].add(name in result)
-            for name in replies.LATER:
+            for name in LATER:
                 sides[name].add(name in result['reply'])
             # A field that is there holds something.
-            self.assertTrue(all(result[name] for name in replies.SPARSE if name in result))
+            self.assertTrue(all(result[name] for name in SPARSE if name in result))
             self.assertNotIn(None, result['reply'].values())
-            return {name for name in replies.SPARSE if name in result}
+            return {name for name in SPARSE if name in result}
 
         self.assertEqual(held(self.before_result), {'recovery_guidance'})
         with self.unreached():
@@ -156,9 +156,10 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(held(verified), {'confirmation_basis', 'remote_verified', 'verification',
                                           'verification_receipt'})
         self.assertEqual(held(self.call('show')[0]), {'confirmation_basis', 'verification_receipt'})
-        # Each field was there in one result and absent in another. An attempt of this test has begun, so it has
-        # attempted_at throughout; tests/test_replies.py has that field on both sides.
-        self.assertEqual({name for name, seen in sides.items() if seen != {True, False}}, {'attempted_at'})
+        # An attempt of this test has begun, so it has attempted_at throughout; tests/test_replies.py has that
+        # field on both sides. Each other field was there in one result and absent in another.
+        self.assertEqual(sides.pop('attempted_at'), {True})
+        self.assertEqual([name for name, seen in sides.items() if seen != {True, False}], [])
 
     def test_candidate_survives_timeout_and_reopen_without_becoming_evidence(self):
         self.setup_source('postingboard')

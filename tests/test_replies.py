@@ -20,6 +20,12 @@ from examples.fixtures import FakeBoard, uid
 from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox, words
 from test_mail import mail
 
+# The fields that a result of a reply command has only where they hold something, and those of its attempt,
+# written out: a test that took them from the package would follow a name that the package lost.
+SPARSE = ('confirmation_basis', 'reply_candidates', 'recovery_guidance', 'remote_verified', 'verification',
+          'verification_receipt')
+LATER = ('attempted_at', 'confirmed_at', 'reply_ref', 'readback_sha256')
+
 
 def run_reply_workers(operations):
     """Join every worker before propagating errors; no unbounded executor shutdown."""
@@ -349,10 +355,10 @@ os._exit(79)
             self.assertEqual({type(result['changed']), type(result['send_allowed'])}, {bool})
             self.assertNotIn('publication_performed', result)
             # A field that is there holds something.
-            self.assertTrue(all(result[name] for name in replies.SPARSE if name in result))
-            there = {name for name in replies.LATER if name in (result['reply'] or {})}
+            self.assertTrue(all(result[name] for name in SPARSE if name in result))
+            there = {name for name in LATER if name in (result['reply'] or {})}
             self.assertNotIn(None, [result['reply'][name] for name in there])
-            steps.append((there, {name for name in replies.SPARSE if name in result}))
+            steps.append((there, {name for name in SPARSE if name in result}))
             return result
 
         self.assertIsNone(step('show')['reply'])
@@ -365,7 +371,7 @@ os._exit(79)
         self.assertEqual(steps[-2:], [({'attempted_at'}, {'recovery_guidance'})] * 2)
         step('confirm', key=key, ref=self.ref, readback_body=self.body)
         step('show')
-        self.assertEqual(steps[-2:], [(set(replies.LATER), {'confirmation_basis'})] * 2)
+        self.assertEqual(steps[-2:], [(set(LATER), {'confirmation_basis'})] * 2)
         listed, code = commands.execute(Store(self.path), 'reply_list')
         self.assertEqual((code, listed['counts']['confirmed']), (0, 1))
         self.assertNotIn('publication_performed', listed)
