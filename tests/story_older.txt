@@ -790,7 +790,6 @@ exit code 0
   "next_after": 0,
   "next": null,
   "collection_performed": false,
-  "publication_performed": false,
   "history_complete": false
 }
 
@@ -817,13 +816,6 @@ exit code 0
   "changed": false,
   "send_allowed": false,
   "next_action": "prepare_reply",
-  "confirmation_basis": null,
-  "reply_candidates": [],
-  "recovery_guidance": null,
-  "remote_verified": false,
-  "verification": null,
-  "verification_receipt": null,
-  "publication_performed": false,
   "collection_performed": false,
   "history_complete": false
 }
@@ -854,22 +846,11 @@ exit code 0
     "body": "An invented answer.",
     "body_sha256": "8ef8cf14fb49cba679fa3cf51757ac04169cf1402deed52cf71c40d9df77b578",
     "state": "prepared",
-    "prepared_at": 1800000000,
-    "attempted_at": null,
-    "confirmed_at": null,
-    "reply_ref": null,
-    "readback_sha256": null
+    "prepared_at": 1800000000
   },
   "changed": true,
   "send_allowed": false,
   "next_action": "begin_before_publishing",
-  "confirmation_basis": null,
-  "reply_candidates": [],
-  "recovery_guidance": null,
-  "remote_verified": false,
-  "verification": null,
-  "verification_receipt": null,
-  "publication_performed": false,
   "collection_performed": false,
   "history_complete": false
 }
@@ -901,21 +882,11 @@ exit code 0
     "body_sha256": "8ef8cf14fb49cba679fa3cf51757ac04169cf1402deed52cf71c40d9df77b578",
     "state": "unknown",
     "prepared_at": 1800000000,
-    "attempted_at": 1800000060,
-    "confirmed_at": null,
-    "reply_ref": null,
-    "readback_sha256": null
+    "attempted_at": 1800000060
   },
   "changed": true,
   "send_allowed": true,
   "next_action": "publish_saved_body_with_saved_key_then_read_back",
-  "confirmation_basis": null,
-  "reply_candidates": [],
-  "recovery_guidance": null,
-  "remote_verified": false,
-  "verification": null,
-  "verification_receipt": null,
-  "publication_performed": false,
   "collection_performed": false,
   "history_complete": false
 }
@@ -947,15 +918,11 @@ exit code 1
     "body_sha256": "8ef8cf14fb49cba679fa3cf51757ac04169cf1402deed52cf71c40d9df77b578",
     "state": "unknown",
     "prepared_at": 1800000000,
-    "attempted_at": 1800000060,
-    "confirmed_at": null,
-    "reply_ref": null,
-    "readback_sha256": null
+    "attempted_at": 1800000060
   },
   "changed": true,
   "send_allowed": false,
   "next_action": "reconcile_publication_before_retry",
-  "confirmation_basis": null,
   "reply_candidates": [
     {
       "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
@@ -972,7 +939,6 @@ exit code 1
     }
   ],
   "recovery_guidance": "This attempt's external outcome remains unresolved. A replied mark or matching publication does not identify which provider request created it; the saved key identifies this local journal entry. A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. A failed verification leaves the attempt unknown. Accepting the published reply's target does not resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the handoff before deciding whether retry or confirmation is justified.",
-  "remote_verified": false,
   "verification": {
     "adapter": "moltbook",
     "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
@@ -982,8 +948,6 @@ exit code 1
     "status": "unverified",
     "reason": "reply_provider_not_verified"
   },
-  "verification_receipt": null,
-  "publication_performed": false,
   "collection_performed": false,
   "last_check_saved": true,
   "history_complete": false
@@ -1016,15 +980,11 @@ exit code 0
     "body_sha256": "8ef8cf14fb49cba679fa3cf51757ac04169cf1402deed52cf71c40d9df77b578",
     "state": "unknown",
     "prepared_at": 1800000000,
-    "attempted_at": 1800000060,
-    "confirmed_at": null,
-    "reply_ref": null,
-    "readback_sha256": null
+    "attempted_at": 1800000060
   },
   "changed": false,
   "send_allowed": false,
   "next_action": "read_back_before_retry",
-  "confirmation_basis": null,
   "reply_candidates": [
     {
       "reply_ref": "https://www.moltbook.com/post/00000000-0000-0000-0000-000000000064#comment-00000000-0000-0000-0000-0000000000dd",
@@ -1041,10 +1001,6 @@ exit code 0
     }
   ],
   "recovery_guidance": "This attempt's external outcome remains unresolved. A replied mark or matching publication does not identify which provider request created it; the saved key identifies this local journal entry. A lookup limited to retained publications cannot exclude an earlier commit followed by deletion. A failed verification leaves the attempt unknown. Accepting the published reply's target does not resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the handoff before deciding whether retry or confirmation is justified.",
-  "remote_verified": false,
-  "verification": null,
-  "verification_receipt": null,
-  "publication_performed": false,
   "collection_performed": false,
   "history_complete": false
 }
@@ -1087,8 +1043,6 @@ exit code 0
   "send_allowed": false,
   "next_action": "do_not_publish_again",
   "confirmation_basis": "provider_readback",
-  "reply_candidates": [],
-  "recovery_guidance": null,
   "remote_verified": true,
   "verification": {
     "adapter": "moltbook",
@@ -1122,7 +1076,6 @@ exit code 0
     "availability_basis": "anonymous_original",
     "provider_status": "verified"
   },
-  "publication_performed": false,
   "collection_performed": false,
   "history_complete": false
 }
@@ -1177,7 +1130,6 @@ exit code 0
   "next_after": 0,
   "next": null,
   "collection_performed": false,
-  "publication_performed": false,
   "history_complete": false
 }
 

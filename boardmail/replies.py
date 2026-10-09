@@ -22,6 +22,11 @@ RECOVERY_GUIDANCE = (
     "resolve the earlier request's outcome. Preserve these distinctions and the missing evidence in the "
     "handoff before deciding whether retry or confirmation is justified."
 )
+# What the result of a reply command has only where it holds something, and what its attempt has only from the
+# step that sets it. A field that is absent is none, not unknown.
+SPARSE = ('confirmation_basis', 'reply_candidates', 'recovery_guidance', 'remote_verified', 'verification',
+          'verification_receipt')
+LATER = ('attempted_at', 'confirmed_at', 'reply_ref', 'readback_sha256')
 
 
 def digest(body, argument=None):
@@ -92,6 +97,17 @@ def candidates(db, source, message_id, attempt):
                       (source, message_id, attempt['idempotency_key']))
     return [{**dict(row), 'status': 'unverified', 'identity_basis': 'parsed_reference',
              'last_check': checks.get(row['reply_ref'])} for row in rows]
+
+
+def written(result):
+    """The result of a reply command as it is returned: without the fields of SPARSE that hold nothing, which is
+    null, false or an empty list, and its attempt without the fields of LATER that are not set. Inside the
+    package a result has them all."""
+    held = {key: value for key, value in result.items()
+            if key not in SPARSE or not (value is None or value is False or value == [])}
+    if held['reply'] is not None:
+        held['reply'] = {key: value for key, value in held['reply'].items() if key not in LATER or value is not None}
+    return held
 
 
 def summary(source, message_id, attempt):
@@ -238,4 +254,4 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
             'confirmation_basis': basis, 'reply_candidates': references,
             'recovery_guidance': RECOVERY_GUIDANCE if attempt and attempt['state'] == 'unknown' and not send_allowed else None,
             'remote_verified': verification is not None, 'verification': verification, 'verification_receipt': evidence,
-            'publication_performed': False, 'collection_performed': False}, 0
+            'collection_performed': False}, 0
