@@ -444,32 +444,80 @@ class PassTests(unittest.TestCase):
         self.assertEqual(([message["id"] for message in batch.messages], batch.error, batch.complete),
                          ([mid(1040)], None, True))
         self.assertEqual(len(batch.state["pending"]), 59)
-        # A reference that no pass has asked for is backlog: its message may be there.
-        self.state, self.known = {"pending": [*self.gone(range(1000, 1059)), {"id": mid(1059), "reasons": ["reply"]}]}, set()
+        # A reference that no pass has asked for is backlog: its message may be there. 39 such wait behind 21
+        # that are gone, and the pass asks for 38 of the 39. The board has none of the messages.
+        self.state, self.known = {"pending": [*self.gone(range(1000, 1021)), *map(self.waits, range(1021, 1060))]}, set()
+        del self.board.originals[mid(1040)]
         del self.board.calls[:]
         batch = self.collect()
-        self.assertNotIn(mid(1059), self.asked_for())
+        self.assertEqual(self.asked_for(), [mid(n) for n in range(1021, 1059)])
         self.assertEqual((batch.unavailable, batch.error, batch.complete), (38, None, False))
+        self.assertEqual([entry for entry in batch.state["pending"] if "gone" not in entry], [self.waits(1059)])
+
+    def waits(self, number):
+        """The entry of a reference that waits in a state and is not known to be gone: to a message of this number
+        that the account was told of as a reply."""
+        return {"id": mid(number), "reasons": ["reply"]}
+
+    def test_a_reference_that_is_not_known_to_be_gone_is_asked_for_before_those_that_are(self):
+        # The one reference whose message may be there waits at the end of the queue. The pass asks for it first,
+        # and for 37 of the others, in their order, with the requests that it has left.
+        self.state = {"pending": [*self.gone(range(1000, 1059)), self.waits(1059)]}
+        batch = self.collect()
+        self.assertEqual(self.asked_for(), [mid(1059), *(mid(n) for n in range(1000, 1037))])
+        self.assertEqual((len(self.board.asked), batch.unavailable, batch.error, batch.complete), (40, 38, None, True))
+        # What is saved is the queue in its order: what was asked for is at its end, in the order of asking, with
+        # the reference at which the requests were spent, and each entry has the fields that it had.
+        self.assertEqual(batch.state["pending"], self.gone((*range(1038, 1059), 1059, *range(1000, 1038))))
+
+    def test_mail_whose_first_request_failed_does_not_wait_behind_references_that_are_gone(self):
+        # 120 references wait for messages that the board no longer has: four passes ask for them all.
+        self.state = {"pending": self.gone(range(1000, 1120))}
+        self.board.add(10)
+        self.board.originals[mid(10)] = URLError("The board is not reached")
+        batch = self.collect()
+        self.assertEqual((batch.messages, batch.error, batch.complete), ([], "network_error", False))
+        # The board is reached again. The next pass asks for the message first and delivers it, and it sends the
+        # forty requests of a pass and no more.
+        self.board.originals[mid(10)] = original(10)
+        del self.board.calls[:], self.board.asked[:]
+        batch = self.collect()
+        self.assertEqual(self.asked_for()[0], mid(10))
+        self.assertEqual(([message["id"] for message in batch.messages], batch.error, batch.complete),
+                         ([mid(10)], None, True))
+        self.assertEqual((len(self.board.asked), len(batch.state["pending"])), (40, 120))
+
+    def test_mail_that_a_pass_had_no_first_turn_for_does_not_wait_behind_references_that_are_gone(self):
+        # Six new notifications in one pass. Four get the first turn, and the two others are asked for before the
+        # 120 references that are gone.
+        self.state = {"pending": self.gone(range(1000, 1120))}
+        for n in range(10, 16):
+            self.board.add(n)
+        batch = self.collect()
+        self.assertEqual(sorted(message["id"] for message in batch.messages), [mid(n) for n in range(10, 16)])
+        self.assertEqual((len(self.board.asked), batch.error, batch.complete, len(batch.state["pending"])),
+                         (40, None, True, 120))
 
     def test_a_reference_that_was_gone_and_fails_in_another_way_is_backlog_until_it_is_gone_again(self):
         self.state = {"pending": self.gone(range(1000, 1060))}
         self.collect()
-        # A reference that the next pass asks for and the one after it does not.
+        # A reference that the next pass asks for.
         again = self.state["pending"][30]["id"]
         self.board.originals[again] = 500
         batch = self.collect()
         self.assertEqual((batch.error, batch.complete), ("http_500", False))
         self.assertEqual([entry for entry in batch.state["pending"] if "gone" not in entry],
                          [{"id": again, "reasons": ["reply"]}])
-        # The board answers as before. Until the reference is asked for again, it is not known to be gone.
+        # While the request fails so, the reference is backlog, and each pass asks for it first.
+        del self.board.calls[:]
+        batch = self.collect()
+        self.assertEqual(self.asked_for()[0], again)
+        self.assertEqual((batch.error, batch.complete), ("http_500", False))
+        # The board answers as before, and the next pass knows again that the message is gone.
         del self.board.originals[again]
         del self.board.calls[:]
         batch = self.collect()
-        self.assertNotIn(again, self.asked_for())
-        self.assertEqual((batch.error, batch.complete), (None, False))
-        del self.board.calls[:]
-        batch = self.collect()
-        self.assertIn(again, self.asked_for())
+        self.assertEqual((self.asked_for()[0], len(self.asked_for())), (again, 38))
         self.assertEqual((batch.error, batch.complete), (None, True))
         self.assertEqual(len(batch.state["pending"]), 60)
         self.assertTrue(all(entry.get("gone") is True for entry in batch.state["pending"]))

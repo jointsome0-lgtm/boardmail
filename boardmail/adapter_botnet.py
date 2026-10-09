@@ -258,8 +258,11 @@ def collect(settings, state, known, *, fetch=transport.fetch):
 
     # New references get a bounded first turn; failed old references rotate to
     # the tail. Neither a busy head nor one inaccessible original owns the pass.
+    # Of the references that wait, those that are not known to be gone are asked
+    # for first: mail that may be there does not wait behind messages that the
+    # board no longer has. Each of the two groups keeps the order of the queue.
     fresh = fresh[:4]
-    retry = [mid for mid in pending if mid not in fresh]
+    retry = sorted((mid for mid in pending if mid not in fresh), key=lambda mid: "gone" in pending[mid])
     stopped = batch.error in ("http_401", "http_403", "http_429")
     for seconds, order in ((12, fresh), (SOURCE_SECONDS, retry)):
         if stopped or batch.error == "http_429":

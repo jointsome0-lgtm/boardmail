@@ -227,11 +227,52 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual(([message["id"] for message in batch.messages], batch.error, batch.complete),
                          ([uid(1009)], None, True))
         self.assertEqual(len(batch.state["pending"]), 19)
-        # A reference that no pass has asked for is backlog: its comment may be there.
+        # A reference that no pass has asked for is backlog: its comment may be there. Nine such wait behind
+        # eleven that are gone, and the pass asks for eight of the nine.
         del self.board.calls[:]
-        batch = self.alone({"pending": [*self.gone(range(1000, 1019)), waits(1019)], "offset": 0})
-        self.assertNotIn(uid(1019), self.asked_for())
+        batch = self.alone({"pending": [*self.gone(range(1000, 1011)), *map(waits, range(1011, 1020))], "offset": 0})
+        self.assertEqual(self.asked_for(), [uid(n) for n in range(1011, 1019)])
         self.assertEqual((batch.unavailable, batch.error, batch.complete), (8, None, False))
+        self.assertEqual([entry for entry in batch.state["pending"] if "gone" not in entry], [waits(1019)])
+
+    def test_a_reference_that_is_not_known_to_be_gone_is_asked_for_before_those_that_are(self):
+        # The one reference whose comment may be there waits at the end of the queue. The pass asks for it first,
+        # and for seven of the others, in their order, with the requests that it has left.
+        batch = self.alone({"pending": [*self.gone(range(1000, 1019)), waits(1019)], "offset": 0})
+        self.assertEqual(self.asked_for(), [uid(1019), *(uid(n) for n in range(1000, 1007))])
+        self.assertEqual((batch.unavailable, batch.error, batch.complete), (8, None, True))
+        # What is saved is the queue in its order: the eight that were asked for are at its end, in the order of
+        # asking, and each entry has the fields that it had.
+        self.assertEqual(batch.state["pending"], self.gone((*range(1007, 1019), 1019, *range(1000, 1007))))
+
+    def test_mail_whose_first_request_failed_does_not_wait_behind_references_that_are_gone(self):
+        # Forty references wait for comments that the board no longer has: five passes ask for them all.
+        self.board.events = [event(50)]
+        self.board.originals[uid(50)] = URLError("The board is not reached")
+        batch = self.alone({"pending": self.gone(range(1000, 1040)), "offset": 0})
+        self.assertEqual((batch.messages, batch.error, batch.complete), ([], "network_error", False))
+        self.assertEqual(batch.state["pending"][-1], waits(50))
+        # The board is reached again. The next pass asks for the comment first and delivers it, and it sends as
+        # many requests as a pass over the same queue without it: the profile, eight references and the page.
+        self.board.originals[uid(50)] = original(50)
+        del self.board.calls[:]
+        batch = self.alone(batch.state)
+        self.assertEqual(self.asked_for(), [uid(50), *(uid(n) for n in range(1008, 1015))])
+        self.assertEqual(([message["id"] for message in batch.messages], batch.error, batch.complete),
+                         ([uid(50)], None, True))
+        self.assertEqual((len(self.board.calls), len(batch.state["pending"])), (10, 40))
+
+    def test_mail_that_a_pass_had_no_request_for_does_not_wait_behind_references_that_are_gone(self):
+        # Two pages of new notifications in one pass, the head and the page of the sweep. A pass confirms eight
+        # new references, so eight wait for the next one, behind forty that are gone.
+        self.board.events = [event(n) for n in range(10, 26)]
+        self.board.originals = {uid(n): original(n) for n in range(10, 26)}
+        batch = self.alone({"pending": self.gone(range(1000, 1040)), "offset": 8})
+        self.assertEqual([message["id"] for message in batch.messages], [uid(n) for n in range(10, 18)])
+        known = {message["id"] for message in batch.messages}
+        batch = self.alone(batch.state, known)
+        self.assertEqual([message["id"] for message in batch.messages], [uid(n) for n in range(18, 26)])
+        self.assertEqual((batch.error, len(batch.state["pending"])), (None, 40))
 
     def test_a_reference_that_was_gone_and_fails_in_another_way_is_backlog_until_it_is_gone_again(self):
         for name, failure, error in (("not reached", URLError("The board is not reached"), "network_error"),
@@ -245,16 +286,16 @@ class ClawdChatTests(unittest.TestCase):
                 batch = self.alone({"pending": self.gone(range(1000, 1020)), "offset": 0})
                 self.assertEqual((batch.error, batch.complete), (error, False))
                 self.assertEqual([entry for entry in batch.state["pending"] if "gone" not in entry], [waits(1002)])
-                # The board answers as before. Until the reference is asked for again, it is not known to be
-                # gone: the next pass asks for eight others.
+                # While the request fails so, the reference is backlog, and each pass asks for it first.
+                del self.board.calls[:]
+                batch = self.alone(batch.state)
+                self.assertEqual(self.asked_for()[0], uid(1002))
+                self.assertEqual((batch.error, batch.complete), (error, False))
+                # The board answers as before, and the next pass knows again that the comment is gone.
                 del self.board.originals[uid(1002)]
                 del self.board.calls[:]
                 batch = self.alone(batch.state)
-                self.assertNotIn(uid(1002), self.asked_for())
-                self.assertEqual((batch.error, batch.complete), (None, False))
-                del self.board.calls[:]
-                batch = self.alone(batch.state)
-                self.assertIn(uid(1002), self.asked_for())
+                self.assertEqual((self.asked_for()[0], len(self.asked_for())), (uid(1002), 8))
                 self.assertEqual((batch.error, batch.complete), (None, True))
                 self.assertCountEqual(batch.state["pending"], self.gone(range(1000, 1020)))
 
