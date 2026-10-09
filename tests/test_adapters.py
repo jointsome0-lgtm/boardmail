@@ -11,13 +11,13 @@ import sys
 import tempfile
 import unittest
 
-from boardmail import cli, reader
+from boardmail import cli, commands, reader
 from boardmail.adapters import Batch
 from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, uid
-from kit import DESCRIBED, Clock, arrive, fixed, mark, new_inbox
+from kit import DESCRIBED, Clock, arrive, described, fixed, mark, new_inbox
 from test_mail import mail
 
 
@@ -90,6 +90,20 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(Store(legacy).show('moltbook', uid(10)), before)
         with closing(sqlite3.connect(legacy)) as db:
             self.assertEqual(db.execute('SELECT seq FROM sqlite_sequence WHERE name="messages"').fetchone()[0], 3)
+
+    def test_a_later_source_of_a_version_1_file_is_read_by_the_adapter_of_its_config(self):
+        legacy = self.root/'later.sqlite3'
+        with closing(sqlite3.connect(legacy)) as db:
+            db.executescript((Path(__file__).parent/'fixtures/v1.sql').read_text())
+        store = Store(legacy)
+        # Version 1 had no board of this name. A later release put the source into the file, here with a pause,
+        # which names no adapter there. So only the config says which adapter reads it.
+        sources = {'fourclaw': described('an-invented-account')}
+        for command in ('pause', 'resume'):
+            commands.execute(store, command, source='fourclaw', sources=sources)
+        result = arrive(store, 'fourclaw', 'an-invented-account', [mail(10)])
+        self.assertEqual((result['added'], result['errors']), (1, []))
+        self.assertEqual((store.adapter('fourclaw'), store.adapter('moltbook')), (str(DESCRIBED), 'moltbook'))
 
     def test_stale_collector_keeps_mail_but_cannot_rewind_progress(self):
         def another_pass():
