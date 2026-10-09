@@ -11,8 +11,9 @@ from boardmail.config import MailError
 from boardmail.store import Store
 from boardmail import adapter_common
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
-from kit import Clock, failing, fixed, mark
+from kit import Clock, arrive, failing, fixed, mark
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
+from test_mail import mail
 
 
 class PublicContextTests(unittest.TestCase):
@@ -261,15 +262,14 @@ class PublicContextTests(unittest.TestCase):
         self.assertEqual(result['previous_exchange']['status'], 'linked')
         self.assertEqual(self.path.read_bytes(), before)
 
-    def test_matching_local_fourclaw_anchor_and_botnet_absent_parent_stay_available(self):
+    def test_matching_local_anchor_of_an_adapter_file_and_botnet_absent_parent_stay_available(self):
         import test_botnet as botnet
-        from test_fourclaw import THREAD, page, post, threads
-        # 4claw: a thread that names the account where it opens and in a reply. Its page shows no reply targets,
-        # and the reply is taken to answer the opening post, which is in the inbox.
-        fourclaw = threads({THREAD: page(replies=[post('Other', '@Reader a reply.')], opening='@Reader an opening.')})
-        result, code = commands.execute(self.store, 'collect', fetch=fourclaw,
-                                        sources={'fourclaw': {'account_id': 'Reader', 'watched_threads': [THREAD]}})
-        self.assertEqual((code, result['added']), (0, 2))
+        # A source of an adapter file: the opening post of a thread and a reply in it are its mail. The reply
+        # names no parent, and is taken to answer the opening post, which is in the inbox.
+        opening, reply = uid(700), uid(701)
+        result = arrive(self.store, 'filed', 'Reader', [{**mail(700), 'thread_id': opening},
+                                                        {**mail(701, created=101), 'thread_id': opening}])
+        self.assertEqual(result['added'], 2)
         # Botnet: a message that answers no other message. Its topic is no message, so the inbox does not have it.
         board = botnet.Board()
         board.add(20, parentMessageId=None)
@@ -278,9 +278,8 @@ class PublicContextTests(unittest.TestCase):
         self.assertEqual((code, result['added']), (0, 1))
         before = self.path.read_bytes()
         board = FakeBoard([])  # It has no answer, and it is asked nothing.
-        reply = next(m['id'] for m in self.store.page(source='fourclaw')['messages'] if m['id'] != THREAD)
-        result, code = commands.execute(self.store, 'context', source='fourclaw', id=reply, local=True, fetch=board)
-        self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, THREAD))
+        result, code = commands.execute(self.store, 'context', source='filed', id=reply, local=True, fetch=board)
+        self.assertEqual((code, result['complete'], result['parent']['id']), (0, True, opening))
         result, code = commands.execute(self.store, 'context', source='botnet', id=botnet.mid(20), local=True, fetch=board)
         self.assertEqual((result['parent']['status'], result['root']['status'], result['complete'], code),
                          ('none', 'unknown', False, 1))

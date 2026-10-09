@@ -102,10 +102,10 @@ class Patches(unittest.TestCase):
 
     def test_imported_by_name(self):
         """patch f'boardmail.{name}.Client'; patch module._fetch; patch other.collect"""
-        module = importlib.import_module('boardmail.adapter_fruitflies')
+        module = importlib.import_module('boardmail.adapter_clawdchat')
         with patch.object(module, '_fetch'):
             pass
-        for name in ('boardmail.adapter_botnet', 'boardmail.adapter_fourclaw'):
+        for name in ('boardmail.adapter_botnet', 'boardmail.adapter_colony'):
             other = importlib.import_module(name)
             with patch.object(other, 'collect'), patch(f'boardmail.{name}.Client'):
                 pass

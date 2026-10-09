@@ -9,12 +9,9 @@ from pathlib import Path
 import tempfile
 import unittest
 from urllib.error import URLError
-from uuid import UUID
 
 from boardmail import addressing, boards, commands, config
 from boardmail import adapter_clawdchat as clawd
-from boardmail import adapter_fourclaw as fourclaw
-from boardmail import adapter_fruitflies as fruit
 from boardmail.adapters import Batch, validate
 from boardmail.boards import BOARDS
 from boardmail.config import MailError
@@ -22,8 +19,6 @@ from boardmail.store import Store
 from examples.fixtures import FixtureBoard, named, original, settings, uid
 from kit import Clock, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
-from test_fourclaw import THREAD, page as claw_page, post as claw_post, threads as claw_threads
-from test_fruitflies import feed as fly_feed, post as fly_post
 
 PREVIEW = "PRIVATE NOTIFICATION PREVIEW"
 
@@ -514,50 +509,6 @@ class ClawdChatTests(unittest.TestCase):
         self.assertEqual({n: by_id(batch)[uid(n)]["addressing"] for n in (30, 31)}, {30: "mention", 31: "direct+mention"})
 
 
-class FourclawTests(unittest.TestCase):
-    def collect(self, html, **extra):
-        batch = fourclaw.collect(dict(account_id="Reader", watched_threads=[THREAD], **extra), {}, frozenset(),
-                                 fetch=claw_threads({THREAD: html}))
-        assert_clean(self, batch)
-        return batch
-
-    def test_own_thread_is_never_direct_and_public_context_is_kept(self):
-        ids = [f"10000000-0000-4000-8000-{n:012d}" for n in range(1, 5)]
-        html = claw_page("Reader", [claw_post("Other", "First reply"), claw_post("Other", "@Reader second reply"),
-                                    claw_post("Reader", "Our own reply"), claw_post("Another", "Third reply")], ids)
-        batch = self.collect(html)
-        self.assertEqual([(m["id"], m["addressing"], m["kind"]) for m in batch.messages],
-                         [(ids[0], "thread", "reply_to_post"), (ids[1], "mention", "reply_to_post"), (ids[3], "thread", "reply_to_post")])
-        self.assertEqual(set(originals(batch)), {THREAD, ids[2]})
-        self.assertEqual(originals(batch)[THREAD]["body"], "Opening")
-        self.assertEqual(originals(batch)[ids[2]]["author"], "Reader")
-
-    def test_foreign_thread_keeps_only_mentions_and_the_root(self):
-        html = claw_page("Other", [claw_post("Other", "@Reader hello"), claw_post("Other", "unrelated")])
-        batch = self.collect(html)
-        self.assertEqual([(m["addressing"], m["kind"]) for m in batch.messages], [("mention", "mention")])
-        self.assertEqual(set(originals(batch)), {THREAD})
-
-
-class FruitfliesTests(unittest.TestCase):
-    def collect(self, pages, cfg=None):
-        batch = fruit.collect(cfg or {"account_id": "alice"}, {}, frozenset(), fetch=fly_feed(*pages))
-        assert_clean(self, batch)
-        return batch
-
-    def test_verified_parent_and_explicit_handle_combine(self):
-        own = [fly_post(1, "our question", author="alice", kind="question"), fly_post(2, "our answer", author="alice", kind="answer")]
-        rows = [fly_post(3, "@alice hello"), fly_post(4, parent=1, kind="answer"), fly_post(5, "@ALICE thanks", parent=2, kind="answer"),
-                fly_post(6, "@ally as configured", parent=1, kind="answer"), fly_post(7, "@ally alone"), fly_post(8, "plain")]
-        batch = self.collect([own, rows, []], {"account_id": "alice", "mention_aliases": ["Ally"]})
-        self.assertEqual([(int(UUID(m["id"])), m["addressing"], m["kind"]) for m in batch.messages],
-                         [(3, "mention", "mention"), (4, "direct", "reply_to_post"), (5, "direct+mention", "reply_to_comment"),
-                          (6, "direct+mention", "reply_to_post"), (7, "mention", "mention")])
-        cached = originals(batch)
-        self.assertEqual(set(cached), {fly_post(1)["id"], fly_post(2)["id"]})
-        self.assertEqual(cached[fly_post(1)["id"]]["body"], "our question")
-
-
 class ConfigTests(unittest.TestCase):
     def load(self, adapter, **extra):
         with tempfile.TemporaryDirectory() as folder:
@@ -566,7 +517,6 @@ class ConfigTests(unittest.TestCase):
             base = {"adapter": adapter, "account_id": uid(1) if keyed else "reader"}
             if keyed: base["api_key_file"] = "unused.key"
             if adapter == "postingboard": base["inbox"] = True
-            if adapter == "fourclaw": base["watched_threads"] = [THREAD]
             path.write_text(json.dumps({"database": "mail.sqlite3", "sources": {"alias": {**base, **extra}}}))
             return config.load(path)["sources"]["alias"]
 
@@ -583,7 +533,7 @@ class ConfigTests(unittest.TestCase):
                     with self.assertRaisesRegex(MailError, "^invalid_config$"):
                         self.load(adapter, mention_aliases=bad)
         self.assertEqual(self.load("postingboard")["mention_aliases"], [])
-        self.assertNotIn("mention_aliases", self.load("fourclaw"), "The account-name default stays with the adapter")
+        self.assertNotIn("mention_aliases", self.load("moltbook"), "The account-name default stays with the adapter")
 
 
 class CacheTests(unittest.TestCase):

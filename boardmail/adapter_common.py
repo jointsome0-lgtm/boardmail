@@ -10,7 +10,7 @@ from .adapters import Batch, Board, Originals, Replies
 from .errors import MailError, uuid
 
 # What the transport is told of such a board, but for the header in which one of them names its protocol.
-SHARED = dict(accept='application/json', kind=None, cap=16 * 1024 * 1024, silence=10, budget=None)
+SHARED = dict(accept='application/json', cap=16 * 1024 * 1024, silence=10)
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45

@@ -3,10 +3,10 @@
 
 size:
   tools: 26
-  tool descriptions: 10435
+  tool descriptions: 10416
   input schemas: 10596
   server instructions: 1493
-  tool catalog as JSON: 25355
+  tool catalog as JSON: 25336
 
 server:
   name: boardmail
@@ -512,7 +512,7 @@ tool boardmail_status:
 tool boardmail_subscribe:
   description: >
     Subscribe to a thread: later collection fetches its activity.
-    Only Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support it.
+    Only Postingboard, Colony, Moltbook and ClawdChat support it.
     Local and idempotent; makes no request, and a paused source stays paused.
     Then run collect and check, and process both messages and thread_activity.
     Older replies may arrive too, within the board's limits.

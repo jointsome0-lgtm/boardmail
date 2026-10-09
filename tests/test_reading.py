@@ -401,26 +401,6 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual(brief['parent'], {'id': uid(90), 'status': 'unavailable', 'reason': 'thread_mismatch'})
         self.assertEqual(brief['previous_exchange'], {'status': 'unknown', 'messages': []})
 
-    def test_fourclaw_synthesized_parent_remains_unknown_in_brief(self):
-        from test_fourclaw import THREAD, page, post, threads
-        # A reply in a thread that the account opened. The adapter gives the thread as what it answers.
-        board = threads({THREAD: page('Reader', [post('Other', 'A reply in the thread.')])})
-        self.run_command('collect', sources={'fourclaw': {'account_id': 'Reader', 'watched_threads': [THREAD]}},
-                         fetch=board)
-        message = self.run_command(scope='all')['messages'][0]
-        self.assertEqual((message['parent_id'], message['addressing']), (THREAD, 'thread'))
-        self.assertEqual(message['brief']['parent'], {'id': None, 'status': 'unknown'})
-
-    def test_fruitflies_reply_to_our_answer_keeps_that_answer_as_context(self):
-        from test_fruitflies import feed, post
-        board = feed([post(2, 'our answer', author='alice', parent=1, kind='answer')],
-                     [post(3, 'follow-up', parent=2, kind='answer')], [])
-        self.run_command('collect', sources={'fly': {'account_id': 'alice', 'adapter': 'fruitflies'}}, fetch=board)
-        brief = self.run_command()['messages'][0]['brief']
-        self.assertEqual(brief['root']['body'], 'our answer')
-        self.assertEqual(brief['root']['status'], 'cached')
-        self.assertEqual(brief['parent']['status'], 'same_as_root')
-
     def test_cli_preferences_and_replay_use_the_documented_flags(self):
         def cli(*args):
             process = subprocess.run([sys.executable, '-m', 'boardmail', '--db', str(self.path), *args],

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Say which lines of a file the test suite runs, with the standard library alone.
 
-    python scripts/line_coverage.py boardmail/adapter_fruitflies.py boardmail/adapter_fourclaw.py
+    python scripts/line_coverage.py boardmail/adapter_botnet.py boardmail/adapter_colony.py
 
 Run it from the top of the source tree. It runs the full test discovery in this
 process and prints one row for each named file: its lines, how many of them

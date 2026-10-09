@@ -251,9 +251,9 @@ COMMANDS = {command.name: command for command in (
             Argument('reset', '--reset', FLAG, text='Restore the defaults. Not with {.scope} or {.context}.'))),
     Command(
         'subscribe',
-        text='Subscribe to a thread: later collection fetches its activity. Only Postingboard, Colony, Moltbook, '
-             'ClawdChat, 4claw and Fruitflies support it. Local and idempotent; makes no request, and a paused '
-             'source stays paused. Then run {collect} and {check}, and process both messages and thread_activity. '
+        text='Subscribe to a thread: later collection fetches its activity. Only Postingboard, Colony, Moltbook '
+             'and ClawdChat support it. Local and idempotent; makes no request, and a paused source stays '
+             'paused. Then run {collect} and {check}, and process both messages and thread_activity. '
              "Older replies may arrive too, within the board's limits. Addressed scope summarizes ordinary "
              'activity; unknown recipients stay visible.',
         arguments=FOLLOWED, hints=(IDEMPOTENT,), sources=GIVEN),

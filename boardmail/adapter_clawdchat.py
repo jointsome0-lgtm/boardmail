@@ -27,7 +27,7 @@ UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted",
 OVER = ("budget_exhausted", "source_timeout")
 # What the transport is told of the board.
 transport.BOARDS["clawdchat"] = transport.Board(
-    accept="application/json", protocol=None, kind=None, cap=1024 * 1024, silence=4, budget=None)
+    accept="application/json", protocol=None, cap=1024 * 1024, silence=4)
 
 
 class Client:

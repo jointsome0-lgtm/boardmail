@@ -118,6 +118,54 @@ class AdapterTests(unittest.TestCase):
         with closing(sqlite3.connect(legacy)) as db:
             self.assertEqual(db.execute('SELECT seq FROM sqlite_sequence WHERE name="messages"').fetchone()[0], 3)
 
+    def test_a_board_that_left_the_package_is_a_name_like_any_other_and_its_mail_stays(self):
+        gone = ('fourclaw', 'fruitflies')
+        # 0.16.1 was the last release with these two boards. The file is an inbox as it left one: each board has a
+        # source there, with the name of the board as its adapter, and one message.
+        left = str(self.root/'left.sqlite3')
+        with closing(sqlite3.connect(left)) as db:
+            db.executescript((Path(__file__).parent/'fixtures/left-0.16.1.sql').read_text())
+        # No config names them, and the local commands read what the inbox holds. A source that no pass reads any
+        # more is stale, until it is paused.
+        code, status = self.cli('--db', left, 'status')
+        self.assertEqual((code, status['fresh'], [(row['source'], row['status']) for row in status['sources']]),
+                         (0, False, [(source, 'stale') for source in gone]))
+        code, page = self.cli('--db', left, 'list', '--scope', 'all')
+        self.assertEqual((code, [message['source'] for message in page['messages']]), (0, list(gone)))
+        # The parent that the inbox holds for a message of 4claw is read as the parent of any other message.
+        reply = page['messages'][0]
+        self.assertEqual((reply['parent_id'], reply['brief']['parent']),
+                         (reply['thread_id'], {'id': reply['thread_id'], 'status': 'same_as_root'}))
+        code, shown = self.cli('--db', left, 'show', gone[0], reply['id'])
+        self.assertEqual((code, shown['message']['body']), (0, 'An invented reply in the thread.'))
+        for source in gone:
+            self.assertEqual(self.cli('--db', left, 'pause', source)[1]['event'], 'paused')
+        code, status = self.cli('--db', left, 'status')
+        self.assertEqual((status['fresh'], [row['status'] for row in status['sources']]), (True, ['paused', 'paused']))
+        # In a config either name is no board. Without an adapter file it is no source, and with one in the folder
+        # for adapter files it is the source of that file.
+        examples = Path(__file__).resolve().parents[1]/'examples'
+        shutil.copyfile(examples/'custom_feed.json', self.root/'custom_feed.json')
+        folder = self.root/'adapters'; folder.mkdir()
+        config = self.root/'config.json'
+        for source in gone:
+            with self.subTest(source=source):
+                about = {'account_id': 'agent', 'feed_file': 'custom_feed.json', 'batch_size': 1}
+                config.write_text(json.dumps({'database': f'{source}.sqlite3', 'sources': {source: about}}))
+                code, result = self.cli('--config', str(config), 'init')
+                self.assertEqual((code, result['error']), (2, 'invalid_config'))
+                shutil.copyfile(examples/'custom_board.py', folder/f'{source}.py')
+                self.assertEqual(self.cli('--config', str(config), 'init')[0], 0)
+                code, result = self.cli('--config', str(config), 'collect')
+                self.assertEqual((code, result['added'], [row['status'] for row in result['sources']]), (0, 1, ['ok']))
+                self.assertEqual(Store(self.root/f'{source}.sqlite3').adapter(source), str(folder/f'{source}.py'))
+                # The name as the adapter of a source is the path of a file, as any name that is no board is.
+                config.write_text(json.dumps({'database': f'{source}.sqlite3', 'sources': {
+                    source: about, 'other': {'account_id': 'agent', 'adapter': source}}}))
+                code, result = self.cli('--config', str(config), 'collect')
+                self.assertEqual((code, [(error['source'], error['error']) for error in result['errors']]),
+                                 (1, [('other', 'adapter_load_failed')]))
+
     def test_a_later_source_of_a_version_1_file_is_read_by_the_adapter_of_its_config(self):
         legacy = self.root/'later.sqlite3'
         with closing(sqlite3.connect(legacy)) as db:
@@ -125,12 +173,12 @@ class AdapterTests(unittest.TestCase):
         store = Store(legacy)
         # Version 1 had no board of this name. A later release put the source into the file, here with a pause,
         # which names no adapter there. So only the config says which adapter reads it.
-        sources = {'fourclaw': described('an-invented-account')}
+        sources = {'later-board': described('an-invented-account')}
         for command in ('pause', 'resume'):
-            commands.execute(store, command, source='fourclaw', sources=sources)
-        result = arrive(store, 'fourclaw', 'an-invented-account', [mail(10)])
+            commands.execute(store, command, source='later-board', sources=sources)
+        result = arrive(store, 'later-board', 'an-invented-account', [mail(10)])
         self.assertEqual((result['added'], result['errors']), (1, []))
-        self.assertEqual((store.adapter('fourclaw'), store.adapter('moltbook')), (str(DESCRIBED), 'moltbook'))
+        self.assertEqual((store.adapter('later-board'), store.adapter('moltbook')), (str(DESCRIBED), 'moltbook'))
 
     def test_stale_collector_keeps_mail_but_cannot_rewind_progress(self):
         def another_pass():

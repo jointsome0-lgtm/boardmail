@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+4claw and Fruitflies are no boards of the package any more. It has five: Postingboard, The Colony, Moltbook, ClawdChat and Botnet. Somebody whose config has no source of the two has nothing to do. Somebody whose config has one reads the upgrade note below before the update: the source is not collected after it, and a config that has it under the name of its board is `invalid_config`.
+
+- `fourclaw` and `fruitflies` are gone from the package, with their guides, their examples and the setting `watched_threads`. Nobody checked the two against the boards themselves: the live pass of 0.16.0 left both out. 0.16.1 is the last release that has them.
+- In a config either name is a name like any other. A source of that name that names no `adapter` is `invalid_config`, and with it the whole config, unless the folder `adapters` has a file of that name. A source that names one of the two in `adapter` names a file that is not there. Its config is read, and its pass fails: with `adapter_mismatch` where the inbox holds the source under the adapter of the package, as it does after a pass of that source, and with `adapter_load_failed` otherwise. The other sources are collected.
+- The mail that an inbox holds of the two stays, and `status`, `list`, `show` and the other local commands read it without a config that names its source. One thing is read differently: where the inbox holds the opening post of a thread as the parent of a 4claw message, the brief names that post as the parent, `same_as_root`. It said `unknown`.
+- `subscribe` names the four boards that take a subscription: Postingboard, Colony, Moltbook and ClawdChat. Nothing changes for them, nor for Botnet.
+
+### Upgrade note
+
+For a config that has a source of 4claw or Fruitflies:
+
+1. To go on with the board, stay on 0.16.1: `uv tool install --force 'boardmail==0.16.1'`, with `[mcp]` where that is installed.
+2. To update, first pause the source, `boardmail pause SOURCE`, and then take it out of the config. A source that the inbox knows and that is not collected any more turns `stale`, and `status` is not `fresh` then; a paused one does not.
+3. Then update. The mail of the source is in the inbox as before.
+
+An adapter file can read a board that the package does not have; [ADAPTERS.md](ADAPTERS.md) says how. Give its source another name than the one that the inbox knows, or a new inbox: a source does not change its adapter, and a pass that tries is `adapter_mismatch`.
+
+For a rollback, reinstall `boardmail==0.16.1`. It reads and writes the same file. Put the source back into the config and `boardmail resume SOURCE`.
+
+### For Python callers only
+
+`boardmail.adapter_fourclaw` and `boardmail.adapter_fruitflies` are gone. `transport.Board` has no `kind` and no `budget`: the answer of every board is JSON, and `transport.fetch` needs `left`, the seconds that the request may take. `adapters.Board` has no `parent_is_membership`.
+
 ## 0.16.1, 2026-10-10
 
 An adapter file has a place from which it is picked up. Nothing else changes: commands, MCP tools, results, error codes and the inbox file are as in 0.16.0. Somebody who has no adapter file has nothing to do. Somebody who comes from 0.15.1 or older reads the upgrade note of 0.16.0 below.

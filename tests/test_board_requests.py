@@ -31,7 +31,6 @@ ELSEWHERE = 'elsewhere.example'
 KEY = 'an-invented-key'
 ME, WRITER, THREAD, REPLY = uid(1), uid(2), uid(100), uid(70)
 MEMBER = 'participant-' + ME
-PAGE = '10000000-0000-4000-8000-000000000001'
 REDIRECTS = (301, 302, 303, 307, 308)
 STATUSES = (300, 400, 401, 403, 404, 408, 410, 418, 429, 500, 502, 503, 504)
 INTRO = """\
@@ -79,15 +78,6 @@ def pages(prefix, signed, anonymous, **headers):
     return lambda: board
 
 
-def fourclaw_page():
-    posts = ''.join(f'<div class="claw-post {kind}"><span class="claw-post-name">writer</span>'
-                    f'<time datetime="2026-09-07T12:00:00Z">then</time><div class="claw-post-body">{body}</div></div>'
-                    for kind, body in (('op', 'An invented opening.'), ('reply', '@reader, an invented reply.')))
-    keys = '["$","div",' + json.dumps(PAGE) + ',{"className":"claw-post reply"}]'
-    return ('<div class="claw-section-title">An invented thread</div>' + posts
-            + '<script>self.__next_f.push(' + json.dumps([1, keys]) + ')</script>').encode()
-
-
 def legacy(source):
     return {**fixtures.settings()[source], 'api_key_file': 'board.key'}
 
@@ -123,13 +113,6 @@ BOARDS = {
         '/topics/' + uid(200): {'id': uid(200), 'title': 'An invented topic', 'description': 'It is invented.',
                                 'createdAt': 1790593200000},
     }), 1024 * 1024, 10),
-    'fruitflies': Board('api.fruitflies.ai', {'account_id': 'reader'}, pages('', {}, {
-        '/v1/feed': {'posts': [{'id': REPLY, 'parent_id': None, 'post_type': 'post',
-                                'content': '@reader, an invented question.', 'agents': {'handle': 'writer'},
-                                'created_at': '2026-09-07T10:00:00Z'}]},
-    }), 2 * 1024 * 1024, 8),
-    'fourclaw': Board('www.4claw.org', {'account_id': 'reader', 'watched_threads': [PAGE]},
-                      pages('', {}, {'/t/' + PAGE: fourclaw_page()}, **{'Content-Type': 'text/html'}), 2_000_000, 10),
 }
 FILES = {'board.key': KEY + '\n', 'board.totp': 'INVENTEDINVENTED\n'}
 
@@ -246,7 +229,7 @@ def cases(board):
 
 
 # What a pass gives where every answer of the board fails in one way, or its first answer comes late: the case,
-# and the one code that all seven boards have for it.
+# and the one code that all five boards have for it.
 SAME = {
     **{f'every answer is a {status} that names another host': 'redirect_refused' for status in REDIRECTS},
     'every answer is a 302 that names another place on the board': 'redirect_refused',
@@ -262,7 +245,7 @@ SAME = {
     'the first answer comes half a second after its time budget ends': 'source_timeout',
     'the second half of the first answer comes half a second after its time budget ends': 'source_timeout',
     'the first answer is whole in time and ends half a second after its time budget ends': 'source_timeout',
-    # It is late before it is anything else: 4claw does not look at what such an answer says that it is.
+    # It is late before it is anything else.
     'the first answer says that it is text/plain and comes half a second after its time budget ends': 'source_timeout',
     'every answer is text that is not JSON': 'invalid_response',
     'every answer ends with a byte that is not UTF-8': 'invalid_response',
