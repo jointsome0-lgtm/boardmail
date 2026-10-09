@@ -32,7 +32,8 @@ class CheckSdistTests(unittest.TestCase):
         self.root = Path(self.fixture.name)
         self.sdist = self.root / 'fixture.tar.gz'
         with tarfile.open(self.sdist, 'w:gz') as archive:
-            for name in checker.REQUIRED:
+            # A source distribution also holds what setuptools wrote of the package, which no file here requires.
+            for name in checker.REQUIRED + ['boardmail.egg-info/PKG-INFO']:
                 payload = b'# tiny checker fixture\n'
                 if name == 'scripts/check_sdist.py':
                     payload = CHECKER_PATH.read_bytes()
