@@ -115,6 +115,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
@@ -150,6 +154,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
@@ -385,6 +393,11 @@ A board that has a key file has cases for what the file holds. Its board is heal
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
@@ -428,6 +441,11 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
@@ -653,6 +671,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
@@ -688,6 +710,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
@@ -910,6 +936,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 3 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
@@ -951,6 +981,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
@@ -1153,6 +1187,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
@@ -1189,6 +1227,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
@@ -1449,6 +1491,12 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 6 s]
     exit code 1, added 1, errors: http_503; the source: status error, unavailable 0, backlog pending
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
+    exit code 1, added 1, errors: http_503; the source: status error, unavailable 0, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
@@ -1495,6 +1543,12 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 1, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
+    exit code 1, added 1, errors: source_timeout; the source: status error, unavailable 0, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
@@ -1655,6 +1709,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 1, backlog pending
 
+-- the first answer has the status 503 and comes half a second after its time budget ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_503; the source: status error, unavailable 1, backlog pending
+
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 1, backlog pending
 
@@ -1687,6 +1745,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
+
+-- the first answer says that it is text/plain and comes half a second after its time budget ends
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
 

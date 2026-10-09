@@ -131,7 +131,8 @@ def fetch(board, url, *, left=None, headers=None, body=None):
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
     that cannot be read, and a MailError for a redirect that is refused and for an answer that is too large or
-    late."""
+    late. Only an answer that is read can be late: a status that is no success and a redirect are raised as what
+    they are, whenever they come."""
     about = BOARDS[board]
     # What the board is told comes last, so a header of the client under the same name does not replace it.
     send = {**(headers or {}), 'Accept': about.accept, 'User-Agent': AGENT}
@@ -150,10 +151,11 @@ def fetch(board, url, *, left=None, headers=None, body=None):
             raise MailError('source_timeout')
 
     with build_opener(NoRedirect(), Attempts()).open(request, timeout=min(about.silence, left)) as answer:
+        # Before anything is asked of the answer: one that begins late is late, whatever else it is.
+        in_time()
         if about.kind and answer.headers.get_content_type() != about.kind:
             raise ValueError('The answer is not ' + about.kind)
         content = bytearray()
-        in_time()
         while True:
             chunk = answer.read1(min(65536, about.cap + 1 - len(content)))
             # After each read, the last one too: an answer that has come whole is late when its end comes late.

@@ -209,6 +209,8 @@ def cases(board):
     yield 'the first answer has the status 503', late(0, (503, {'error': 'An invented refusal.'}))
     yield 'the first answer has the status 503 and comes two seconds before its time budget ends', late(
         board.budget - 2, (503, {'error': 'An invented refusal.'}))
+    yield f'the first answer has the status 503 and comes {half} after its time budget ends', late(
+        board.budget + 0.5, (503, {'error': 'An invented refusal.'}))
     yield 'the board cannot be reached', unreachable
     yield 'the socket stays silent for too long', silent
     yield 'the socket stays silent for too long after the first request', first(
@@ -222,6 +224,11 @@ def cases(board):
             body[:len(body) // 2], lambda: passes(board.budget + 0.5), body[len(body) // 2:]]), headers))
     yield f'the first answer is whole in time and ends {half} after its time budget ends', first(
         lambda passes, status, body, headers: (status, kit.Pieces([body, lambda: passes(board.budget + 0.5)]), headers))
+
+    def plain(passes, status, body, headers):
+        passes(board.budget + 0.5)
+        return status, body, {'Content-Type': 'text/plain'}
+    yield f'the first answer says that it is text/plain and comes {half} after its time budget ends', first(plain)
     yield 'every answer takes three seconds to come', slow(3)
     yield 'every answer is text that is not JSON', every(
         lambda board, status, body, headers: (status, b'An invented line.', headers))
@@ -255,13 +262,16 @@ SAME = {
     'the first answer comes half a second after its time budget ends': 'source_timeout',
     'the second half of the first answer comes half a second after its time budget ends': 'source_timeout',
     'the first answer is whole in time and ends half a second after its time budget ends': 'source_timeout',
+    # It is late before it is anything else: 4claw does not look at what such an answer says that it is.
+    'the first answer says that it is text/plain and comes half a second after its time budget ends': 'source_timeout',
     'every answer is text that is not JSON': 'invalid_response',
     'every answer ends with a byte that is not UTF-8': 'invalid_response',
     'every answer is one byte longer than the size cap': 'response_too_large',
 }
 ABSENT, FOLDER = 'no file', 'a folder'
-# What a pass gives where no address of the board takes a connection, for a board whose pass does not end with
-# network_error then. ClawdChat asks again after a board that it did not reach, and has no time left to.
+# What a pass gives where no address of the board takes a connection, or where its first answer is a 503 that
+# comes late, for a board whose pass does not end with the code of that request then. ClawdChat asks again after
+# a board that it did not reach or that answered 503, and has no time left to.
 NO_ANSWER = {'clawdchat': 'budget_exhausted'}
 
 
@@ -396,6 +406,10 @@ class BoardRequestTests(unittest.TestCase):
         for name, board in BOARDS.items():
             title = f'the first answer comes half a second before its time budget of {board.budget} s ends'
             self.assertEqual(self.gave[title][name], [], name)
+        # A status that is no success is what the request is called also when it comes late: the board has
+        # answered, and only an answer that is read can be late.
+        title = 'the first answer has the status 503 and comes half a second after its time budget ends'
+        self.assertEqual(self.gave[title], {name: [NO_ANSWER.get(name, 'http_503')] for name in BOARDS})
         # One rule says what a key is. A key that it takes is sent as it is, in each request that carries a key,
         # and for any other the board is not asked.
         with_key = [name for name, board in BOARDS.items() if 'api_key_file' in board.source]
