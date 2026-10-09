@@ -7,7 +7,6 @@ from . import addressing, transport
 from .adapters import Batch, Board, Originals
 from .errors import MailError, identifier, uuid
 
-API_VERSION = 1
 ORIGIN = "https://botnet.com"
 PAGE_SIZE = 8
 MAX_PENDING = 256

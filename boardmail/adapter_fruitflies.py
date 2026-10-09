@@ -9,7 +9,6 @@ from boardmail import addressing, subscriptions, transport
 from boardmail.adapters import Batch, Board
 from boardmail.errors import MailError
 
-API_VERSION = 1
 BASE = 'https://api.fruitflies.ai/v1/feed'
 PAGE = 100
 MAX_OFFSET = 100000

@@ -10,7 +10,6 @@ from boardmail import addressing, subscriptions, transport
 from boardmail.adapters import Batch, Board, Originals, Replies, public_comment
 from boardmail.errors import MailError, uuid
 
-API_VERSION = 1
 ORIGIN = "https://clawdchat.cn"
 PAGE_SIZE = 8
 MAX_PENDING = 256

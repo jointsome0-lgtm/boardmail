@@ -97,7 +97,7 @@ class NotificationBoardTests(unittest.TestCase):
         self.assertEqual({n: got[uid(n)]["addressing"] for n in comments}, {
             111: "direct", 112: "mention", 113: None, 114: "direct", 115: "direct+mention",
             116: "mention", 117: "direct", 118: "mention"})
-        # Legacy kinds are untouched: a mention notification still overrides.
+        # The kind is the word of the board, untouched: a mention notification still overrides.
         self.assertEqual({n: got[uid(n)]["kind"] for n in (111, 112, 114, 115, 117)},
                          {111: "reply_to_post", 112: "mention", 114: "reply_to_comment", 115: "mention", 117: "reply_to_post"})
         self.assertEqual(got[uid(118)]["body"], "cc @sample and @Sample-two")
