@@ -273,12 +273,15 @@ class ClawdChatTests(unittest.TestCase):
                 self.assertEqual(batch.state, state)
                 self.assertFalse(batch.complete)
                 self.assertEqual(self.board.asked, [])
-        # Exhausting a planned discovery phase is partial progress, not an outage.
-        self.board.page_error[0] = MailError("budget_exhausted")
-        batch, added = self.collect()
-        self.assertEqual(added, 0)
-        self.assertIsNone(batch.error)
-        self.assertFalse(batch.complete)
+        # A planned discovery phase whose time is over is partial progress, not an outage: where it has none left
+        # to ask, and where an answer comes after it.
+        for over in ("budget_exhausted", "source_timeout"):
+            with self.subTest(over=over):
+                self.board.page_error[0] = MailError(over)
+                batch, added = self.collect()
+                self.assertEqual(added, 0)
+                self.assertIsNone(batch.error)
+                self.assertFalse(batch.complete)
 
     def test_bad_reference_isolated_and_unsafe_canonical_links_use_public_api(self):
         self.board.events = [event(9), event(10)]

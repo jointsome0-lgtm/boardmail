@@ -17,12 +17,12 @@ FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, Overflow
 # What the original of a notification is called when it is gone from the board: refused, missing, deleted or
 # hidden. That is no failure of the source. The original counts as unavailable and its reference waits on.
 GONE = ("http_403", "http_404", "http_410", "original_deleted", "original_unavailable")
+# The time of a phase is over: it has none left to ask, or an answer came after it. Both end the phase alike.
+OVER = ("budget_exhausted", "source_timeout")
 # What the transport is told of the board.
 transport.BOARDS["botnet"] = transport.Board(
     accept="application/json", agent="boardmail", protocol=None, key=4096, kind=None, cap=1024 * 1024,
-    silence=4, budget=None, at_the_end=True, to_the_end=False,
-    late="budget_exhausted", large="response_too_large", network="network_error", content="invalid_response",
-    statuses=None, status=None, redirect="redirect_refused")
+    silence=4, budget=None, at_the_end=True, to_the_end=False)
 
 
 class Client:
@@ -61,7 +61,7 @@ class Client:
             if not isinstance(result, dict):
                 raise ValueError()
         except transport.FAILED as exc:
-            raise MailError(transport.failure("botnet", exc)) from None
+            raise MailError(transport.failure(exc)) from None
         if not authenticated:
             self.cache[cache_key] = result
         return deepcopy(result)
@@ -174,7 +174,7 @@ def _cursor(value):
 def _error(batch, exc):
     code = str(exc) if isinstance(exc, MailError) else "invalid_response"
     batch.complete = False
-    if code != "budget_exhausted" and (batch.error is None or code == "http_429"):
+    if code not in OVER and (batch.error is None or code == "http_429"):
         batch.error = code
     return code
 
@@ -206,7 +206,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
         if len(pending) > MAX_PENDING:
             raise ValueError()
     except FAILURES as exc:
-        # Until identity is verified, a spent budget is a failed preflight.
+        # Until identity is verified, a phase whose time is over is a failed preflight.
         batch.error = _error(batch, exc)
         return batch
 
@@ -249,7 +249,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
             code = _error(batch, exc)
             if position is not None and code in ("http_400", "http_422", "pagination_no_progress", "invalid_response"):
                 batch.state["cursor"] = None
-            if code in ("http_401", "http_403", "http_429", "budget_exhausted"):
+            if code in ("http_401", "http_403", "http_429", *OVER):
                 break
 
     # New references get a bounded first turn; failed old references rotate to
@@ -291,7 +291,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                 pending[mid] = entry
                 if isinstance(exc, MailError) and str(exc) in GONE:
                     batch.unavailable += 1
-                elif _error(batch, exc) in ("http_429", "budget_exhausted"):
+                elif _error(batch, exc) in ("http_429", *OVER):
                     break
             if batch.error == "http_429":
                 break

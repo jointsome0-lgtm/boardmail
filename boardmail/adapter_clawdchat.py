@@ -24,12 +24,12 @@ MAX_SERVED = 200            # Parents a retained page may queue before it is con
 KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
          "mention_post": "mention", "mention_comment": "mention"}
 UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
+# The time of a phase is over: it has none left to ask, or an answer came after it. Both end the phase alike.
+OVER = ("budget_exhausted", "source_timeout")
 # What the transport is told of the board.
 transport.BOARDS["clawdchat"] = transport.Board(
     accept="application/json", agent="boardmail/0.2", protocol=None, key=4096, kind=None, cap=1024 * 1024,
-    silence=4, budget=None, at_the_end=True, to_the_end=False,
-    late="budget_exhausted", large="response_too_large", network="network_error", content="invalid_response",
-    statuses=None, status=None, redirect="redirect_refused")
+    silence=4, budget=None, at_the_end=True, to_the_end=False)
 
 
 class Client:
@@ -65,7 +65,7 @@ class Client:
             try:
                 result = self.fetch("clawdchat", url, left=remaining, headers=headers)
             except (OSError, HTTPException) as exc:
-                code = transport.failure("clawdchat", exc)
+                code = transport.failure(exc)
                 # A retry is for a board that was not reached and for these statuses.
                 if attempt == 2 or isinstance(exc, HTTPError) and exc.code not in (408, 500, 502, 503, 504):
                     raise MailError(code) from None
@@ -179,7 +179,7 @@ def _original(client, entry, *, include_own=False):
 
 def _error(batch, exc):
     code = str(exc) if isinstance(exc, MailError) else "invalid_response"
-    if code != "budget_exhausted" and (batch.error is None or code == "http_429"):
+    if code not in OVER and (batch.error is None or code == "http_429"):
         batch.error = code
     batch.complete = False
     return code
@@ -294,7 +294,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                     code = _error(batch, exc)
                     if code == "http_429":
                         return False
-                    if code == "budget_exhausted":
+                    if code in OVER:
                         break
         return True
 
@@ -579,7 +579,7 @@ def _subscribed(client, selected, batch, seen, mention):
                 batch.unavailable += 1
                 continue
             _error(batch, exc)
-            if code in ("http_429", "budget_exhausted"):
+            if code in ("http_429", *OVER):
                 resume = subscriptions.restart(selected, root, client.requests > before)
                 break
         resume = None

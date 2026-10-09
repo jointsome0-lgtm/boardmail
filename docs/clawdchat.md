@@ -38,11 +38,12 @@ If the pending queue fills, the oldest reference is evicted, `pending_overflow` 
 | `http_401` / `http_403` | Check account access and key validity. |
 | `http_429` | Wait before collecting again. |
 | `network_error` / `http_5xx` | Retry collection later. Error bodies are not stored. |
+| `source_timeout` / `budget_exhausted` | The identity check that opens a pass had no answer in its time. Collect again. |
 | `pending_overflow` | Collect again; the bounded retry queue could not retain every reference. |
 | `invalid_response` / `pagination_no_progress` | Retry; report persistent API incompatibility through an issue. |
 | `redirect_refused` | Check provider API changes. Credentials are never forwarded through redirects. |
 
-Reaching a planned request or time budget leaves `complete` false without a source error. Collect again to continue saved work.
+After the identity check, reaching a planned request or time budget leaves `complete` false without a source error, whether the time ended before a request was sent or while its answer was awaited. Collect again to continue saved work.
 
 ## Evidence
 

@@ -1,11 +1,14 @@
 """Every error code keeps its next-step hint, its next call and its exit code, and the catalog has every code the
 package raises."""
 import ast
+from http.client import HTTPException
+import inspect
 from pathlib import Path
 import unittest
 
 import boardmail
-from boardmail import adapter_colony, adapter_common, commands, errors, mcp, table, transport
+from boardmail import adapter_colony, commands, errors, mcp, table, transport
+from examples.fixtures import status
 
 
 TESTS = Path(__file__).resolve().parent
@@ -13,9 +16,10 @@ PACKAGE = Path(boardmail.__file__).resolve().parent
 # The stored rows for codes the catalog does not list.
 UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 # The codes of a pass that could not finish. Collecting again can work for them, and for no other code of the catalog.
-UNFINISHED = {'budget_exhausted', 'collection_conflict', 'fourclaw_http_error', 'fourclaw_invalid_public_page',
-              'fourclaw_network_error', 'invalid_response', 'network_error', 'network_timeout',
+UNFINISHED = {'budget_exhausted', 'collection_conflict', 'invalid_response', 'network_error',
               'pagination_no_progress', 'pending_overflow', 'source_timeout'}
+# The codes that 4claw and Fruitflies had for a failed request while each board called one in its own way.
+GONE = ('fourclaw_http_error', 'fourclaw_invalid_public_page', 'fourclaw_network_error', 'network_timeout')
 # The codes whose next step is one call: the command of that call, and what it takes from the call that failed.
 # The read of the journal is the step after a reply command that was refused for what the journal holds, and
 # after one that could not read or write the inbox file.
@@ -27,15 +31,12 @@ NEXT = {'database_exists': ('status', ()), 'database_missing': ('init', ()), 'in
         'reply_not_started': JOURNAL, 'reply_readback_mismatch': JOURNAL, 'reply_reference_conflict': JOURNAL,
         'source_not_found': ('status', ()), 'source_paused': ('status', ())}
 # The raises that build their code at run time. The stored table has rows for what they build.
-BUILT = {"adapter_botnet.py: transport.failure('botnet', exc)",  # what Botnet calls a request that failed
-         'adapter_common.py: code',                              # the code of a refusal that a board explains: a Colony sign-in code
-         'adapter_clawdchat.py: code',                           # what ClawdChat calls a request that failed
-         'errors.py: error',                                     # the code that a call names with error=
-         'table.py: str(exc)',                                   # the code of a check, with the name of its argument
-         "adapter_moltbook.py: error or 'reply_' + status",      # reply_deleted, reply_missing or a lookup error
-         'transport.py: about.large',                            # what a board calls an answer over its size cap
-         'transport.py: about.late',                             # what a board calls an answer that is late
-         'transport.py: self.refused'}                           # what a board calls a redirect
+BUILT = {'adapter_botnet.py: transport.failure(exc)',         # what a request to Botnet that failed is called
+         'adapter_common.py: code',                           # the code of a refusal that a board explains: a Colony sign-in code
+         'adapter_clawdchat.py: code',                        # what a request to ClawdChat that failed is called
+         'errors.py: error',                                  # the code that a call names with error=
+         'table.py: str(exc)',                                # the code of a check, with the name of its argument
+         "adapter_moltbook.py: error or 'reply_' + status"}   # reply_deleted, reply_missing or a lookup error
 
 
 def stored():
@@ -139,20 +140,25 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual(literal - set(errors.CODES), set())
         self.assertEqual(built, BUILT)
         self.assertEqual({code.lower() for code in adapter_colony.COLONY_AUTH_CODES} - set(errors.CODES), set())
-        named = {code for about in transport.BOARDS.values()
-                 for code in (about.late, about.large, about.network, about.content, about.status, about.redirect)}
-        self.assertEqual(named - set(errors.CODES) - {None}, set())
+        # What transport.failure() calls a request that failed with no code of its own.
+        called = {transport.failure(exc) for exc in (OSError(), HTTPException(), ValueError())}
+        self.assertEqual(called - set(errors.CODES), set())
         self.assertEqual(UNLISTED & set(errors.CODES), set())
 
-    def test_one_board_answers_for_the_boards_that_call_a_failure_alike(self):
-        # adapter_common.error_code() names a failure for the three boards that it serves without knowing which one
-        # it was, and the reply checks call it for ClawdChat too.
-        def called(board):
-            about = transport.BOARDS[board]
-            return about.network, about.content, about.statuses, about.status, about.redirect
-        row = adapter_common.ROW
-        self.assertEqual({called(board) for board in ('postingboard', 'the-colony', 'moltbook', 'clawdchat')},
-                         {(row.network, row.content, row.statuses, row.status, row.redirect)})
+    def test_a_failed_request_is_called_the_same_whichever_board_it_was_sent_to(self):
+        # What a failure is called is asked without the board, and the row of a board says nothing of it.
+        self.assertEqual(list(inspect.signature(transport.failure).parameters), ['exc'])
+        self.assertEqual({'late', 'large', 'network', 'content', 'statuses', 'status', 'redirect'}
+                         & set(transport.Board._fields), set())
+        for exc, code in ((errors.MailError('source_timeout'), 'source_timeout'), (status(418), 'http_418'),
+                          (ConnectionRefusedError(), 'network_error'), (TimeoutError(), 'network_error'),
+                          (HTTPException(), 'network_error'), (ValueError(), 'invalid_response'),
+                          (KeyError('id'), 'invalid_response')):
+            with self.subTest(failed=type(exc).__name__):
+                self.assertEqual(transport.failure(exc), code)
+        # The codes that only one board had are nowhere in the package, so no result has one.
+        package = ''.join(path.read_text(encoding='utf-8') for path in sorted(PACKAGE.glob('*.py')))
+        self.assertEqual([code for code in GONE if code in package], [])
 
     def test_mcp_flags_every_error_code(self):
         for code in [*errors.CODES, *UNLISTED]:

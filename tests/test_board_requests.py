@@ -196,6 +196,8 @@ def cases(board):
     yield 'every answer is a 302 that names what is no URL', every(
         lambda board, *answer: (302, b'It moved.', {'Location': 'http://[no-url'}))
     yield 'every answer is a 302 that names no other place', every(lambda board, *answer: (302, b'It moved.'))
+    yield 'every answer is a 302 that names a place that no request can go to', every(
+        lambda board, *answer: (302, b'It moved.', {'Location': 'file:///elsewhere'}))
     for status in STATUSES:
         yield f'every answer has the status {status}', every(
             lambda board, *answer, status=status: (status, {'error': 'An invented refusal.'}))
@@ -233,9 +235,28 @@ def cases(board):
         lambda board, status, body, headers: (status, body.ljust(board.cap + 1), headers))
 
 
+# What a pass gives where every answer of the board fails in one way, or its first answer comes late: the case,
+# and the one code that all seven boards have for it.
+SAME = {
+    **{f'every answer is a {status} that names another host': 'redirect_refused' for status in REDIRECTS},
+    'every answer is a 302 that names another place on the board': 'redirect_refused',
+    'every answer is a 302 that names what is no URL': 'invalid_response',
+    'every answer is a 302 that names no other place': 'http_302',
+    'every answer is a 302 that names a place that no request can go to': 'http_302',
+    **{f'every answer has the status {status}': f'http_{status}' for status in STATUSES},
+    'the board cannot be reached': 'network_error',
+    'the socket stays silent for too long': 'network_error',
+    'every answer is not HTTP': 'network_error',
+    'the first answer comes half a second after its time budget ends': 'source_timeout',
+    'the second half of the first answer comes half a second after its time budget ends': 'source_timeout',
+    'every answer is text that is not JSON': 'invalid_response',
+    'every answer ends with a byte that is not UTF-8': 'invalid_response',
+    'every answer is one byte longer than the size cap': 'response_too_large',
+}
 ABSENT, FOLDER = 'no file', 'a folder'
-# What a pass gives where no address of the board takes a connection, for a board that does not call it network_error.
-NO_ANSWER = {'clawdchat': 'budget_exhausted', 'fourclaw': 'fourclaw_network_error'}
+# What a pass gives where no address of the board takes a connection, for a board whose pass does not end with
+# network_error then. ClawdChat asks again after a board that it did not reach, and has no time left to.
+NO_ANSWER = {'clawdchat': 'budget_exhausted'}
 
 
 def keys():
@@ -261,6 +282,7 @@ class BoardRequestTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        self.gave = {}  # the errors of each pass of section(), by the title of its case and then by its board
 
     def home(self, name):
         """A folder with the config of one board and its new inbox, and that inbox as bytes."""
@@ -325,6 +347,7 @@ class BoardRequestTests(unittest.TestCase):
             source, = result['sources']
             errors = [error['error'] for error in result['errors']]
             self.assertEqual(errors, [source['error']] if source['error'] else [], title)
+            self.gave.setdefault(title, {})[name] = errors
             lines.append(f'    exit code {code}, added {result["added"]}, errors: {", ".join(errors) or "none"}; '
                          f'the source: status {source["status"]}, unavailable {source["unavailable"]}, '
                          f'backlog {"pending" if source["backlog_pending"] else "done"}')
@@ -336,6 +359,9 @@ class BoardRequestTests(unittest.TestCase):
         clock = kit.Clock(START)
         with kit.fixed(clock):
             text = '\n'.join([INTRO, *(self.section(name, clock) for name in BOARDS)])
+        # A failed request has the same code on every board.
+        for title, code in SAME.items():
+            self.assertEqual(self.gave[title], dict.fromkeys(BOARDS, [code]), title)
         kit.check_stored(self, 'board_requests.txt', text)
 
     def test_an_address_that_takes_no_connection_costs_three_seconds_on_every_board(self):
@@ -388,7 +414,7 @@ class BoardRequestTests(unittest.TestCase):
                     with self.assertRaises(transport.FAILED) as failed:
                         transport.fetch(name, f'https://{board.host}/', left=2)
                     self.assertEqual(network.attempts, [(board.host, 0, 2), (board.host, 1, 2)])
-                    self.assertIn(transport.failure(name, failed.exception), ('network_error', 'fourclaw_network_error'))
+                    self.assertEqual(transport.failure(failed.exception), 'network_error')
 
 
 SENDERS = ('urllib.request', 'http.client', 'socket', 'ssl')

@@ -262,6 +262,18 @@ def one_pass(store, source, settings, fetch=None):
                  error=health['error'], unavailable=health['unavailable']), result['added']
 
 
+def failing(board, number, failure):
+    """fetch for a board module: the invented board, where the request of this number, counted from 1, fails
+    with this exception as the transport raises it. The board is not asked for that one."""
+    turn = count(1)
+
+    def fetch(*args, **kwargs):
+        if next(turn) == number:
+            raise failure
+        return board(*args, **kwargs)
+    return fetch
+
+
 def mark(store, source, message, action, ref=None):
     """The command mark on a message of the inbox. What the command said."""
     return commands.execute(store, 'mark', source=source, id=message, action=action.replace('_', '-'), ref=ref)[0]

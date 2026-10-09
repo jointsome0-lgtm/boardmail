@@ -125,11 +125,6 @@ CODES = {
     # A local file or database failure, from commands and the MCP start. Only a reply command gives the result
     # what it was called with, so only its failure names the read of the journal.
     'local_state_error': Entry('inspect_database_do_not_delete', next=JOURNAL),
-    # What the 4claw and Fruitflies adapters report as a batch error.
-    'fourclaw_http_error': Entry(),
-    'fourclaw_invalid_public_page': Entry(),
-    'fourclaw_network_error': Entry(),
-    'network_timeout': Entry(),
     # What reply verification builds from a Moltbook lookup.
     'hidden_by_provider': Entry('continue_without_the_original'),
     'reply_deleted': Entry('reconcile_publication_before_retry'),

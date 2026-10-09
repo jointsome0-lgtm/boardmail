@@ -48,6 +48,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names a place that no request can go to
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
 -- every answer has the status 300
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
@@ -290,6 +294,11 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names no other place
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names a place that no request can go to
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
@@ -576,6 +585,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names a place that no request can go to
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
 -- every answer has the status 300
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
     exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
@@ -808,6 +821,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names a place that no request can go to
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
 -- every answer has the status 300
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
@@ -918,15 +935,15 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer comes when its time budget ends
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the second half of the first answer comes half a second after its time budget ends
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
@@ -1050,6 +1067,10 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
 
+-- every answer is a 302 that names a place that no request can go to
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
 -- every answer has the status 300
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
@@ -1139,15 +1160,15 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer comes when its time budget ends
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the second half of the first answer comes half a second after its time budget ends
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
@@ -1247,37 +1268,37 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
-    exit code 1, added 0, errors: http_301; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names another host
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
-    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 303 that names another host
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
-    exit code 1, added 0, errors: http_303; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 307 that names another host
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
-    exit code 1, added 0, errors: http_307; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 308 that names another host
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
-    exit code 1, added 0, errors: http_308; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names another place on the board
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
-    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names what is no URL
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
@@ -1286,6 +1307,12 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names no other place
+    GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
+    GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
+
+-- every answer is a 302 that names a place that no request can go to
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 0 s]
@@ -1418,19 +1445,19 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8 s]
-    exit code 1, added 1, errors: network_timeout; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 1, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
-    exit code 1, added 1, errors: network_timeout; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 1, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the second half of the first answer comes half a second after its time budget ends
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
-    exit code 1, added 1, errors: network_timeout; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 1, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
@@ -1495,43 +1522,47 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- every answer is a 301 that names another host
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 302 that names another host
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 303 that names another host
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 307 that names another host
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 308 that names another host
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 302 that names another place on the board
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 302 that names what is no URL
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a 302 that names no other place
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 1, backlog pending
+
+-- every answer is a 302 that names a place that no request can go to
+    GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
+    exit code 1, added 0, errors: http_302; the source: status error, unavailable 1, backlog pending
 
 -- every answer has the status 300
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: http_300; the source: status error, unavailable 1, backlog pending
 
 -- every answer has the status 400
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: http_400; the source: status error, unavailable 1, backlog pending
 
 -- every answer has the status 401
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
@@ -1547,15 +1578,15 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- every answer has the status 408
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: http_408; the source: status error, unavailable 1, backlog pending
 
 -- every answer has the status 410
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: http_410; the source: status error, unavailable 1, backlog pending
 
 -- every answer has the status 418
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_http_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: http_418; the source: status error, unavailable 1, backlog pending
 
 -- every answer has the status 429
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
@@ -1590,19 +1621,19 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 1, backlog pending
 
 -- the board cannot be reached
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 1, backlog pending
 
 -- the socket stays silent for too long
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 1, backlog pending
 
 -- the socket stays silent for too long after the first request
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 1, backlog pending
 
 -- every answer is not HTTP
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: network_error; the source: status error, unavailable 1, backlog pending
 
 -- the first answer comes half a second before its time budget of 10 s ends
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
@@ -1610,19 +1641,19 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer comes when its time budget ends
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
 
 -- the second half of the first answer comes half a second after its time budget ends
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_network_error; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 1, backlog pending
 
 -- every answer takes three seconds to come
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
@@ -1630,23 +1661,23 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- every answer is text that is not JSON
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 1, backlog pending
 
 -- every answer ends with a byte that is not UTF-8
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 1, backlog pending
 
 -- every answer is an empty JSON list
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 1, backlog pending
 
 -- every answer is a JSON object that has only an invented field
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 1, backlog pending
 
 -- every answer says that it is text/plain
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 1, backlog pending
 
 -- every answer is as long as the size cap of 2000000 bytes
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
@@ -1654,4 +1685,4 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- every answer is one byte longer than the size cap
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]
-    exit code 1, added 0, errors: fourclaw_invalid_public_page; the source: status error, unavailable 1, backlog pending
+    exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 1, backlog pending

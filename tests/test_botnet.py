@@ -13,7 +13,7 @@ from boardmail.adapters import validate
 from boardmail.config import MailError, load
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, status
-from kit import Clock, fixed, mark, new_inbox, one_pass
+from kit import Clock, failing, fixed, mark, new_inbox, one_pass
 
 KEY = "synthetic-key-only"
 
@@ -52,7 +52,7 @@ def slow(clock, seconds, answer=None):
     request had no more time than that, the transport calls the answer late."""
     def given(asked):
         clock.advance(seconds)
-        return MailError("budget_exhausted") if seconds >= asked.left else answer
+        return MailError("source_timeout") if seconds >= asked.left else answer
     return given
 
 
@@ -337,7 +337,7 @@ class BotnetTests(unittest.TestCase):
         self.board.profile = slow(clock, 11, self.board.profile)
         result, code = self.collect_command(clock)
         self.assertEqual((len(self.board.asked), result["added"], code), (1, 0, 1))
-        self.assertEqual(result["errors"][0]["error"], "budget_exhausted")
+        self.assertEqual(result["errors"][0]["error"], "source_timeout")
         self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1], state)
         health = result["sources"][0]
         self.assertEqual((health["status"], health["last_ok"], health["backlog_pending"]), ("error", self.healthy, True))
@@ -407,6 +407,30 @@ class PassTests(unittest.TestCase):
         self.assertEqual((batch.error, len(batch.messages), batch.complete), (None, 1, False))
         self.assertEqual(self.known, {mid(10), mid(11), mid(12)})
         self.assertEqual({entry["id"] for entry in batch.state["pending"]}, {entry["id"] for entry in waiting})
+
+    def test_a_late_answer_ends_a_phase_as_a_phase_without_time_does(self):
+        """The transport calls an answer that comes after its time source_timeout, on every board. The pass goes
+        on from it as from a phase that has no time left to ask, which is budget_exhausted: the same mail, and the
+        same state for the next pass. Only a pass whose identity check failed says which of the two it was."""
+        # Notifications on two pages of the inbox, and three references that wait from passes before.
+        for n in range(10, 22):
+            self.board.add(n)
+        for n in range(30, 33):
+            self.board.originals[mid(n)] = original(n)
+        self.state = {"cursor": "older:14", "pending": [{"id": mid(n), "reasons": ["reply"]} for n in range(30, 33)]}
+        healthy = adapter.collect(self.settings, self.state, frozenset(), fetch=self.board)
+        self.assertEqual((healthy.error, healthy.complete, len(healthy.messages)), (None, True, 15))
+        asked = [path.split("/")[1] for path, _, _ in self.board.calls]
+        self.assertEqual((asked[:3], set(asked[3:])), (["me", "inbox", "inbox"], {"topic-messages", "topics"}))
+        for number in range(1, len(asked) + 1):
+            with self.subTest(request=number, path=self.board.calls[number - 1][0]):
+                spent, late = (vars(adapter.collect(self.settings, self.state, frozenset(),
+                                                    fetch=failing(self.board, number, MailError(code))))
+                               for code in ("budget_exhausted", "source_timeout"))
+                self.assertEqual((spent.pop("error"), late.pop("error")),
+                                 ("budget_exhausted", "source_timeout") if number == 1 else (None, None))
+                self.assertEqual(late, spent)
+                self.assertFalse(late["complete"])
 
     def test_a_rejected_or_broken_cursor_is_explicit_and_keeps_what_was_found(self):
         for n in (*range(10, 17), *range(18, 30)):

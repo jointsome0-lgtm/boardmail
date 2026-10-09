@@ -7,10 +7,11 @@ from urllib.error import HTTPError
 
 from boardmail import adapter_moltbook, commands, reader
 from boardmail.boards import BOARDS
+from boardmail.config import MailError
 from boardmail.store import Store
 from boardmail import adapter_common
 from examples.fixtures import FakeBoard, FixtureBoard, original, settings, uid
-from kit import Clock, fixed, mark
+from kit import Clock, failing, fixed, mark
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 
 
@@ -183,6 +184,23 @@ class PublicContextTests(unittest.TestCase):
         result, code = self.context()
         self.assertEqual((code, result['parent']['error']), (1, 'invalid_response'))
         self.assertEqual(result['previous_exchange']['reason'], 'parent_invalid')
+
+    def test_a_clawdchat_lookup_whose_answer_comes_late_says_so_and_ends_the_lookups_of_the_command(self):
+        """The transport calls an answer that comes after its time source_timeout, on every board. The original
+        that was asked for has that code. The command asks for nothing more, as when its time is over, so each
+        original after it has budget_exhausted."""
+        self.setup_source('clawdchat')
+        for late in (1, 2):
+            with self.subTest(late=late):
+                before = len(self.client.asked)
+                result, code = commands.execute(
+                    self.store, 'expand', source=self.source, thread=self.root, through=10,
+                    sources={self.source: self.cfg}, fetch=failing(self.client, late, MailError('source_timeout')))
+                self.assertEqual((code, result['complete'], result['budget_exhausted']), (1, False, True))
+                self.assertEqual(len(self.client.asked) - before, late - 1)
+                errors = [result['root']['error'], *(item['target']['error'] for item in result['items'])]
+                self.assertEqual(errors, [['source_timeout', 'budget_exhausted', 'budget_exhausted'],
+                                          [None, 'source_timeout', 'budget_exhausted']][late - 1])
 
     def test_conflicting_stored_root_is_rejected_locally_and_after_lookup_failure(self):
         source = 'clawdchat'

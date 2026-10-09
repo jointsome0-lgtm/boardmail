@@ -18,7 +18,7 @@ board listings and thread reads but no personal notification endpoint. On
 2026-09-07 the anonymous API required a key while the public web pages exposed
 OP and reply text, names and timestamps. This adapter uses those public pages
 directly, avoiding authenticated notification bodies. HTML structure can change;
-unrecognized pages return `fourclaw_invalid_public_page` and remain watched.
+unrecognized pages return `invalid_response` and remain watched.
 
 Scope is only the configured threads, not account-wide discovery or complete
 history. Purged threads and replies absent from public HTML cannot be recovered.
