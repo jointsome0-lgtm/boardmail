@@ -1,12 +1,15 @@
-"""What an inbox file has after each command: its version number, tables, columns and indexes.
+"""What an inbox file has: its version number, tables, columns and indexes.
 
-Each command runs once on a fresh copy of three files: a new inbox, the bundled version-1 file, and that file
-after its first collect. tests/file_shape.txt stores what the command leaves there. This is the test to rewrite
-when the file gets a single shape.
+init creates a new inbox with every part. A file that an older release left is short of some, and the first
+command that opens it gives it those. tests/file_shape.txt stores the shape of a new inbox and what each older
+file gets. Each command runs once on a fresh copy of a new inbox and of each older file: the file then has the
+shape of a new inbox. status takes no row from an older file and changes none, and any other command leaves an
+older file with the rows that it leaves where status opened the file first.
 """
 import argparse
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -20,8 +23,8 @@ import kit
 
 START = 1_800_000_000
 ME, WRITER = uid(2), uid(3)
-THREAD = uid(100)                     # a post of ours. The version-1 file has two replies to it:
-DONE, ASKED = uid(10), uid(11)        # one that it marks as answered, and one that it does not
+THREAD = uid(100)                     # a post of ours. Every file has two replies to it. Of the version-1 file,
+DONE, ASKED = uid(10), uid(11)        # one is marked as answered and one is not
 ANSWER, WAITING = uid(221), uid(222)  # our answer to the second, twice: the board has verified only the first
 TEXT = 'An invented answer.'
 
@@ -34,34 +37,33 @@ BOARD.comment(ANSWER, THREAD, ME, 'sample-agent', TEXT, '2026-01-01T13:00:00Z', 
 BOARD.comment(WAITING, THREAD, ME, 'sample-agent', TEXT, '2026-01-01T13:01:00Z',
               parent=ASKED)['verification_status'] = 'pending'
 
-# A row is what is typed after boardmail. A word in capitals stands for one of these.
+# A word in capitals of a row below stands for one of these.
 NAMES = {'MESSAGE': ASKED, 'THREAD': THREAD,
          'KEY': '00000000-0000-4000-8000-000000000001',  # the first key that a command makes inside kit.fixed()
          'ANSWER': BOARD.url(THREAD, ANSWER), 'WAITING': BOARD.url(THREAD, WAITING)}
+# The files that older releases left, each as the SQL that makes it. The top of a file says how it came about.
+OLDER = {'version 1': 'v1.sql',
+         'version 1, written by 0.15.1': 'v1-written-0.15.1.sql',
+         'version 1, collected by 0.15.1': 'v1-collected-0.15.1.sql',
+         'created by 0.15.1': 'created-0.15.1.sql'}
 ABOUT = """\
-What an inbox file has after each command: its version number, tables, columns and indexes.
-Made by tests/test_file_shape.py. Each command ran once on a fresh copy of each of three files:
+What an inbox file has: its version number, tables, columns and indexes. Made by tests/test_file_shape.py.
 
-  new inbox             what init creates, filled by one collect, which adds nothing to it
-  version 1             tests/fixtures/v1.sql
-  version 1, collected  that file after its first collect
+init creates a new inbox with every part, and no command adds a part or takes one away. A file that an older
+release left is short of some. The first command that opens it gives it those: the file then has the shape of
+a new inbox, and every row that it had.
 
 A table is written in the words of the statements that the file itself keeps: its columns, then what holds
-for the whole table, then its indexes. A line with + is something that the file has after the command and did
-not have before it. A table that is added is named there and written out under the new inbox or at the end.
-"same shape" says that the command added nothing and took nothing away. "file unchanged" says more: the file
-is the same byte for byte.
-
-Where commands stand together, the others ran first and the row is about the last one, counted from the file
-as they left it. MESSAGE is a message that all three files hold, and THREAD is its thread. KEY is the key that
-reply prepare gives. ANSWER and WAITING are where two replies of ours are on the board: it has verified the
-first and not yet the second.
+for the whole table, then its indexes. Under an older file, a line with + is a part or a row that the first
+command gives it.
 """
 
 PREPARE = 'reply prepare moltbook MESSAGE --body-file answer.txt'
 BEGIN = 'reply begin moltbook MESSAGE --key KEY'
-# Where a row is a tuple, the last command is the one that the row is about and the others are the steps
-# that it needs first.
+# A row is what is typed after boardmail. MESSAGE is a message that every file holds, and THREAD is its thread.
+# KEY is the key that reply prepare gives. ANSWER and WAITING are where two replies of ours are on the board: it
+# has verified the first and not yet the second. Where a row is a tuple, the last command is the one that the row
+# is about and the others are the steps that it needs first.
 READS = [
     'status',
     'list',
@@ -104,8 +106,16 @@ WRITES = [
     (PREPARE, BEGIN, 'reply verify moltbook MESSAGE --key KEY --ref ANSWER'),
 ]
 
+# One older file has an answer prepared, so reply begin alone is not refused there.
+PREPARED = {(BEGIN, 'version 1, written by 0.15.1'): 0}
+
 # The first word of a part of CREATE TABLE that is not a column.
 RULES = ('CONSTRAINT', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN')
+# What a row says in a column that its file did not have.
+WITHOUT = {'discovery': None, 'addressing': None, 'paused': 0}
+# What a file says of a message apart from its marks. No command changes it.
+MAIL = ('arrival_seq', 'source', 'id', 'thread_id', 'parent_id', 'provider_seq', 'kind', 'author', 'title', 'body',
+        'url', 'created_at', 'arrived_at')
 
 
 def commands(parser, words=()):
@@ -170,6 +180,23 @@ def changes(old, new):
     return lines
 
 
+def rows(path):
+    """The rows of an inbox file: for each table its columns and its rows, in the order of the file."""
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as db:
+        found = {}
+        for table, in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                                 "ORDER BY name").fetchall():
+            cursor = db.execute(f'SELECT * FROM {table} ORDER BY rowid')
+            found[table] = [column[0] for column in cursor.description], cursor.fetchall()
+        return found
+
+
+def mail(found):
+    """What the rows of a file say of each message apart from its marks."""
+    columns, lines = found['messages']
+    return [tuple(line[columns.index(name)] for name in MAIL) for line in lines]
+
+
 class FileShapeTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -182,9 +209,9 @@ class FileShapeTests(unittest.TestCase):
             'moltbook': {'account_id': ME, 'api_key_file': 'moltbook.key'}}}))
         self.enterContext(kit.Network({BOARD.HOST: BOARD}))
 
-    def run_row(self, row):
-        """Run the commands of a row on the inbox as it is. The exit code of the last one. self.earlier is then
-        the file as it was just before that one."""
+    def told(self, row):
+        """Run the commands of a row on the inbox as it is. The steps as kit.told gives them. self.earlier is
+        then the file as it was just before the last one."""
         def story(step):
             for number, typed in enumerate(row, 1):
                 if number == len(row):
@@ -192,63 +219,136 @@ class FileShapeTests(unittest.TestCase):
                 step(typed, ' '.join(NAMES.get(word, word) for word in typed.split()), None)
 
         with kit.fixed(kit.Clock(START)):
-            *first, last = kit.told(story, self.home, 'cli')
+            return kit.told(story, self.home, 'cli')
+
+    def run_row(self, row):
+        """Run the commands of a row. The exit code of the last one; the others have to end well."""
+        *first, last = self.told(row)
         self.assertEqual([step.outcome for step in first], [0] * len(first), first)
         return last.outcome
 
     def starts(self):
-        """The three files that every command starts from, by name."""
+        """The files that every command starts from, by name: a new inbox, then each older file."""
         self.assertEqual(self.run_row(['init']), 0)
         created = shape(self.inbox)
         self.assertEqual(self.run_row(['collect']), 0)
         self.assertEqual(shape(self.inbox), created, 'The first collect changed what init had created')
         files = {'new inbox': self.inbox.read_bytes()}
-        self.inbox.unlink()
-        with closing(sqlite3.connect(self.inbox)) as db:
-            db.executescript((kit.TESTS / 'fixtures/v1.sql').read_text())
-        files['version 1'] = self.inbox.read_bytes()
-        self.assertEqual(self.run_row(['collect']), 0)
-        files['version 1, collected'] = self.inbox.read_bytes()
+        for name, fixture in OLDER.items():
+            self.inbox.unlink()
+            with closing(sqlite3.connect(self.inbox)) as db:
+                db.executescript((kit.TESTS / 'fixtures' / fixture).read_text(encoding='utf-8'))
+            files[name] = self.inbox.read_bytes()
         return files
 
-    def test_the_file_after_each_command(self):
-        files, text, shapes, ran = self.starts(), [ABOUT], {}, []
-        for name, start in files.items():
-            self.inbox.write_bytes(start)
-            version, shapes[name] = shape(self.inbox)
-            text.append(f'== {name}\nversion {version}\n{whole(shapes[name])}')
-        # One table has one shape, whichever command adds it and to whichever file.
-        tables = dict(shapes['new inbox'])
-        for title, part in (('Commands that only read', READS), ('Commands that can write', WRITES)):
-            text.append(f'== {title}\n')
+    def given(self, had, has):
+        """The rows that a file has and did not have, one line for each. It fails where a row that the file had
+        is gone or says something else."""
+        lines = []
+        for table, (columns, now) in has.items():
+            names, before = had.get(table, (columns, []))
+            self.assertEqual(columns[:len(names)], names, table)
+            for row in now:
+                if row[:len(names)] not in before:
+                    lines.append(f'+ row of {table}: {", ".join(map(str, row))}')
+                else:
+                    self.assertEqual(dict(zip(columns[len(names):], row[len(names):])),
+                                     {name: WITHOUT[name] for name in columns[len(names):]}, table)
+            self.assertEqual([row[:len(names)] for row in now][:len(before)], before, table)
+        return lines
+
+    def first(self, files):
+        """The shape of a new inbox, and each older file after the first command that opens it: its rows, and
+        the file."""
+        self.inbox.write_bytes(files['new inbox'])
+        new, after, opened = shape(self.inbox), {}, {}
+        for name in OLDER:
+            self.inbox.write_bytes(files[name])
+            self.assertEqual(self.run_row(['status']), 0)
+            self.assertEqual(shape(self.inbox), new, name)
+            after[name], opened[name] = rows(self.inbox), self.inbox.read_bytes()
+        return new, after, opened
+
+    def test_a_new_inbox_has_every_part_and_the_first_command_gives_them_to_an_older_file(self):
+        files = self.starts()
+        (version, holds), after, _ = self.first(files)
+        text = [ABOUT, f'== new inbox\nversion {version}\n{whole(holds)}']
+        for name, fixture in OLDER.items():
+            self.inbox.write_bytes(files[name])
+            was, old = shape(self.inbox)
+            lines = [f'tests/fixtures/{fixture}', f'version {was}' if was == version else f'version {was} -> {version}',
+                     *changes(old, holds), *self.given(rows(self.inbox), after[name])]
+            text.append(f'== {name}\n' + ''.join(f'{line}\n' for line in lines))
+        kit.check_stored(self, 'file_shape.txt', '\n'.join(text))
+
+    def test_every_command_leaves_every_file_with_the_shape_of_a_new_inbox(self):
+        files, ran = self.starts(), []
+        new, after, opened = self.first(files)
+        for part in (READS, WRITES):
             for row in part:
                 row = (row,) if isinstance(row, str) else row
                 ran.append(row[-1])
-                lines = [f'$ boardmail {typed}\n' for typed in row]
+                codes = {}
                 for name, start in files.items():
-                    self.inbox.write_bytes(start)
-                    code = self.run_row(row)
-                    (was, old), (version, new) = shape(self.earlier), shape(self.inbox)
-                    same = self.inbox.read_bytes() == self.earlier.read_bytes()
-                    if part is READS:
-                        with self.subTest(read=row[-1], file=name):
-                            self.assertTrue(same, 'A command that only reads changed the file')
-                    for thing in new:
-                        if thing not in old:
-                            self.assertEqual(tables.setdefault(thing, new[thing]), new[thing],
-                                             f'{thing} has two shapes')
-                    found = changes(old, new) or ['same shape' if old == new else 'the same in another order']
-                    if same and part is READS:
-                        found = ['file unchanged']
-                    versions = str(was) if was == version else f'{was} -> {version}'
-                    lead = f'  {name + ":":22}exit {code}  version {versions}  '
-                    lines.append(lead + ('\n' + ' ' * len(lead)).join(found) + '\n')
-                text.append(''.join(lines))
+                    with self.subTest(command=row[-1], file=name):
+                        self.inbox.write_bytes(start)
+                        codes[name] = self.run_row(row)
+                        if codes[name] == 2 and self.inbox.read_bytes() == self.earlier.read_bytes():
+                            # The command was refused before it wrote. What a command gives an older file is in
+                            # the transaction of what it writes: all of it or nothing.
+                            continue
+                        self.assertEqual(shape(self.inbox), new)
+                        if part is WRITES:
+                            had = mail(rows(self.earlier))
+                            self.assertEqual(mail(rows(self.inbox))[:len(had)], had)
+                            if name in OLDER:
+                                # The parts came with the write. The file has the rows that it has where status
+                                # opened it first, so the marks, checkpoints and saved replies that status keeps.
+                                found = rows(self.inbox)
+                                self.inbox.write_bytes(opened[name])
+                                self.assertEqual(self.run_row(row), codes[name])
+                                self.assertEqual(rows(self.inbox), found)
+                        elif name in OLDER:
+                            # What the first command gives is the same, whichever command it is.
+                            self.assertEqual(rows(self.inbox), after[name])
+                        else:
+                            self.assertEqual(self.inbox.read_bytes(), start,
+                                             'A command that only reads changed a file that has every part')
+                # A command ends on an older file as it ends on a new inbox.
+                self.assertEqual(codes, {name: PREPARED.get((row[-1], name), codes['new inbox']) for name in files})
         for command in commands(cli.parser()):
             self.assertTrue(any(f'{typed} '.startswith(f'{command} ') for typed in ran), f'No row runs {command}')
-        text.append('== Tables that init does not create\n' + whole({
-            name: lines for name, lines in sorted(tables.items()) if name not in shapes['new inbox']}))
-        kit.check_stored(self, 'file_shape.txt', '\n'.join(text))
+
+    def test_an_older_file_that_cannot_be_written_is_not_read_and_stays_as_it_was(self):
+        files = self.starts()
+        beside = sorted(path.name for path in self.home.iterdir())
+        for name in OLDER:
+            with self.subTest(file=name):
+                self.inbox.write_bytes(files[name])
+                os.chmod(self.inbox, 0o400)
+                os.chmod(self.home, 0o500)
+                try:
+                    if os.access(self.inbox, os.W_OK):
+                        self.skipTest('This process can write a file that nobody may write')
+                    step, = self.told(['status'])
+                finally:
+                    os.chmod(self.home, 0o700)
+                    os.chmod(self.inbox, 0o600)
+                result = json.loads(step.text)
+                self.assertEqual((step.outcome, result['error'], result.get('reason')),
+                                 (2, 'local_state_error', 'read_only'))
+                self.assertEqual(self.inbox.read_bytes(), files[name])
+                self.assertEqual(sorted(path.name for path in self.home.iterdir()), beside)
+        # A file that has every part is read where nothing can be written.
+        self.inbox.write_bytes(files['new inbox'])
+        os.chmod(self.inbox, 0o400)
+        os.chmod(self.home, 0o500)
+        try:
+            self.assertEqual(self.run_row(['status']), 0)
+        finally:
+            os.chmod(self.home, 0o700)
+            os.chmod(self.inbox, 0o600)
+        self.assertEqual(self.inbox.read_bytes(), files['new inbox'])
 
 
 if __name__ == '__main__':

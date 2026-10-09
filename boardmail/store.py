@@ -17,20 +17,38 @@ class Store:
     def __init__(self, path):
         self.path = Path(path).expanduser()
 
-    @contextmanager
-    def connect(self, *, write=False, create=False):
-        if not create and not self.path.is_file():
-            raise MailError("database_missing")
+    def _open(self, write, create=False):
+        """A connection to the file. Only init opens a file whose version nothing has checked."""
         uri = self.path.resolve().as_uri() + ("?mode=rw" if write else "?mode=ro")
         db = sqlite3.connect(str(self.path) if create else uri, uri=not create, timeout=5)
         db.row_factory = sqlite3.Row
         try:
             if not create:
                 schema.check_version(db)
+        except BaseException:
+            db.close()
+            raise
+        return db
+
+    @contextmanager
+    def connect(self, *, write=False, create=False):
+        """One transaction on the inbox file. A file that an older release left gets every part first: in this
+        transaction where the command writes, so that a write that fails leaves the file as it was."""
+        if not create and not self.path.is_file():
+            raise MailError("database_missing")
+        db = self._open(write, create)
+        try:
+            if not (write or create) and schema.lacks(db):
+                # A connection that only reads writes nothing. The parts come in a transaction of their own, and
+                # the command reads the file after it.
+                db.close()
+                with self.connect(write=True):
+                    pass
+                db = self._open(False)
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             with db:
-                if not write:
-                    schema.stand_in(db)
+                if write and not create:
+                    schema.complete(db, [name for name, board in boards.BOARDS.items() if board.since_v1])
                 yield db
         finally:
             db.close()
@@ -75,16 +93,6 @@ class Store:
                 db.execute("UPDATE sources SET paused=? WHERE source=?", (paused, source))
             return previous != paused
 
-    def prepare_collection(self):
-        with self.connect(write=True) as db:
-            version = schema.version(db)
-            schema.add(db, "adapter_state")
-            if version == 1:
-                for source in boards.BOARDS:
-                    db.execute("""INSERT OR IGNORE INTO adapter_state
-                        SELECT source,source,0,'{}',0 FROM sources WHERE source=?""", (source,))
-            schema.upgrade(db)
-
     @staticmethod
     def selections(db, source=None):
         return [dict(row) for row in db.execute(
@@ -93,7 +101,7 @@ class Store:
             (source,) if source is not None else ())]
 
     def subscriptions(self, source=None):
-        """Read local selections, including on older databases, without migration."""
+        """Read local selections."""
         with self.connect() as db:
             return self.selections(db, source)
 
@@ -187,7 +195,7 @@ class Store:
                 continue
             columns, values = "", ()
             for key in ("discovery", "addressing"):
-                # Only collection supplies this; its migration added the column.
+                # Only collection supplies this.
                 if item.get(key) is not None:
                     columns += "," + key
                     values += (item[key],)
@@ -240,7 +248,6 @@ class Store:
 
     @staticmethod
     def record(row, db, writing=False):
-        # A connection that writes has no stand-ins, so the row and the tags come by way of the schema module.
         item = schema.whole("messages", row) if writing else dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
         item['tags'] = tags.names(db, item['source'], item['thread_id'], writing)

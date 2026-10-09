@@ -64,8 +64,7 @@ def reference(ref):
     return ref
 
 
-# These three read for show and for the commands that write. writing says that the connection writes: it has no
-# stand-in for a table that the file lacks, so the question goes to the schema module first.
+# These three read for show and for the commands that write.
 def saved(db, source, message_id, writing=False):
     if writing and not schema.has(db, 'reply_attempts'):
         return None
@@ -134,7 +133,6 @@ def check_source(db, source, settings, writing=False):
     if row['account_id'] != settings['account_id']:
         raise MailError('account_mismatch')
     if writing:
-        # No stand-ins on a connection that writes: the file may have no pause column and no adapter_state.
         row = schema.whole('sources', row)
     if row['paused']:
         raise MailError('source_paused')

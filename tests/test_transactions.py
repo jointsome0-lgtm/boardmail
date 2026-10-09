@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from boardmail import commands
+from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import settings, uid
 from kit import DESCRIBED, arrive, described, mark
@@ -38,8 +39,8 @@ class TransactionTests(unittest.TestCase):
             db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
 
     def migrate(self):
-        """A collection brings the file up to date before it looks at a source. This one has no source."""
-        commands.execute(Store(self.path), 'collect', sources={})
+        """The first command that opens an older file gives it every part. This one only reads."""
+        commands.execute(Store(self.path), 'status')
 
     def test_late_checkpoint_failure_rolls_back_entire_batch_and_can_retry(self):
         source, owner = 'custom', uid(2)
@@ -106,8 +107,18 @@ class TransactionTests(unittest.TestCase):
         self.migrate()
         after = self.snapshot()
         self.assertEqual(after['rows']['messages'], [row + (None, None) for row in before['rows']['messages']])
-        self.assertEqual(after['rows']['sources'], before['rows']['sources'])
+        self.assertEqual(after['rows']['sources'], [row + (0,) for row in before['rows']['sources']])
         self.assertEqual(after['rows']['adapter_state'], [('moltbook', 'moltbook', 0, '{}', 0)])
+
+    def test_a_write_that_is_refused_leaves_an_older_file_as_it_was(self):
+        self.legacy()
+        before = self.snapshot()
+        # mark opens the file to write and finds no such message. What it gave the file goes with what it wrote.
+        with self.assertRaisesRegex(MailError, '^message_not_found$'):
+            mark(Store(self.path), 'moltbook', uid(999), 'read')
+        self.assertEqual(self.snapshot(), before)
+        mark(Store(self.path), 'moltbook', uid(11), 'read')
+        self.assertEqual(self.snapshot()['version'], 2)
 
     def test_competing_migrations_serialize_and_keep_legacy_mail_and_marks(self):
         self.legacy()
@@ -136,7 +147,7 @@ class TransactionTests(unittest.TestCase):
 
         def coordinated_connect(*args, **kwargs):
             connection = self.connect(*args, factory=CoordinatedConnection, **kwargs)
-            if 'mode=rw' in args[0]:  # The connection of a migration. The status that follows it only reads.
+            if 'mode=rw' in args[0]:  # The connection that gives the file its parts. The others only read.
                 with lock:
                     connections.append(connection)
             return connection
@@ -155,7 +166,7 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual(len(attempts), 2)
         after = self.snapshot()
         self.assertEqual(after['rows']['messages'], [row + (None, None) for row in before['rows']['messages']])
-        self.assertEqual(after['rows']['sources'], before['rows']['sources'])
+        self.assertEqual(after['rows']['sources'], [row + (0,) for row in before['rows']['sources']])
         self.assertEqual(after['rows']['adapter_state'], [('moltbook', 'moltbook', 0, '{}', 0)])
         self.migrate()
         self.assertEqual(self.snapshot(), after)

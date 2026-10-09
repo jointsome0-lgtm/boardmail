@@ -14,7 +14,11 @@ Built-ins other than Botnet accept optional `mention_aliases`: nonblank strings 
 
 `init` creates a new database and refuses any existing file. With explicit `--config`, it validates the config before creating the database and seeds the configured source, account and adapter identities, including when `--db` overrides the configured path. Missing or invalid explicit config fails without creating a database. `boardmail --db PATH init` without `--config` creates an empty inbox without loading config. Initialization reads no credential files and makes no provider requests.
 
-`init` is not an upgrade or repair command. The first `collect` with 0.2.0 or later migrates a supported version-1 database in one transaction, preserving messages, arrival numbers, marks and checkpoints. Version 0.1.0 cannot read the resulting version-2 file. Optional `discovery`/`addressing` columns and the public-original cache are added during collection without another schema-version change; earlier 0.2.0+ readers remain compatible. They ignore the new reading preferences. Local reads do not migrate existing databases. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
+`init` is not an upgrade or repair command. An inbox file has every table and column that this release uses, and `init` creates it that way. A file that an older release left can be short of some. The first command that opens it gives it those, a command that only reads too, and keeps its messages, arrival numbers, marks, checkpoints and saved replies. They come in one transaction: all of them or none. A version-1 file is a version-2 file after that.
+
+The file of an older release has to be writable for that one command. Where it is not, the command returns `local_state_error` and changes nothing; the error has `reason: "read_only"` for a read-only file. Run one command there with write access, `boardmail status` for example. A file that has every part is read without a write, also where it cannot be written.
+
+Version 0.1.0 cannot read a version-2 file. A later release still reads and writes the file; that was checked with 0.5.0, 0.14.2 and 0.15.1. Unsupported versions are rejected. Inspect an incomplete file left by interrupted initialization before deciding to remove it.
 
 Package installation is separate from collection and database migration. Boardmail has no automatic package updater. For an unpinned registry installation, run `uv tool upgrade boardmail`; existing version constraints remain in effect. To switch from a Git or wheel installation, or replace an old pin, use `uv tool install --force 'boardmail>=0.14.0'`. Use `'boardmail[mcp]>=0.14.0'` if your installation needs MCP. Stop running collectors and MCP servers before replacing their environment, back up the config and database, then restart them. See the [release notes](../CHANGELOG.md) and [uv's tool upgrade guide](https://docs.astral.sh/uv/guides/tools/#upgrading-tools).
 
@@ -62,7 +66,7 @@ boardmail unsubscribe SOURCE THREAD
 
 `SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook, ClawdChat, 4claw and Fruitflies support subscriptions. Botnet and custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
 
-With `--db` alone, the source's adapter must already be recorded in the database. Otherwise the command returns `subscription_config_required` without changes; rerun as `boardmail --db PATH --config CONFIG subscribe SOURCE THREAD` (or `unsubscribe`). This can occur on an older database or after pausing a newly configured source before its first collection. The config supplies the adapter identity without a remote request.
+With `--db` alone, the source's adapter must already be recorded in the database. Otherwise the command returns `subscription_config_required` without changes; rerun as `boardmail --db PATH --config CONFIG subscribe SOURCE THREAD` (or `unsubscribe`). This can occur after pausing a newly configured source before its first collection. The config supplies the adapter identity without a remote request.
 
 Subscription commands make no remote request. A source pass takes a snapshot of the current selections when it starts. CLI and MCP share selections in this database without a server restart or config edit. The source must still be present in the collector's config. Source pauses and account/adapter identity checks apply. Subscribe neither resumes a source nor verifies that the remote root exists.
 
@@ -74,7 +78,7 @@ Other-author activity discovered through a subscription can have `kind: "thread_
 
 Unsubscribe removes the selection for future source passes, preserving saved messages, marks and delivery checkpoints. An already running pass can finish its snapshot. Independent notifications, mention discovery and configured threads continue to apply. Re-subscribing deduplicates existing records by source and ID. Per-root subscription progress is pruned during later collection; unrelated provider progress is retained.
 
-The selection table is added by `init`, collection or an explicit subscribe operation. Reading an older supported database, including `subscriptions` and `status`, does not migrate it. Explicit local selection changes preserve its schema version and existing mail. Use version 0.8.0 or later for subscription collection; earlier collectors ignore the selections.
+A selection change keeps existing mail. Use version 0.8.0 or later for subscription collection; earlier collectors ignore the selections.
 
 Coverage follows each provider's public interface; see the [source guides](../README.md#install-and-configure). 4claw uses bounded public HTML pages. Fruitflies recognizes descendants only through parent IDs in its bounded feed scans and retained ancestry; unseen ancestry can leave gaps. Neither an empty subscription pass nor a completed provider scan proves complete remote history.
 
@@ -119,7 +123,7 @@ The overview and top-level `tag show.read` actions start at `after=0` with `unre
 
 `list --tag TAG` and `list --untagged` are mutually exclusive and may combine with source/thread/interval/unread filters. Selection happens before `LIMIT` and does not duplicate arrivals when a thread has several tags. Scope and context preferences still apply; use `--scope all` to read ordinary thread activity with its body. Local messages and activity summaries include their current `tags` at read time. Reading and counting never set marks; mark individual messages after reading them.
 
-Membership is stored in a separate table, added only on an explicit `tag add`. Local reads, including on supported version-1 databases, create no table or migration. An absent table means no tagged threads and an untagged queue containing all saved messages. Membership writes preserve the schema version, subscriptions, source state and message rows. Older clients ignore tags. CLI and MCP share membership immediately without a server restart.
+Membership is stored in a table of its own. Membership writes keep subscriptions, source state and message rows. Older clients ignore tags. CLI and MCP share membership immediately without a server restart.
 
 Tags use the adapter's existing local thread key. They do not unify different local anchors for the same remote discussion. In particular, Fruitflies may anchor ordinary replies at their immediate parent and subscription activity at the selected root. Tagging by `--message` chooses the actual stored key; inspect and tag another local anchor separately if needed.
 
@@ -229,7 +233,7 @@ In an expansion, `complete` requires every selected target, its root and any req
 
 Paused sources are excluded from freshness checks, so all-paused passes but no-sources fails. Pause/resume is shared by CLI and MCP clients, preserves messages and progress, and is safe to repeat. A pass or lookup already running may finish. Resuming fetches nothing until the next collection.
 
-Use a pause-capable version for every collector; older versions ignore the flag. The first `pause` or `resume` adds the column to an existing database; local reads do not migrate it. A source already stored or present in config can be paused before its first collection. Unknown names return `source_not_found` without changes.
+Use a pause-capable version for every collector; older versions ignore the flag. A source already stored or present in config can be paused before its first collection. Unknown names return `source_not_found` without changes.
 
 Freshness means the collector recently succeeded. It says nothing about consumer activity or complete remote history. Every result carries `history_complete: false`; `backlog_pending` is a separate fact.
 

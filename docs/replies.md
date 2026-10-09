@@ -110,7 +110,7 @@ If a manual mark response is lost, inspect `boardmail show SOURCE ID` and follow
 
 Start with `boardmail status`. Its `reply_attempts` includes counts for prepared, unknown and confirmed attempts and the first 20 pending items. Items include source, incoming ID, state, next_action and a `show` route to the full journal. Independent replied marks never hide an unknown attempt. Counts cover the whole journal, not just the page; confirmed attempts have no pending item.
 
-`boardmail reply list --after N --limit N` reads the same pending list directly. The default limit is 20, with a maximum of 100. Follow the returned `next` route while `has_more` is true. Items follow incoming `arrival_seq`; `next_after` is a discovery cursor, not a mail delivery checkpoint. Restart from 0 after attempt states change. Separate reads do not hold one frozen database snapshot. Summary items omit reply text, keys and confirmation evidence; open each journal to recover those. Discovery does not publish, confirm, change marks or authorize sending. Older databases without a journal return zero counts and an empty page without migration.
+`boardmail reply list --after N --limit N` reads the same pending list directly. The default limit is 20, with a maximum of 100. Follow the returned `next` route while `has_more` is true. Items follow incoming `arrival_seq`; `next_after` is a discovery cursor, not a mail delivery checkpoint. Restart from 0 after attempt states change. Separate reads do not hold one frozen database snapshot. Summary items omit reply text, keys and confirmation evidence; open each journal to recover those. Discovery does not publish, confirm, change marks or authorize sending.
 
 An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summary, even when the incoming already has a manual `replied` mark. Every `boardmail mark` result includes the same summary after changing the mark, so an unresolved attempt stays visible when `mark replied` succeeds. Marks do not change the attempt's state. If no attempt was saved, the field is null. Otherwise it contains `state`, `next_action` and a `show` route:
 
@@ -131,7 +131,7 @@ An ordinary `boardmail show SOURCE ID` includes a compact `reply_attempt` summar
 boardmail reply show SOURCE ID
 ```
 
-This read returns the incoming message and its independent local marks together with `reply`. It changes nothing, even on an older database without a reply table.
+This read returns the incoming message and its independent local marks together with `reply`. It changes no mark and no saved reply.
 
 | Saved state | Meaning | Next step |
 | --- | --- | --- |
@@ -176,7 +176,7 @@ An attempt has `source`, `message_id`, `idempotency_key`, `body`, `body_sha256`,
 
 Malformed text returns `invalid_reply_body`. `reply_key_mismatch` means the supplied key does not name the current intention. `reply_not_prepared` and `reply_not_started` identify a missing prerequisite. `reply_already_started` prevents changing an uncertain or confirmed body; `reply_already_recorded` protects an existing reply mark. `reply_readback_mismatch` and `reply_reference_conflict` preserve the saved state and marks without claiming success. `reply_candidate_limit` means eight distinct candidates are already saved; use a saved URL or independently checked readback with `confirm`. After a failure, inspect the saved attempt through `reply show` and read diagnostics from the failed command's output; never delete the database to retry it.
 
-Preparation, candidate recording, failure diagnostics and successful verification add their tables when needed without changing the supported database schema version. Local reads never migrate. Diagnostics use a separate table, so older clients can still write candidates. Old messages, collection progress, pauses, reading preferences and subscriptions are preserved. The local prepare/begin/show/confirm protocol works for every built-in source and custom adapters; it requires a saved incoming message, not provider credentials. Use a journal-aware client for this workflow: older clients ignore these tables.
+The journal has four tables, and every inbox file has them. The file of an older release [gets them from the first command that opens it](reference.md#configuration-and-upgrades). Diagnostics use a separate table, so older clients can still write candidates. The local prepare/begin/show/confirm protocol works for every built-in source and custom adapters; it requires a saved incoming message, not provider credentials. Use a journal-aware client for this workflow: older clients ignore these tables.
 
 MCP exposes `boardmail_reply_prepare(source, id, body, replace_key?)`, `boardmail_reply_begin(source, id, key)`, `boardmail_reply_show(source, id)`, `boardmail_reply_confirm(source, id, key, ref, readback_body)` and `boardmail_reply_verify(source, id, key, ref)`. It accepts text directly instead of file paths and returns the same results and errors. The server reads no caller-supplied filesystem path.
 

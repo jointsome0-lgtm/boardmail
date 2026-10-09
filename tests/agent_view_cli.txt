@@ -4,7 +4,7 @@
 size:
   help pages: 29
   commands that run: 26
-  help text: 16394
+  help text: 16372
 
 boardmail:
   description: Collect board replies and mentions into a local inbox. Commands return JSON.
@@ -129,7 +129,7 @@ boardmail subscriptions:
   description: >
     List local thread subscriptions and when each was made.
     The command line and MCP share them without a restart.
-    No collection, migration or read marks.
+    No collection or read marks.
   options:
     --source SOURCE:
       help: Only the subscriptions of this source
@@ -140,7 +140,7 @@ boardmail tags:
   description: >
     List local topics and unread counts without message bodies.
     The untagged queue is always listed.
-    No collection, read marks or migration.
+    No collection or read marks.
     Each has a read route to its unread mail; start from it at each visit, since a late tag includes older mail.
     Topics can overlap; counts.unread is tagged_unread plus untagged_unread and counts a message once.
   formatter: HelpFormatter

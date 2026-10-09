@@ -3,7 +3,7 @@
 The `publish.yml` workflow runs manually. Its default `build-only` mode builds
 a source distribution and a wheel, checks their metadata, rebuilds a wheel from
 the unpacked source distribution, and tests both installed wheels with MCP support.
-Tests, examples and the migration fixture come from the source archive, not the
+Tests, examples and the fixtures of older inbox files come from the source archive, not the
 checkout. Pushes and tags do not trigger it. The `publish` job runs
 only when a maintainer selects `publish` on `main`.
 
@@ -60,7 +60,7 @@ failure before retrying rather than treating duplicate files as success.
 
 ## Check standalone artifacts
 
-The source distribution includes the source examples, tests, SQL migration fixture,
+The source distribution includes the source examples, tests, SQL fixtures of older inbox files,
 guides, this artifact checker, the counter of tests that reach inside the package and
 the script that writes down what an agent reads before its first call.
 The wheel installs the `boardmail` package and its console entry points; it does not
