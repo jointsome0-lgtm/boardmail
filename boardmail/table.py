@@ -334,8 +334,8 @@ COMMANDS = {command.name: command for command in (
              'it out because marks can change. A filtered page has checkpoint_safe false: keep your delivery '
              'checkpoint and page on with the same filters. Filters apply before {.limit}. Start a topic visit by '
              'its read route in {tags}: {.after} 0, {.unread} and {.scope} all. A read mark holds for a message '
-             'under every tag. sources names only those that need attention: status not ok, or backlog_pending. '
-             'None named means none needs it; {status} lists them all. A brief is a short local excerpt; {context} '
+             'under every tag. sources names only those whose status is not ok. None named means each is ok; '
+             '{status} lists them all. A brief is a short local excerpt; {context} '
              'gives the full context of a message. A message has parent_id, provider_seq, read_at, needs_reply, '
              'replied_at, reply_ref, discovery and tags only where they hold something, and an excerpt has '
              'truncated only where it was cut: absent means none, not unknown.',

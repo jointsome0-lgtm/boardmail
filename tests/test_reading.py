@@ -129,7 +129,7 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual([len(page['messages']) for page in pages], [20, 20, 5])
         self.assertEqual([m['id'] for page in pages for m in page['messages']], [uid(11 + n) for n in range(45)])
 
-    def test_page_names_only_the_sources_that_need_attention(self):
+    def test_page_names_only_the_sources_whose_status_is_not_ok(self):
         well = {'well': described(uid(2), messages=[dict(mail(10), addressing='direct')])}
         commands.execute(self.store, 'collect', sources=well)
         self.assertEqual(self.run_command()['sources'], [])
@@ -139,11 +139,12 @@ class ReadingTests(unittest.TestCase):
         commands.execute(store, 'collect', sources=well)
         with fixed(Clock(1000)):
             arrive(store, 'stale', uid(2))  # A pass long ago that went well.
+        # A pass that went well and did not finish. Its source is ok, so no page names it.
         arrive(store, 'behind', uid(2), complete=False)
         arrive(store, 'failing', uid(2), error='http_503')
         arrive(store, 'resting', uid(2))
         commands.execute(store, 'pause', source='resting')
-        ailing = {'behind': ('ok', True), 'failing': ('error', False), 'resting': ('paused', False),
+        ailing = {'failing': ('error', False), 'resting': ('paused', False),
                   'stale': ('stale', False), 'unread': ('unknown', False)}
         for command, options in (('list', {}), ('wait', {'timeout': 0}), ('check', {'sources': well})):
             with self.subTest(command=command):
@@ -151,11 +152,12 @@ class ReadingTests(unittest.TestCase):
                 self.assertEqual(code, 0, page)
                 self.assertEqual({source['source']: (source['status'], source['backlog_pending'])
                                   for source in page['sources']}, ailing)
-        # status and collect name every source.
+        # status and collect name every source, and say of the one that is behind what no page says.
         for command, options in (('status', {}), ('collect', {'sources': well})):
             with self.subTest(command=command):
                 result, code = commands.execute(store, command, **options)
-                self.assertEqual({source['source'] for source in result['sources']}, {'well', *ailing})
+                told = {source['source']: (source['status'], source['backlog_pending']) for source in result['sources']}
+                self.assertEqual(told, {'well': ('ok', False), 'behind': ('ok', True), **ailing})
 
     def test_message_in_a_result_has_a_field_only_where_it_holds_something(self):
         eight = ('parent_id', 'provider_seq', 'read_at', 'needs_reply', 'replied_at', 'reply_ref', 'discovery', 'tags')

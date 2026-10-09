@@ -311,24 +311,7 @@ exit code 0
   ],
   "next_after": 2,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000000,
-      "last_ok": 1800000000,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": true,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": true,
   "thread_activity": [],
   "reading": {
@@ -945,24 +928,7 @@ exit code 0
   ],
   "next_after": 1,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000000,
-      "last_ok": 1800000000,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": true,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": false,
   "thread_activity": [],
   "reading": {
@@ -1028,24 +994,7 @@ exit code 0
   ],
   "next_after": 2,
   "more": false,
-  "sources": [
-    {
-      "source": "example",
-      "account_id": "demo-agent",
-      "status": "ok",
-      "last_checked": 1800000000,
-      "last_ok": 1800000000,
-      "error": null,
-      "unavailable": 0,
-      "paused": false,
-      "last_ok_age": 0,
-      "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
-      "history_complete": false,
-      "backlog_pending": true,
-      "next_action": "collect_periodically"
-    }
-  ],
+  "sources": [],
   "checkpoint_safe": false,
   "thread_activity": [],
   "reading": {
@@ -2019,7 +1968,45 @@ exit code 1
   "fresh": false
 }
 
-== 46. Is everything fresh?
+== 46. A page names the source that failed
+$ boardmail list --after 6
+exit code 0
+{
+  "event": "messages",
+  "messages": [],
+  "next_after": 6,
+  "more": false,
+  "sources": [
+    {
+      "source": "moltbook",
+      "account_id": "00000000-0000-0000-0000-000000000002",
+      "status": "error",
+      "last_checked": 1800001200,
+      "last_ok": 1800000600,
+      "error": "http_503",
+      "unavailable": 0,
+      "paused": false,
+      "last_ok_age": 600,
+      "stale_after": 540,
+      "coverage": "Retained notifications and available comment trees in subscribed roots, with anonymous public originals. Reply/mention event variants remain provisional.",
+      "history_complete": false,
+      "backlog_pending": true,
+      "next_action": "retry_collect"
+    }
+  ],
+  "checkpoint_safe": true,
+  "thread_activity": [],
+  "reading": {
+    "scope": "addressed",
+    "context": "brief"
+  },
+  "scanned": 0,
+  "next_action": "collect_or_wait",
+  "collection_performed": false,
+  "history_complete": false
+}
+
+== 47. Is everything fresh?
 $ boardmail status --require-fresh
 exit code 1
 {
@@ -2089,7 +2076,7 @@ exit code 1
   "history_complete": false
 }
 
-== 47. Leave the board alone for now
+== 48. Leave the board alone for now
 $ boardmail pause moltbook
 exit code 0
 {
@@ -2101,7 +2088,7 @@ exit code 0
   "history_complete": false
 }
 
-== 48. A source that is not configured
+== 49. A source that is not configured
 $ boardmail pause elsewhere
 exit code 2
 {
@@ -2115,7 +2102,7 @@ exit code 2
   "history_complete": false
 }
 
-== 49. Collect without it
+== 50. Collect without it
 $ boardmail collect
 exit code 0
 {
@@ -2187,7 +2174,7 @@ exit code 0
   "fresh": true
 }
 
-== 50. Read it again
+== 51. Read it again
 $ boardmail resume moltbook
 exit code 0
 {
@@ -2199,7 +2186,7 @@ exit code 0
   "history_complete": false
 }
 
-== 51. Stop following the thread
+== 52. Stop following the thread
 $ boardmail unsubscribe moltbook 00000000-0000-0000-0000-00000000012d
 exit code 0
 {
@@ -2214,7 +2201,7 @@ exit code 0
   "history_complete": false
 }
 
-== 52. What is still followed there
+== 53. What is still followed there
 $ boardmail subscriptions --source moltbook
 exit code 0
 {
@@ -2226,7 +2213,7 @@ exit code 0
   "history_complete": false
 }
 
-== 53. Collect once more
+== 54. Collect once more
 $ boardmail collect
 exit code 0
 {
@@ -2292,7 +2279,7 @@ exit code 0
   "fresh": true
 }
 
-== 54. Still fresh five minutes later
+== 55. Still fresh five minutes later
 $ boardmail status --require-fresh
 exit code 0
 {
@@ -2356,7 +2343,7 @@ exit code 0
   "history_complete": false
 }
 
-== 55. Not by a stricter limit
+== 56. Not by a stricter limit
 $ boardmail status --require-fresh --stale-after 120
 exit code 1
 {

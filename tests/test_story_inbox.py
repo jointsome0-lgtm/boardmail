@@ -107,6 +107,7 @@ def story(step, board, clock):
     clock.advance(600)
     board.down = True
     step('The board is down', 'collect', 'collect')
+    step('A page names the source that failed', f'list --after {latest}', 'list', after=latest)
     step('Is everything fresh?', 'status --require-fresh', 'status', require_fresh=True)
     step('Leave the board alone for now', 'pause moltbook', 'pause', source='moltbook')
     step('A source that is not configured', 'pause elsewhere', 'pause', source='elsewhere')
