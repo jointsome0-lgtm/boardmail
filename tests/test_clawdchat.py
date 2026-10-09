@@ -6,12 +6,12 @@ import unittest
 from urllib.error import URLError
 from urllib.parse import urlsplit
 
-from boardmail import adapter_clawdchat as adapter
+from boardmail import adapter_clawdchat as adapter, commands
 from boardmail.adapters import validate
 from boardmail.config import MailError
 from boardmail.store import Store
 from examples.fixtures import FakeBoard, status
-from kit import Clock, fixed, mark, new_inbox, one_pass
+from kit import Clock, failing, fixed, mark, new_inbox, one_pass
 
 KEY = "synthetic-key-only"
 
@@ -30,6 +30,12 @@ def original(number, **changes):
             "author": {"id": uid(2), "name": "other-agent"}, "created_at": "2026-09-07T10:00:00Z",
             "post": {"id": uid(100), "title": "Public thread"}, "parent_id": None,
             "web_url": "https://clawdchat.cn/post/" + uid(100), **changes}
+
+
+def waits(number):
+    """The entry of a reference that waits in the state of a pass: to a comment of this number, under the post of
+    the tests, that the account was told of as a comment on that post."""
+    return {"id": uid(number), "post": uid(100), "kind": "reply_to_post", "is_post": False, "types": ["comment"]}
 
 
 def key_file(test):
@@ -172,6 +178,102 @@ class ClawdChatTests(unittest.TestCase):
         batch, added = self.collect()
         self.assertEqual(added, 6)
         self.assertTrue(batch.complete)
+
+    def test_an_original_that_is_gone_is_unavailable_and_neither_an_error_nor_backlog_of_the_source(self):
+        asked_for = "/comments/" + uid(11)
+        under_deleted = {"id": uid(100), "title": "Public thread", "is_deleted": True}
+        for name, gone in (("refused", 403), ("missing", 404), ("removed", 410),
+                           ("deleted", original(11, is_deleted=True)), ("hidden", original(11, is_hidden=True)),
+                           ("private", original(11, visibility="private")),
+                           ("under a deleted post", original(11, post=under_deleted))):
+            with self.subTest(gone=name):
+                self.store, self.board = new_inbox(Path(self.temp.name) / (name + ".sqlite3")), Board()
+                self.board.events = [event(10), event(11)]
+                self.board.originals = {uid(10): original(10), uid(11): gone}
+                for added in (1, 0, 0):
+                    del self.board.calls[:]
+                    batch, got = self.collect()
+                    self.assertEqual((got, batch.error, batch.unavailable), (added, None, 1))
+                    # Its reference waits and remembers the answer. The original is asked for on each pass, and
+                    # each pass has finished: no more mail is on its way, so no page names the source.
+                    self.assertIn(asked_for, [path for path, _, _ in self.board.calls])
+                    self.assertEqual(batch.state["pending"], self.gone([11]))
+                    self.assertTrue(batch.complete)
+                    self.assertEqual(commands.execute(self.store, "list")[0]["sources"], [])
+                self.board.originals[uid(11)] = original(11)
+                batch, got = self.collect()
+                self.assertEqual((got, batch.unavailable, batch.complete, batch.state["pending"]), (1, 0, True, []))
+                self.assertEqual(self.store.show("clawd", uid(11))["body"], "Public original 11")
+
+    def gone(self, numbers):
+        """The queue of a state: a reference for each of these numbers, to a comment that the board does not have.
+        Each remembers that a pass before was answered so."""
+        return [{**waits(n), "gone": True} for n in numbers]
+
+    def asked_for(self):
+        """The comments that the board was asked for since its calls were last cleared, in the order of asking."""
+        return [path.rsplit("/", 1)[-1] for path, _, _ in self.board.calls if path.startswith("/comments/")]
+
+    def test_a_queue_of_gone_references_is_no_backlog_also_where_a_pass_does_not_ask_for_each(self):
+        batch = self.alone({"pending": self.gone(range(1000, 1020)), "offset": 0})
+        # A pass asks for the eight references at the head of the queue, and they go to its end. The pass has
+        # finished all the same: each of the twelve others remembers that it is gone.
+        self.assertEqual((batch.unavailable, batch.error, batch.complete), (8, None, True))
+        self.assertEqual(self.asked_for(), [uid(n) for n in range(1000, 1008)])
+        self.assertEqual(batch.state["pending"], self.gone((*range(1008, 1020), *range(1000, 1008))))
+        # A comment that is there again is delivered when the turn of its reference comes.
+        self.board.originals[uid(1009)] = original(1009)
+        batch = self.alone(batch.state)
+        self.assertEqual(([message["id"] for message in batch.messages], batch.error, batch.complete),
+                         ([uid(1009)], None, True))
+        self.assertEqual(len(batch.state["pending"]), 19)
+        # A reference that no pass has asked for is backlog: its comment may be there.
+        del self.board.calls[:]
+        batch = self.alone({"pending": [*self.gone(range(1000, 1019)), waits(1019)], "offset": 0})
+        self.assertNotIn(uid(1019), self.asked_for())
+        self.assertEqual((batch.unavailable, batch.error, batch.complete), (8, None, False))
+
+    def test_a_reference_that_was_gone_and_fails_in_another_way_is_backlog_until_it_is_gone_again(self):
+        for name, failure, error in (("not reached", URLError("The board is not reached"), "network_error"),
+                                     ("of another post", original(1002, post_id=uid(999)), "invalid_response"),
+                                     # Another comment that is gone says nothing of the one that was asked for.
+                                     ("another, deleted", original(999, is_deleted=True), "invalid_response"),
+                                     ("another, hidden", original(999, is_hidden=True), "invalid_response")):
+            with self.subTest(failure=name):
+                self.board = Board()
+                self.board.originals[uid(1002)] = failure
+                batch = self.alone({"pending": self.gone(range(1000, 1020)), "offset": 0})
+                self.assertEqual((batch.error, batch.complete), (error, False))
+                self.assertEqual([entry for entry in batch.state["pending"] if "gone" not in entry], [waits(1002)])
+                # The board answers as before. Until the reference is asked for again, it is not known to be
+                # gone: the next pass asks for eight others.
+                del self.board.originals[uid(1002)]
+                del self.board.calls[:]
+                batch = self.alone(batch.state)
+                self.assertNotIn(uid(1002), self.asked_for())
+                self.assertEqual((batch.error, batch.complete), (None, False))
+                del self.board.calls[:]
+                batch = self.alone(batch.state)
+                self.assertIn(uid(1002), self.asked_for())
+                self.assertEqual((batch.error, batch.complete), (None, True))
+                self.assertCountEqual(batch.state["pending"], self.gone(range(1000, 1020)))
+
+    def test_a_gone_reference_that_gets_no_answer_in_the_time_of_its_phase_stays_gone(self):
+        state = {"pending": self.gone((30, 31, 32)), "offset": 0}
+        for code in ("budget_exhausted", "source_timeout"):
+            with self.subTest(code=code):
+                # The second request of the pass, after the profile, is the first for a reference.
+                batch = adapter.collect(self.settings, state, frozenset(), fetch=failing(self.board, 2, MailError(code)))
+                self.assertEqual((batch.error, batch.unavailable, batch.complete), (None, 0, True))
+                self.assertEqual(batch.state["pending"], self.gone((31, 32, 30)))
+        # Only true says that a reference is gone. Anything else in its place is read as no such answer.
+        for value in (False, 1, "true", None):
+            with self.subTest(value=value):
+                state = {"pending": [{**waits(30), "gone": value}], "offset": 0}
+                batch = adapter.collect(self.settings, state, frozenset(),
+                                        fetch=failing(self.board, 2, MailError("budget_exhausted")))
+                self.assertEqual((batch.error, batch.complete), (None, False))
+                self.assertEqual(batch.state["pending"], [waits(30)])
 
     def test_fresh_head_and_cyclic_backfill_progress_past_persistent_failure(self):
         # Five pages of notifications. The original of the first one is never reached.

@@ -244,7 +244,7 @@ class BotnetTests(unittest.TestCase):
         with fixed(clock) if clock else nullcontext():
             return commands.execute(self.store, "collect", sources={"botnet": self.settings}, fetch=self.board)
 
-    def test_an_original_that_is_gone_is_unavailable_and_no_error_of_the_source(self):
+    def test_an_original_that_is_gone_is_unavailable_and_neither_an_error_nor_backlog_of_the_source(self):
         asked_for = "/topic-messages/" + quote(mid(12), safe="")
         for name, gone in (("deleted", original(12, is_deleted=True)), ("hidden", original(12, is_hidden=True)),
                            ("refused", 403), ("missing", 404), ("removed", 410)):
@@ -253,26 +253,34 @@ class BotnetTests(unittest.TestCase):
                 for number in (10, 11, 12):
                     self.board.add(number)
                 self.board.originals[mid(12)] = gone
-                for added in (2, 0):
+                for added in (2, 0, 0):
                     self.board.calls.clear()
                     result, code = self.collect_command()
                     self.assertEqual((code, result["added"], result["failed"], result["errors"]), (0, added, False, []))
                     health = result["sources"][0]
                     self.assertEqual((health["status"], health["error"], health["unavailable"]), ("ok", None, 1))
                     self.assertIsNotNone(health["last_ok"])
-                    # Its reference waits, so the original is asked for on each pass.
-                    self.assertTrue(health["backlog_pending"])
+                    # Its reference waits and remembers the answer. The original is asked for on each pass, and
+                    # each pass has finished: no more mail is on its way, so no page names the source.
                     self.assertIn(asked_for, [path for path, _, _ in self.board.calls])
+                    self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"],
+                                     [{"id": mid(12), "reasons": ["reply"], "gone": True}])
+                    self.assertFalse(health["backlog_pending"])
+                    self.assertEqual(commands.execute(self.store, "list")[0]["sources"], [])
                 self.board.originals[mid(12)] = original(12)
                 result, code = self.collect_command()
                 health = result["sources"][0]
                 self.assertEqual((code, result["added"], health["unavailable"], health["backlog_pending"]),
                                  (0, 1, 0, False))
                 self.assertEqual(self.store.show("botnet", mid(12))["body"], "Public message 12")
+                self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"], [])
 
     def test_an_original_that_fails_in_another_way_is_an_error_of_the_source(self):
         for name, failing, error in (("busy", 429, "http_429"), ("broken", 500, "http_500"),
                                      ("another", original(999), "invalid_response"),
+                                     # Another message that is gone says nothing of the one that was asked for.
+                                     ("another, deleted", original(999, is_deleted=True), "invalid_response"),
+                                     ("another, hidden", original(999, is_hidden=True), "invalid_response"),
                                      ("cut", original(12, truncated=True), "original_incomplete")):
             with self.subTest(failing=name):
                 self.store, self.board = new_inbox(self.path / (name + ".sqlite3")), Board()
@@ -284,6 +292,10 @@ class BotnetTests(unittest.TestCase):
                 health = result["sources"][0]
                 self.assertEqual((health["status"], health["error"], health["unavailable"], health["last_ok"]),
                                  ("error", error, 0, None))
+                # Its reference waits and is not known to be gone.
+                self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"],
+                                 [{"id": mid(12), "reasons": ["reply"]}])
+                self.assertTrue(health["backlog_pending"])
 
     def test_an_inbox_that_refuses_the_key_is_an_error_of_the_source(self):
         self.board.add(10)
@@ -407,6 +419,78 @@ class PassTests(unittest.TestCase):
         self.assertEqual((batch.error, len(batch.messages), batch.complete), (None, 1, False))
         self.assertEqual(self.known, {mid(10), mid(11), mid(12)})
         self.assertEqual({entry["id"] for entry in batch.state["pending"]}, {entry["id"] for entry in waiting})
+
+    def gone(self, numbers):
+        """The queue of a state: a reference for each of these numbers, to a message that the board does not have.
+        Each remembers that a pass before was answered so."""
+        return [{"id": mid(n), "reasons": ["reply"], "gone": True} for n in numbers]
+
+    def asked_for(self):
+        """The messages that the board was asked for since its calls were last cleared, in the order of asking."""
+        return [unquote(path.rsplit("/", 1)[-1]) for path, _, _ in self.board.calls if path.startswith("/topic-messages/")]
+
+    def test_a_queue_of_gone_references_is_no_backlog_also_where_a_pass_cannot_ask_for_each(self):
+        self.state = {"pending": self.gone(range(1000, 1060))}
+        batch = self.collect()
+        # The profile and the inbox are two of the forty requests of a pass, so 38 references are asked for. The
+        # pass has finished all the same: each of the 22 others remembers that it is gone. The one at which the
+        # requests were spent goes to the end of the queue like those before it.
+        self.assertEqual((len(self.board.asked), batch.unavailable, batch.error, batch.complete), (40, 38, None, True))
+        self.assertEqual(self.asked_for(), [mid(n) for n in range(1000, 1038)])
+        self.assertEqual(batch.state["pending"], self.gone((*range(1039, 1060), *range(1000, 1039))))
+        # A message that is there again is delivered when the turn of its reference comes.
+        self.board.originals[mid(1040)] = original(1040)
+        batch = self.collect()
+        self.assertEqual(([message["id"] for message in batch.messages], batch.error, batch.complete),
+                         ([mid(1040)], None, True))
+        self.assertEqual(len(batch.state["pending"]), 59)
+        # A reference that no pass has asked for is backlog: its message may be there.
+        self.state, self.known = {"pending": [*self.gone(range(1000, 1059)), {"id": mid(1059), "reasons": ["reply"]}]}, set()
+        del self.board.calls[:]
+        batch = self.collect()
+        self.assertNotIn(mid(1059), self.asked_for())
+        self.assertEqual((batch.unavailable, batch.error, batch.complete), (38, None, False))
+
+    def test_a_reference_that_was_gone_and_fails_in_another_way_is_backlog_until_it_is_gone_again(self):
+        self.state = {"pending": self.gone(range(1000, 1060))}
+        self.collect()
+        # A reference that the next pass asks for and the one after it does not.
+        again = self.state["pending"][30]["id"]
+        self.board.originals[again] = 500
+        batch = self.collect()
+        self.assertEqual((batch.error, batch.complete), ("http_500", False))
+        self.assertEqual([entry for entry in batch.state["pending"] if "gone" not in entry],
+                         [{"id": again, "reasons": ["reply"]}])
+        # The board answers as before. Until the reference is asked for again, it is not known to be gone.
+        del self.board.originals[again]
+        del self.board.calls[:]
+        batch = self.collect()
+        self.assertNotIn(again, self.asked_for())
+        self.assertEqual((batch.error, batch.complete), (None, False))
+        del self.board.calls[:]
+        batch = self.collect()
+        self.assertIn(again, self.asked_for())
+        self.assertEqual((batch.error, batch.complete), (None, True))
+        self.assertEqual(len(batch.state["pending"]), 60)
+        self.assertTrue(all(entry.get("gone") is True for entry in batch.state["pending"]))
+
+    def test_a_gone_reference_that_gets_no_answer_in_the_time_of_its_phase_stays_gone(self):
+        self.state = {"pending": self.gone((30, 31, 32))}
+        for code in ("budget_exhausted", "source_timeout"):
+            with self.subTest(code=code):
+                # The third request of the pass, after the profile and the inbox, is the first for a reference.
+                batch = adapter.collect(self.settings, self.state, frozenset(),
+                                        fetch=failing(self.board, 3, MailError(code)))
+                self.assertEqual((batch.error, batch.unavailable, batch.complete), (None, 0, True))
+                self.assertEqual(batch.state["pending"], self.gone((31, 32, 30)))
+        # Only true says that a reference is gone. Anything else in its place is read as no such answer.
+        for value in (False, 1, "true", None):
+            with self.subTest(value=value):
+                self.state = {"pending": [{"id": mid(30), "reasons": ["reply"], "gone": value}]}
+                batch = adapter.collect(self.settings, self.state, frozenset(),
+                                        fetch=failing(self.board, 3, MailError("budget_exhausted")))
+                self.assertEqual((batch.error, batch.complete), (None, False))
+                self.assertEqual(batch.state["pending"], [{"id": mid(30), "reasons": ["reply"]}])
 
     def test_a_late_answer_ends_a_phase_as_a_phase_without_time_does(self):
         """The transport calls an answer that comes after its time source_timeout, on every board. The pass goes
