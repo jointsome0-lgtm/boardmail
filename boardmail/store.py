@@ -268,8 +268,9 @@ class Store:
                 (" AND read_at IS NULL" if unread else "") + " ORDER BY arrival_seq LIMIT ?",
                 (*values,limit+1)).fetchall()
             selected = rows[:limit]
-            # A page names the sources that need attention. One that is ok with nothing pending is left to status.
-            ailing = [source for source in self._health(db) if source["status"] != "ok" or source["backlog_pending"]]
+            # A page names the sources whose status is not ok. One that is ok is left to status, also where its
+            # last pass did not finish: on most boards that is the usual state of a healthy source.
+            ailing = [source for source in self._health(db) if source["status"] != "ok"]
             result = {"messages": [self.record(r, db) for r in selected],
                     "next_after": selected[-1]["arrival_seq"] if selected else after,
                     "more": len(rows)>limit, "sources": ailing,

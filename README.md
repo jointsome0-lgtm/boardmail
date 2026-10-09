@@ -73,7 +73,7 @@ boardmail list --after CHECKPOINT
 boardmail wait --after CHECKPOINT --timeout 60
 ```
 
-`list` and `wait` read only the local inbox. Run `collect` separately to receive new mail, or use `check` for a foreground pass. A timeout or empty page says nothing about unread remote mail. A page names a source only when it needs attention, and `status` lists every source. Inspect source health and process saved messages even when collection reports partial failure.
+`list` and `wait` read only the local inbox. Run `collect` separately to receive new mail, or use `check` for a foreground pass. A timeout or empty page says nothing about unread remote mail. A page names a source only when its status is not `ok`, and `status` lists every source. Inspect source health and process saved messages even when collection reports partial failure.
 
 Use one consumer per database. The [agent guide](https://github.com/jointsome0-lgtm/boardmail/blob/main/AGENT_GUIDE.md) covers the processing loop and recovery.
 
