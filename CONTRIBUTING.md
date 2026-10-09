@@ -76,7 +76,7 @@ After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover 
 
 `tests/file_shape.txt` says what an inbox file has: its version number, tables, columns and indexes. `init` creates a new inbox with every part, and no command adds a part or takes one away. A file that an older release left is short of some, and the first command that opens it gives it those. `tests/fixtures` has four such files as SQL, and the top of each says how it came about. `tests/file_shape.txt` says what each of them gets.
 
-`tests/test_file_shape.py` runs each command once on a fresh copy of a new inbox and of each older file. The test suite fails when a file then has another shape than a new inbox or has lost a row, when a command that only reads changes a byte of a file that has every part, and when a command has no row. A new command needs a row there.
+`tests/test_file_shape.py` runs each command once on a fresh copy of a new inbox and of each older file. The test suite fails when a file then has another shape than a new inbox, when a command that only reads changes a byte of a file that has every part, and when a command has no row. For an older file it also fails when `status` takes a row away or changes one, and when another command leaves other rows than it leaves where `status` opened the file first. A new command needs a row there.
 
 After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_file_shape.py'` and review the difference.
 

@@ -3,7 +3,8 @@
 init creates a new inbox with every part. A file that an older release left is short of some, and the first
 command that opens it gives it those. tests/file_shape.txt stores the shape of a new inbox and what each older
 file gets. Each command runs once on a fresh copy of a new inbox and of each older file: the file then has the
-shape of a new inbox and the rows that it had.
+shape of a new inbox. status takes no row from an older file and changes none, and any other command leaves an
+older file with the rows that it leaves where status opened the file first.
 """
 import argparse
 from contextlib import closing
@@ -257,19 +258,20 @@ class FileShapeTests(unittest.TestCase):
         return lines
 
     def first(self, files):
-        """The shape of a new inbox, and for each older file its rows after the first command that opens it."""
+        """The shape of a new inbox, and each older file after the first command that opens it: its rows, and
+        the file."""
         self.inbox.write_bytes(files['new inbox'])
-        new, after = shape(self.inbox), {}
+        new, after, opened = shape(self.inbox), {}, {}
         for name in OLDER:
             self.inbox.write_bytes(files[name])
             self.assertEqual(self.run_row(['status']), 0)
             self.assertEqual(shape(self.inbox), new, name)
-            after[name] = rows(self.inbox)
-        return new, after
+            after[name], opened[name] = rows(self.inbox), self.inbox.read_bytes()
+        return new, after, opened
 
     def test_a_new_inbox_has_every_part_and_the_first_command_gives_them_to_an_older_file(self):
         files = self.starts()
-        (version, holds), after = self.first(files)
+        (version, holds), after, _ = self.first(files)
         text = [ABOUT, f'== new inbox\nversion {version}\n{whole(holds)}']
         for name, fixture in OLDER.items():
             self.inbox.write_bytes(files[name])
@@ -281,7 +283,7 @@ class FileShapeTests(unittest.TestCase):
 
     def test_every_command_leaves_every_file_with_the_shape_of_a_new_inbox(self):
         files, ran = self.starts(), []
-        new, after = self.first(files)
+        new, after, opened = self.first(files)
         for part in (READS, WRITES):
             for row in part:
                 row = (row,) if isinstance(row, str) else row
@@ -299,6 +301,13 @@ class FileShapeTests(unittest.TestCase):
                         if part is WRITES:
                             had = mail(rows(self.earlier))
                             self.assertEqual(mail(rows(self.inbox))[:len(had)], had)
+                            if name in OLDER:
+                                # The parts came with the write. The file has the rows that it has where status
+                                # opened it first, so the marks, checkpoints and saved replies that status keeps.
+                                found = rows(self.inbox)
+                                self.inbox.write_bytes(opened[name])
+                                self.assertEqual(self.run_row(row), codes[name])
+                                self.assertEqual(rows(self.inbox), found)
                         elif name in OLDER:
                             # What the first command gives is the same, whichever command it is.
                             self.assertEqual(rows(self.inbox), after[name])
