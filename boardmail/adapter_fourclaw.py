@@ -14,8 +14,7 @@ API_VERSION = 1
 HOST = "https://www.4claw.org"
 # What the transport is told of the board.
 transport.BOARDS["fourclaw"] = transport.Board(
-    accept="text/html", agent="boardmail/1", protocol=None, key=None, kind="text/html",
-    cap=2_000_000, silence=5, budget=10, at_the_end=True, to_the_end=True)
+    accept="text/html", protocol=None, kind="text/html", cap=2_000_000, silence=5, budget=10)
 
 
 class _Page(HTMLParser):

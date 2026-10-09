@@ -8,10 +8,12 @@ moves to another place inside the package.
 That place is boardmail/transport.py. No other module of the package names what sends a request.
 """
 import ast
+import importlib.metadata
 from itertools import count
 import json
 from pathlib import Path
 import tempfile
+import tomllib
 from typing import NamedTuple
 import unittest
 from urllib.error import HTTPError
@@ -36,6 +38,7 @@ INTRO = """\
 What each board client sent and what the command gave, case by case. A case is one collect on a new inbox.
 A request line ends with the headers that the request carried, the seconds that its socket may stay silent and
 the seconds since the pass began at which it left. The sets of headers are numbered under the name of the board.
+VERSION in a user agent stands for the version of the package.
 A board that has a key file has cases for what the file holds. Its board is healthy in them.
 """
 
@@ -206,6 +209,8 @@ def cases(board):
     yield 'the first answer has the status 503', late(0, (503, {'error': 'An invented refusal.'}))
     yield 'the first answer has the status 503 and comes two seconds before its time budget ends', late(
         board.budget - 2, (503, {'error': 'An invented refusal.'}))
+    yield f'the first answer has the status 503 and comes {half} after its time budget ends', late(
+        board.budget + 0.5, (503, {'error': 'An invented refusal.'}))
     yield 'the board cannot be reached', unreachable
     yield 'the socket stays silent for too long', silent
     yield 'the socket stays silent for too long after the first request', first(
@@ -219,6 +224,11 @@ def cases(board):
             body[:len(body) // 2], lambda: passes(board.budget + 0.5), body[len(body) // 2:]]), headers))
     yield f'the first answer is whole in time and ends {half} after its time budget ends', first(
         lambda passes, status, body, headers: (status, kit.Pieces([body, lambda: passes(board.budget + 0.5)]), headers))
+
+    def plain(passes, status, body, headers):
+        passes(board.budget + 0.5)
+        return status, body, {'Content-Type': 'text/plain'}
+    yield f'the first answer says that it is text/plain and comes {half} after its time budget ends', first(plain)
     yield 'every answer takes three seconds to come', slow(3)
     yield 'every answer is text that is not JSON', every(
         lambda board, status, body, headers: (status, b'An invented line.', headers))
@@ -247,34 +257,61 @@ SAME = {
     'the board cannot be reached': 'network_error',
     'the socket stays silent for too long': 'network_error',
     'every answer is not HTTP': 'network_error',
+    # An answer is late from the moment at which its time is over, and so is one whose end comes after that.
+    'the first answer comes when its time budget ends': 'source_timeout',
     'the first answer comes half a second after its time budget ends': 'source_timeout',
     'the second half of the first answer comes half a second after its time budget ends': 'source_timeout',
+    'the first answer is whole in time and ends half a second after its time budget ends': 'source_timeout',
+    # It is late before it is anything else: 4claw does not look at what such an answer says that it is.
+    'the first answer says that it is text/plain and comes half a second after its time budget ends': 'source_timeout',
     'every answer is text that is not JSON': 'invalid_response',
     'every answer ends with a byte that is not UTF-8': 'invalid_response',
     'every answer is one byte longer than the size cap': 'response_too_large',
 }
 ABSENT, FOLDER = 'no file', 'a folder'
-# What a pass gives where no address of the board takes a connection, for a board whose pass does not end with
-# network_error then. ClawdChat asks again after a board that it did not reach, and has no time left to.
+# What a pass gives where no address of the board takes a connection, or where its first answer is a 503 that
+# comes late, for a board whose pass does not end with the code of that request then. ClawdChat asks again after
+# a board that it did not reach or that answered 503, and has no time left to.
 NO_ANSWER = {'clawdchat': 'budget_exhausted'}
 
 
-def keys():
-    """What is where the key file of an account should be, case by case: the bytes of the file, ABSENT or FOLDER."""
-    yield 'the key file is not there', ABSENT
-    yield 'a folder is where the key file should be', FOLDER
-    yield 'the key file is empty', b''
-    yield 'the key file has a line break and no key', b'\n'
-    yield 'the key has spaces and line breaks around it', f'\n  {KEY} \n\n'.encode()
-    yield 'the key has a space in it', b'an invented key\n'
-    yield 'the key is two lines', b'an-invented\nkey\n'
-    yield 'the key is 4096 characters long', b'k' * 4096 + b'\n'
-    yield 'the key is 4097 characters long', b'k' * 4097 + b'\n'
+# What is where the key file of an account should be, case by case: the bytes of the file, ABSENT or FOLDER, and
+# the key that every board with a key file is then sent. None: the board is not asked, and the pass ends with
+# credentials_unavailable.
+KEYS = {
+    'the key file is not there': (ABSENT, None),
+    'a folder is where the key file should be': (FOLDER, None),
+    'the key file is empty': (b'', None),
+    'the key file has a line break and no key': (b'\n', None),
+    'the key has spaces, tabs and line breaks around it': (f'\n \t {KEY} \t\n\n'.encode(), KEY),
+    'the key has a space in it': (b'an invented key\n', None),
+    'the key is two lines': (b'an-invented\nkey\n', None),
+    'the key has a letter that is not ASCII': ('an-invented-kl\u00fcc'.encode(), None),
+    'the key is 4096 characters long': (b'k' * 4096 + b'\n', 'k' * 4096),
+    'the key is 4097 characters long': (b'k' * 4097 + b'\n', None),
+    'the key is 4097 characters long and stands after a line break': (b'\n' + b'k' * 4097 + b'\n', None),
+    'the key has 4097 line breaks before it': (b'\n' * 4097 + KEY.encode() + b'\n', KEY),
+    'the key has 4097 spaces and then a word after it': (KEY.encode() + b' ' * 4097 + b'word\n', None),
+}
+
+
+AGENT = 'boardmail/' + boardmail.__version__
 
 
 def shown(text):
-    """A header or a body as the stored file has it: a long one is cut and says how long it was."""
+    """A header or a body as the stored file has it: a long one is cut and says how long it was. The user agent
+    of the package is written without the number of its version, so the file is the same after a release."""
+    if text == AGENT:
+        return 'boardmail/VERSION'
     return text if len(text) <= 120 else f'{text[:40]}... ({len(text)} characters)'
+
+
+def carried(request):
+    """The key of the account that a request carries: as a bearer, or in the body of a sign-in. None: it has none."""
+    bearer = request.headers.get('Authorization', '')
+    if bearer.startswith('Bearer ') and bearer != 'Bearer an-invented-token':
+        return bearer.removeprefix('Bearer ')
+    return json.loads(request.body).get('api_key') if request.body else None
 
 
 class BoardRequestTests(unittest.TestCase):
@@ -283,6 +320,7 @@ class BoardRequestTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.gave = {}  # the errors of each pass of section(), by the title of its case and then by its board
+        self.sent = {}  # the key that each request of such a pass carried, in the same order
 
     def home(self, name):
         """A folder with the config of one board and its new inbox, and that inbox as bytes."""
@@ -327,7 +365,7 @@ class BoardRequestTests(unittest.TestCase):
         healthy = every(lambda board, *answer: answer)
         passes = [(title, case, FILES['board.key'].encode()) for title, case in cases(board)]
         if 'api_key_file' in board.source:
-            passes += [(title, healthy, held) for title, held in keys()]
+            passes += [(title, healthy, held) for title, (held, _) in KEYS.items()]
         for title, case, held in passes:
             (home / 'inbox.sqlite3').write_bytes(new)
             key = home / 'board.key'
@@ -338,7 +376,9 @@ class BoardRequestTests(unittest.TestCase):
                 key.write_bytes(held)
             requests, code, result = self.collected(name, home, case, clock)
             lines += ['', '-- ' + title]
+            self.sent.setdefault(title, {})[name] = [carried(request) for _, request in requests]
             for seconds, request in requests:
+                self.assertEqual(request.headers['User-Agent'], AGENT, title)
                 headers = sets.setdefault(tuple(sorted(request.headers.items())), len(sets) + 1)
                 lines.append(f'    {request.method} {request.url}  [headers {headers}, silent {request.timeout:g} s, '
                              f'at {seconds:g} s]')
@@ -362,7 +402,54 @@ class BoardRequestTests(unittest.TestCase):
         # A failed request has the same code on every board.
         for title, code in SAME.items():
             self.assertEqual(self.gave[title], dict.fromkeys(BOARDS, [code]), title)
+        # An answer that comes before its time is over is taken on every board.
+        for name, board in BOARDS.items():
+            title = f'the first answer comes half a second before its time budget of {board.budget} s ends'
+            self.assertEqual(self.gave[title][name], [], name)
+        # A status that is no success is what the request is called also when it comes late: the board has
+        # answered, and only an answer that is read can be late.
+        title = 'the first answer has the status 503 and comes half a second after its time budget ends'
+        self.assertEqual(self.gave[title], {name: [NO_ANSWER.get(name, 'http_503')] for name in BOARDS})
+        # One rule says what a key is. A key that it takes is sent as it is, in each request that carries a key,
+        # and for any other the board is not asked.
+        with_key = [name for name, board in BOARDS.items() if 'api_key_file' in board.source]
+        self.assertEqual(with_key, ['postingboard', 'the-colony', 'moltbook', 'clawdchat', 'botnet'])
+        for title, (_, key) in KEYS.items():
+            for name in with_key:
+                with self.subTest(case=title, board=name):
+                    errors, sent = self.gave[title][name], self.sent[title][name]
+                    if key:
+                        self.assertEqual((errors, {carried for carried in sent if carried}), ([], {key}))
+                    else:
+                        self.assertEqual((errors, sent), (['credentials_unavailable'], []))
         kit.check_stored(self, 'board_requests.txt', text)
+
+    def test_the_version_in_the_user_agent_is_the_version_of_the_package(self):
+        project = Path(__file__).resolve().parents[1] / 'pyproject.toml'
+        if project.is_file():
+            version = tomllib.loads(project.read_text(encoding='utf-8'))['project']['version']
+        else:
+            # The tests stand next to an installed package and not in its checkout.
+            version = importlib.metadata.version('boardmail')
+        self.assertEqual(transport.AGENT, 'boardmail/' + version)
+
+    def test_no_header_of_a_client_takes_the_place_of_the_user_agent(self):
+        """A client hands the transport headers of its own, such as the key of an account. Whatever one of them is
+        called, the board is told the user agent of the package."""
+        for name, board in BOARDS.items():
+            told = []
+
+            def asked(request):
+                told.append(request.headers['User-Agent'])
+                return 200, {}
+
+            with self.subTest(board=name), kit.Network({board.host: asked}):
+                for header in ('User-Agent', 'user-agent'):
+                    try:
+                        transport.fetch(name, f'https://{board.host}/', left=2, headers={header: 'another'})
+                    except transport.FAILED:
+                        pass    # what the invented board answers is not what this board must answer
+                self.assertEqual(told, [AGENT, AGENT])
 
     def test_an_address_that_takes_no_connection_costs_three_seconds_on_every_board(self):
         """The host of a board has several addresses. One that takes no connection held a request for as long as

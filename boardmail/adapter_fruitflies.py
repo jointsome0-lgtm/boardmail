@@ -16,8 +16,7 @@ MAX_OFFSET = 100000
 MAX_MEMBERS = 200  # Root plus the newest recognized members by creation time.
 # What the transport is told of the board.
 transport.BOARDS['fruitflies'] = transport.Board(
-    accept='application/json', agent='boardmail/fruitflies', protocol=None, key=None, kind=None,
-    cap=2 * 1024 * 1024, silence=8, budget=8, at_the_end=True, to_the_end=False)
+    accept='application/json', protocol=None, kind=None, cap=2 * 1024 * 1024, silence=8, budget=8)
 
 
 class FetchError(Exception):
