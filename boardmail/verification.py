@@ -4,7 +4,7 @@ import sqlite3
 import time
 from urllib.parse import urlsplit
 
-from . import adapter_common, boards, replies, schema, transport
+from . import adapter_common, boards, replies, transport
 from .config import MailError, uuid
 
 
@@ -70,11 +70,11 @@ def save_failed_check(store, source, message_id, attempt, thread, settings, evid
     key, ref = evidence['idempotency_key'], evidence['reply_ref']
     try:
         with store.connect(write=True) as db:
-            current = replies.saved(db, source, message_id, writing=True)
+            current = replies.saved(db, source, message_id)
             if (not current or current['state'] != 'unknown' or current['idempotency_key'] != key
                     or current['body_sha256'] != attempt['body_sha256']):
                 return False, False
-            replies.check_source(db, source, settings, writing=True)
+            replies.check_source(db, source, settings)
             message = db.execute('SELECT thread_id,reply_ref FROM messages WHERE source=? AND id=?',
                                  (source, message_id)).fetchone()
             if (not message or message['thread_id'] != thread
@@ -87,7 +87,6 @@ def save_failed_check(store, source, message_id, attempt, thread, settings, evid
                 return False, False
             # Keep the seven-column candidate table writable by 0.12.0 clients.
             # Commit order defines the last saved check; wall clocks are not an ordering key.
-            schema.add(db, 'reply_candidate_checks')
             changed = db.execute('INSERT INTO reply_candidate_checks VALUES (?,?,?,?,?,?) '
                                  'ON CONFLICT(source,message_id,reply_ref) DO UPDATE SET '
                                  'idempotency_key=excluded.idempotency_key,checked_at=excluded.checked_at,reason=excluded.reason '
@@ -128,8 +127,8 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
         # Commit the pointer before I/O. Never use receipt storage for unverified data:
         # older clients treat that table as evidence of a successful provider check.
         with store.connect(write=True) as db:
-            replies.check_source(db, source, settings, writing=True)
-            current = replies.saved(db, source, message_id, writing=True)
+            replies.check_source(db, source, settings)
+            current = replies.saved(db, source, message_id)
             if current is None or current['idempotency_key'] != key:
                 raise MailError('reply_key_mismatch')
             message = db.execute('SELECT reply_ref FROM messages WHERE source=? AND id=?',
@@ -137,11 +136,10 @@ def execute(store, sources, source, message_id, *, key, ref, fetch=transport.fet
             if any(value not in (None, ref) for value in (current['reply_ref'], message['reply_ref'])):
                 raise MailError('reply_reference_conflict')
             if current['state'] == 'unknown':
-                existing = replies.candidates(db, source, message_id, current, writing=True)
+                existing = replies.candidates(db, source, message_id, current)
                 if not any(item['reply_ref'] == ref for item in existing):
                     if len(existing) >= replies.MAX_CANDIDATES:
                         raise MailError('reply_candidate_limit')
-                    schema.add(db, 'reply_candidates')
                     db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                                (source, message_id, key, ref, adapter, settings['account_id'], int(time.time())))
                     candidate_changed = True

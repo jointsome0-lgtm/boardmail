@@ -11,7 +11,7 @@ import threading
 import unittest
 from uuid import UUID
 
-from boardmail import cli, commands, replies, schema, verification
+from boardmail import cli, commands, replies, verification
 from boardmail.boards import BOARDS
 from boardmail.store import Store
 from examples.fixtures import KEY, FixtureBoard, named, original, uid
@@ -355,7 +355,6 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
     def test_diagnostic_write_failure_preserves_provider_failure_and_saved_candidate(self):
         self.setup_source('postingboard')
         with closing(sqlite3.connect(self.path)) as db, db:
-            schema.add(db, 'reply_candidate_checks')
             db.execute("CREATE TRIGGER fail_check BEFORE INSERT ON reply_candidate_checks "
                        "BEGIN SELECT RAISE(ABORT, 'private database detail'); END")
         with self.unreached():
@@ -419,7 +418,6 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
     def test_legacy_candidates_have_no_diagnostic_and_keep_positional_writes(self):
         self.setup_source('postingboard')
         with closing(sqlite3.connect(self.path)) as db, db:
-            schema.add(db, 'reply_candidates')
             db.execute('INSERT INTO reply_candidates VALUES (?,?,?,?,?,?,?)',
                        (self.source, self.target, self.key, self.ref, self.adapter, uid(1), 1000))
         before = self.path.read_bytes()

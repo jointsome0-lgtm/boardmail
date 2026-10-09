@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from . import boards, reader, schema
+from . import boards, reader
 from .config import MailError, converted, identifier
 from .errors import route
 
@@ -65,15 +65,13 @@ def reference(ref):
 
 
 # These three read for show and for the commands that write.
-def saved(db, source, message_id, writing=False):
-    if writing and not schema.has(db, 'reply_attempts'):
-        return None
+def saved(db, source, message_id):
     row = db.execute('SELECT * FROM reply_attempts WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     return dict(row) if row else None
 
 
-def receipt(db, source, message_id, attempt, writing=False):
-    if not attempt or writing and not schema.has(db, 'reply_verifications'):
+def receipt(db, source, message_id, attempt):
+    if not attempt:
         return None
     row = db.execute('SELECT evidence FROM reply_verifications WHERE source=? AND message_id=?', (source, message_id)).fetchone()
     evidence = json.loads(row[0]) if row else None
@@ -81,17 +79,14 @@ def receipt(db, source, message_id, attempt, writing=False):
     return {**evidence, 'key_scope': 'local'} if evidence and evidence['idempotency_key'] == attempt['idempotency_key'] else None
 
 
-def candidates(db, source, message_id, attempt, writing=False):
+def candidates(db, source, message_id, attempt):
     """Caller-supplied references, separate from receipts and confirmed reply URLs."""
-    if not attempt or attempt['state'] != 'unknown' or writing and not schema.has(db, 'reply_candidates'):
+    if not attempt or attempt['state'] != 'unknown':
         return []
-    checks = {}
-    if not writing or schema.has(db, 'reply_candidate_checks'):
-        checks = {row['reply_ref']: {'checked_at': row['checked_at'], 'reason': row['reason'],
-                                     'status': 'unverified'}
-                  for row in db.execute('SELECT reply_ref,checked_at,reason FROM reply_candidate_checks '
-                                        'WHERE source=? AND message_id=? AND idempotency_key=?',
-                                        (source, message_id, attempt['idempotency_key']))}
+    checks = {row['reply_ref']: {'checked_at': row['checked_at'], 'reason': row['reason'], 'status': 'unverified'}
+              for row in db.execute('SELECT reply_ref,checked_at,reason FROM reply_candidate_checks '
+                                    'WHERE source=? AND message_id=? AND idempotency_key=?',
+                                    (source, message_id, attempt['idempotency_key']))}
     rows = db.execute('SELECT reply_ref,adapter,account_id,recorded_at FROM reply_candidates '
                       'WHERE source=? AND message_id=? AND idempotency_key=? ORDER BY recorded_at,reply_ref',
                       (source, message_id, attempt['idempotency_key']))
@@ -107,7 +102,7 @@ def summary(source, message_id, attempt):
 
 
 def pending(db, after=0, limit=PAGE_SIZE):
-    """Bounded discovery in the caller's read transaction; never creates a journal."""
+    """Bounded discovery in the caller's read transaction."""
     for name, value, least, most in (('after', after, 0, 2**63-1), ('limit', limit, 1, 100)):
         if type(value) is not int or not least <= value <= most:
             raise MailError('invalid_arguments', argument=name)
@@ -125,25 +120,19 @@ def pending(db, after=0, limit=PAGE_SIZE):
             'next': route('reply_list', after=next_after, limit=limit) if more else None}
 
 
-def check_source(db, source, settings, writing=False):
+def check_source(db, source, settings):
     """Used before fetching and again inside the confirmation transaction."""
     row = db.execute('SELECT * FROM sources WHERE source=?', (source,)).fetchone()
     if row is None:
         raise MailError('source_not_found')
     if row['account_id'] != settings['account_id']:
         raise MailError('account_mismatch')
-    if writing:
-        row = schema.whole('sources', row)
     if row['paused']:
         raise MailError('source_paused')
-    previous = None
-    if not writing or schema.has(db, 'adapter_state'):
-        previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
-    # Schema v1 had three fixed source names and no adapter aliases or state table.
-    expected = previous['adapter'] if previous else source if boards.declared(source).since_v1 else None
-    if expected is None:
+    previous = db.execute('SELECT adapter FROM adapter_state WHERE source=?', (source,)).fetchone()
+    if previous is None:
         raise MailError('reply_adapter_identity_unknown')
-    if expected != boards.owner(source, settings):
+    if previous['adapter'] != boards.owner(source, settings):
         raise MailError('adapter_mismatch')
 
 
@@ -166,18 +155,17 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
         reference(ref)
 
     changed, send_allowed = False, False
-    writing = action != 'show'
-    with store.connect(write=writing) as db:
+    with store.connect(write=action != 'show') as db:
         row = db.execute('SELECT * FROM messages WHERE source=? AND id=?', (source, message_id)).fetchone()
         if row is None:
             raise MailError('message_not_found')
-        message = store.record(row, db, writing)
+        message = store.record(row, db)
         if verification is not None:
-            check_source(db, source, settings, writing)
+            check_source(db, source, settings)
             if (action != 'confirm' or verification['thread_id'] != message['thread_id']
                     or verification['target_id'] != message_id):
                 raise MailError('reply_target_mismatch')
-        attempt = saved(db, source, message_id, writing)
+        attempt = saved(db, source, message_id)
         now = int(time.time())
         if action == 'prepare':
             if replace_key is not None and (attempt is None or attempt['idempotency_key'] != replace_key):
@@ -192,7 +180,6 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                         raise MailError('reply_already_started')
                     if replace_key is None:
                         raise MailError('reply_body_conflict')
-                schema.add(db, 'reply_attempts')
                 values = (str(uuid4()), body, body_sha, now, source, message_id)
                 if attempt is None:
                     db.execute("""INSERT INTO reply_attempts
@@ -229,14 +216,13 @@ def execute(store, action, source, message_id, *, body=None, key=None, readback_
                     message.update(replied_at=now, reply_ref=ref)
                     changed = True
                 if verification is not None:
-                    schema.add(db, 'reply_verifications')
                     db.execute('INSERT INTO reply_verifications VALUES (?,?,?) ON CONFLICT(source,message_id) '
                                'DO UPDATE SET evidence=excluded.evidence',
                                (source, message_id, json.dumps(verification, ensure_ascii=True)))
                     changed = True
-        attempt = saved(db, source, message_id, writing)
-        evidence = receipt(db, source, message_id, attempt, writing)
-        references = candidates(db, source, message_id, attempt, writing)
+        attempt = saved(db, source, message_id)
+        evidence = receipt(db, source, message_id, attempt)
+        references = candidates(db, source, message_id, attempt)
 
     if attempt is None:
         following = 'inspect_recorded_reply' if message['reply_ref'] else 'prepare_reply'
