@@ -17,9 +17,6 @@ config_missing                  5  check_config_and_credentials
 credentials_unavailable         2  check_config_and_credentials
 database_exists                 2  use_existing_database_do_not_overwrite
 database_missing                5  run_init
-fourclaw_http_error             2  retry_collect
-fourclaw_invalid_public_page    2  retry_collect
-fourclaw_network_error          2  retry_collect
 hidden_by_provider              2  continue_without_the_original
 http_401                        2  check_config_and_credentials
 http_403                        2  check_config_and_credentials
@@ -40,7 +37,6 @@ invalid_totp_secret             2  check_totp_secret_and_system_clock
 local_state_error               2  inspect_database_do_not_delete
 message_not_found               2  use_the_source_and_id_of_a_listed_message
 network_error                   2  retry_collect
-network_timeout                 2  retry_collect
 original_deleted                2  continue_without_the_original
 original_incomplete             2  continue_without_the_original
 original_unavailable            2  continue_without_the_original

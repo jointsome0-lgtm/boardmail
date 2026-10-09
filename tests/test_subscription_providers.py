@@ -26,7 +26,7 @@ from boardmail.store import Store
 from boardmail.boards import BOARDS
 from boardmail import adapter_common
 from examples.fixtures import FixtureBoard, named, original, settings, status, uid
-from kit import Clock, fixed, mark, new_inbox
+from kit import Clock, failing, fixed, mark, new_inbox
 from test_clawdchat import Board as ClawdChat, event as clawd_event, key_file, original as clawd_original
 from test_fourclaw import THREAD, page as claw_page, post as claw_post, thread as claw_thread, threads as claw_threads
 from test_fruitflies import feed as fly_feed, post as fly_post
@@ -652,6 +652,37 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
         board.threads[uid(100)] = [node(11), node(12, author=1, replies=[node(13, parent=12)]),
                                    node(14, parent=11), node(15, more=True), node(17, content="@sample look here")]
         board.children[uid(15)] = [deep]
+
+    def test_a_late_answer_ends_a_phase_as_a_phase_without_time_does(self):
+        """The transport calls an answer that comes after its time source_timeout, on every board. The pass goes
+        on from it as from a phase that has no time left to ask, which is budget_exhausted: the same mail, and the
+        same state for the next pass. Only a pass whose identity check failed says which of the two it was."""
+        # A reference that waits from a pass before, two new notifications and a subscribed thread.
+        board = ClawdThreads()
+        self.thread(board)
+        board.events = [clawd_event(20), clawd_event(21)]
+        board.originals.update({uid(n): clawd_original(n) for n in (20, 21, 30)})
+        state = {"offset": 0, "pending": [{"id": uid(30), "post": uid(100), "kind": "reply_to_post", "is_post": False}]}
+        healthy = self.collect(board, [100], state)
+        self.assertEqual((healthy.error, healthy.complete, healthy.state["pending"]), (None, True, []))
+        asked = [path.split("/")[1] for path, _, _ in board.calls]
+        self.assertEqual((asked[:5], set(asked[5:])),
+                         (["agents", "comments", "notifications", "comments", "comments"], {"posts"}))
+        for number in range(1, len(asked) + 1):
+            with self.subTest(request=number, path=board.calls[number - 1][0]):
+                spent, late = (vars(self.collect(failing(board, number, MailError(code)), [100], state))
+                               for code in ("budget_exhausted", "source_timeout"))
+                self.assertEqual((spent.pop("error"), late.pop("error")),
+                                 ("budget_exhausted", "source_timeout") if number == 1 else (None, None))
+                self.assertEqual(late, spent)
+                self.assertFalse(late["complete"])
+        # The phase ends at that answer. The first of the two new references fails: the second is not asked for
+        # in this pass and both wait, and the pass goes on to the subscribed thread.
+        paths = [path for path, _, _ in board.calls[:len(asked)]]
+        del board.calls[:]
+        late = self.collect(failing(board, 4, MailError("source_timeout")), [100], state)
+        self.assertEqual([path for path, _, _ in board.calls], paths[:3] + paths[5:])
+        self.assertEqual([entry["id"] for entry in late.state["pending"]], [uid(21), uid(20)])
 
     def test_listed_tree_deep_children_and_shown_ownership(self):
         board = ClawdThreads()

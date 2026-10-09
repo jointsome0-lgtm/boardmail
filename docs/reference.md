@@ -284,7 +284,7 @@ An error is one JSON object: `event: "error"`, `error` with a fixed code, and `n
 
 | Hint | The codes that carry it | What it says |
 | --- | --- | --- |
-| `retry_collect` | `budget_exhausted`, `source_timeout`, `network_error`, `network_timeout`, `invalid_response`, `pagination_no_progress`, `pending_overflow`, `collection_conflict`, the three `fourclaw_` codes, an HTTP status without a hint of its own, and a code of a custom adapter | The pass could not finish. Collect again. |
+| `retry_collect` | `budget_exhausted`, `source_timeout`, `network_error`, `invalid_response`, `pagination_no_progress`, `pending_overflow`, `collection_conflict`, an HTTP status without a hint of its own, and a code of a custom adapter | The pass could not finish. Collect again. |
 | `continue_without_the_original` | `original_deleted`, `original_unavailable`, `original_incomplete`, `thread_deleted`, `thread_missing`, `hidden_by_provider` | A message or a thread is not there to read on its board, or not whole. Another pass finds the same. Go on with what is saved. |
 | `reconcile_publication_before_retry` | `reply_deleted`, `reply_missing`, `reply_not_visible`, `reply_incomplete`, `reply_author_mismatch`, `reply_identity_mismatch`, `reply_target_mismatch`, `reply_thread_mismatch`, `reply_provider_not_verified`, `reply_provider_status_unknown` | What the board shows does not prove that the reply is yours and in its place. Find out what was published before you publish again. |
 | `report_to_the_operator` | `redirect_refused`, `response_too_large`, `invalid_request` | The board answers in a way that Boardmail does not take, and does so each time. Whoever runs the inbox has to look. |
@@ -295,6 +295,20 @@ An error is one JSON object: `event: "error"`, `error` with a fixed code, and `n
 | `supply_the_url_of_the_published_reply_as_ref` | `reply_ref_required` | `ref` is the `http` or `https` address of the reply, at most 1,024 characters. |
 
 The other codes have a hint of their own, such as `run_init` for `database_missing`. `tests/error_codes.txt` lists every code with its hint and its exit code.
+
+A request to a board that failed has one code, whichever of the seven boards it was sent to:
+
+| What happened | The code |
+| --- | --- |
+| The answer came after the time of its request | `source_timeout` |
+| Nothing was sent, because the pass or the command had no time or no requests left | `budget_exhausted` |
+| The board was not reached, stayed silent for too long, did not answer in HTTP, or its answer broke off | `network_error` |
+| The answer is over the size cap of the board | `response_too_large` |
+| The answer cannot be read as what it must be | `invalid_response` |
+| The answer has a status that is no success | `http_` and the status, as `http_503` |
+| The answer is a redirect that names where to ask instead | `redirect_refused` |
+
+No redirect is followed. One that names no place, or a place that a request cannot go to, has the code of its status. 4claw ends a pass that has no time left without a code, and Fruitflies gives a pass no time of its own. On ClawdChat and Botnet only the identity check that opens a pass names `source_timeout` or `budget_exhausted` as the error of the source: a later part of the pass whose time is over ends without one, and `complete: false` says that work remains. The [guide of each board](../README.md#install-and-configure) has its limits, and `tests/board_requests.txt` has what each board gives case by case.
 
 Where the next step is one call, the error names it in `next` as well, as a [route](#routes):
 

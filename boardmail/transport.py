@@ -2,10 +2,10 @@
 
 A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
 the size cap and when the time is over, and reads the answer as what it must be. It gives each address of the
-host ATTEMPT seconds to take the connection. failure() says what a request that failed is called there, and
-key() reads the key of an account from its file. BOARDS holds every difference between the boards that a board
-or an agent can see. The module of a board enters the row of its board when it loads. None of the differences is
-unified here, and none is decided outside that row.
+host ATTEMPT seconds to take the connection. failure() says what a request that failed is called, which is the
+same on every board, and key() reads the key of an account from its file. BOARDS holds every other difference
+between the boards that a board or an agent can see. The module of a board enters the row of its board when it
+loads. None of those differences is unified here, and none is decided outside that row.
 
 What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
 it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
@@ -26,7 +26,7 @@ from .errors import MailError
 
 
 class Board(NamedTuple):
-    """What a request to one board carries, what its answer may take, and what a failure is called."""
+    """What a request to one board carries and what its answer may take."""
     accept: str             # the Accept header
     agent: str              # the User-Agent header
     protocol: str | None    # the X-Agent-Protocol header. None: the board gets none.
@@ -39,13 +39,6 @@ class Board(NamedTuple):
     budget: float | None    # the seconds that a request may take. None: the client says how many it has left.
     at_the_end: bool        # an answer is late at the very moment at which the time is over. Else only after it.
     to_the_end: bool        # an answer that has come whole is still late when its end comes after that moment
-    late: str               # the code for an answer that is late
-    large: str              # the code for an answer over the cap
-    network: str            # the code when the board is not reached or does not answer in HTTP
-    content: str            # the code for an answer that cannot be read as what it must be
-    statuses: tuple | None  # the statuses that are called http_<status>. None: every status.
-    status: str | None      # the code for any other status
-    redirect: str | None    # the code for a redirect that names where it leads. None: it is called as its status is.
 
 
 # The row of each board under its name. A board module enters its own, so a board is asked only once its module
@@ -83,18 +76,14 @@ class Attempts(HTTPSHandler):
 
 
 class NoRedirect(HTTPRedirectHandler):
-    """No redirect of a board is followed. It fails with the code that the board has for it, or urllib raises its
-    status like any other status that is not a success.
+    """No redirect of a board is followed. One that names a place that urllib would ask is refused. urllib raises
+    the status of any other, like a status that is not a success: of one that names no place, and of one that
+    names what is no http, https or ftp address.
 
     The answer of a redirect is closed here, whatever becomes of it, so it holds no connection open: when it is
     refused, and when urllib cannot read where it leads."""
-    def __init__(self, board):
-        self.refused = BOARDS[board].redirect
-
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if self.refused:
-            raise MailError(self.refused)
-        return None
+        raise MailError('redirect_refused')
 
     def http_error_302(self, req, fp, code, msg, headers):
         try:
@@ -134,7 +123,8 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     Without one it is a GET.
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
-    that cannot be read, and a MailError with the code of the board for an answer that is too large or late."""
+    that cannot be read, and a MailError for a redirect that is refused and for an answer that is too large or
+    late."""
     about = BOARDS[board]
     send = {'Accept': about.accept, 'User-Agent': about.agent, **(headers or {})}
     if about.protocol:
@@ -149,9 +139,9 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     def in_time():
         now = time.monotonic()
         if now > end or about.at_the_end and now == end:
-            raise MailError(about.late)
+            raise MailError('source_timeout')
 
-    with build_opener(NoRedirect(board), Attempts()).open(request, timeout=min(about.silence, left)) as answer:
+    with build_opener(NoRedirect(), Attempts()).open(request, timeout=min(about.silence, left)) as answer:
         if about.kind and answer.headers.get_content_type() != about.kind:
             raise ValueError('The answer is not ' + about.kind)
         content = bytearray()
@@ -168,23 +158,19 @@ def fetch(board, url, *, left=None, headers=None, body=None):
                 break
             content += chunk
             if len(content) > about.cap:
-                raise MailError(about.large)
+                raise MailError('response_too_large')
     return content.decode('utf-8') if about.kind else json.loads(content)
 
 
-def failure(board, exc):
-    """What a request to this board is called when it failed with exc: one of FAILED, from fetch() or from a
-    stand-in for it. Anything else that is handed in is called what an unreadable answer is called."""
-    return called(BOARDS[board], exc)
-
-
-def called(about, exc):
-    """failure() for a board of which only its entry is at hand."""
+def failure(exc):
+    """What a request is called when it failed with exc, whichever board it was sent to: exc is one of FAILED,
+    from fetch() or from a stand-in for it. Anything else that is handed in is called what an unreadable answer
+    is called."""
     if isinstance(exc, MailError):
         return str(exc)
     if isinstance(exc, HTTPError):
         exc.close()
-        return 'http_' + str(exc.code) if about.statuses is None or exc.code in about.statuses else about.status
+        return 'http_' + str(exc.code)
     if isinstance(exc, (OSError, HTTPException)):
-        return about.network
-    return about.content
+        return 'network_error'
+    return 'invalid_response'

@@ -12,12 +12,7 @@ from .errors import MailError, uuid
 # What the transport is told of such a board, but for the header in which one of them names its protocol.
 SHARED = dict(
     accept='application/json', agent='boardmail/0.2', key=None, kind=None, cap=16 * 1024 * 1024,
-    silence=10, budget=None, at_the_end=False, to_the_end=True,
-    late='source_timeout', large='response_too_large', network='network_error', content='invalid_response',
-    statuses=None, status=None, redirect='redirect_refused')
-# These boards call a failed request alike. Where no client is at hand to say which board is meant, this row
-# answers for them.
-ROW = transport.Board(protocol=None, **SHARED)
+    silence=10, budget=None, at_the_end=False, to_the_end=True)
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
@@ -94,11 +89,7 @@ def text(value):
 
 
 FAILURES = (MailError, OSError, HTTPException, ValueError, KeyError, TypeError, AttributeError)
-
-
-
-def error_code(exc):
-    return transport.called(ROW, exc)
+error_code = transport.failure
 
 
 def failure(batch, exc):

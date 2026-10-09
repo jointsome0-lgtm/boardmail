@@ -17,9 +17,7 @@ MAX_MEMBERS = 200  # Root plus the newest recognized members by creation time.
 # What the transport is told of the board.
 transport.BOARDS['fruitflies'] = transport.Board(
     accept='application/json', agent='boardmail/fruitflies', protocol=None, key=None, kind=None,
-    cap=2 * 1024 * 1024, silence=8, budget=8, at_the_end=True, to_the_end=False,
-    late='network_timeout', large='response_too_large', network='network_error', content='invalid_response',
-    statuses=None, status=None, redirect=None)
+    cap=2 * 1024 * 1024, silence=8, budget=8, at_the_end=True, to_the_end=False)
 
 
 class FetchError(Exception):
@@ -32,7 +30,7 @@ def _fetch(fetch, params):
     try:
         data = fetch('fruitflies', url)
     except transport.FAILED as exc:
-        raise FetchError(transport.failure('fruitflies', exc)) from None
+        raise FetchError(transport.failure(exc)) from None
     if not isinstance(data, dict) or not isinstance(data.get('posts'), list):
         raise FetchError('invalid_response')
     if len(data['posts']) > PAGE:

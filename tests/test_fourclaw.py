@@ -72,7 +72,7 @@ class FourclawTests(unittest.TestCase):
         second = adapter.collect(settings, first.state, {m['id'] for m in first.messages}, fetch=board)
         self.assertEqual({asked.board for asked in board.asked}, {'fourclaw'})
         seen = [thread(asked) for asked in board.asked]
-        self.assertEqual(first.error, 'fourclaw_network_error')
+        self.assertEqual(first.error, 'network_error')
         self.assertEqual(len(first.messages), 3)
         self.assertTrue(set(watching).issubset(seen))
         self.assertEqual(seen.count(watching[0]), 2)
@@ -81,7 +81,7 @@ class FourclawTests(unittest.TestCase):
 
     def test_invalid_public_page_is_not_mail(self):
         batch = self.collect('<html>Please sign in<script>@Reader body</script></html>')
-        self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
+        self.assertEqual(batch.error, 'invalid_response')
         self.assertEqual(batch.messages, [])
         recovered = self.collect(page(replies=[post('Other', '@Reader recovered')]), batch.state)
         self.assertEqual(len(recovered.messages), 1)
@@ -91,7 +91,7 @@ class FourclawTests(unittest.TestCase):
         board = FakeBoard([page(replies=[post('Other', '@Reader hi')]), IncompleteRead(b'partial')])
         batch = adapter.collect(settings, {}, set(), fetch=board)
         self.assertEqual(len(batch.messages), 1)
-        self.assertEqual(batch.error, 'fourclaw_network_error')
+        self.assertEqual(batch.error, 'network_error')
         self.assertEqual(batch.unavailable, 1)
         validate(batch)
 
@@ -99,7 +99,7 @@ class FourclawTests(unittest.TestCase):
         html = page(replies=[post('Other', '@Reader hi')])
         batch = self.collect(html.split('<script>')[0])
         self.assertEqual(batch.messages, [])
-        self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
+        self.assertEqual(batch.error, 'invalid_response')
 
     def test_bad_thread_cannot_change_host(self):
         board = threads({})
@@ -112,7 +112,7 @@ class FourclawTests(unittest.TestCase):
         board = FakeBoard([page(replies=[post('Other', '@Reader hi')]), '<div class><p>gone</p></div>'])
         batch = adapter.collect(settings, {}, set(), fetch=board)
         self.assertEqual(len(batch.messages), 1)
-        self.assertEqual(batch.error, 'fourclaw_invalid_public_page')
+        self.assertEqual(batch.error, 'invalid_response')
         validate(batch)
 
 
