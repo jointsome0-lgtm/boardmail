@@ -32,3 +32,28 @@ jobs:
         run: |
           python -m pip install '.[mcp]'
           python -m unittest discover -s tests -v
+
+  # The check that the build job of publish.yml runs before an upload, with the same steps. It runs here too, so
+  # a change that breaks it is seen when it is made and not when a release is built.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Build and check wheel and source distribution
+        run: |
+          python -m pip install build twine "setuptools>=77"
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Rebuild the sdist and test installed wheels with its bundled fixtures
+        run: |
+          sdist=(dist/*.tar.gz)
+          wheel=(dist/*.whl)
+          python -m pip download --only-binary=:all: --dest "$RUNNER_TEMP/mcp-wheels" "${wheel[0]}[mcp]"
+          python -B scripts/check_sdist.py "${sdist[0]}" --wheel "${wheel[0]}" \
+            --mcp-wheels "$RUNNER_TEMP/mcp-wheels" --full-suite \
+            --report "$RUNNER_TEMP/sdist-validation.json"

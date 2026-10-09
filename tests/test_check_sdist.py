@@ -4,12 +4,19 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import socket
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
 from unittest import mock
+from urllib.parse import urlsplit
+import warnings
 import zipfile
+
+from boardmail import adapter_fruitflies, transport
+import kit
 
 
 CHECKER_PATH = Path(__file__).resolve().parents[1] / 'scripts/check_sdist.py'
@@ -43,6 +50,56 @@ class CheckSdistTests(unittest.TestCase):
         work = Path(report['commands'][0]['cwd']).parents[1]
         self.assertFalse(work.exists())
         self.assertIs(report['temporary_state_removed_after_check'], True)
+
+    def test_the_guard_forbids_a_real_connection_and_lets_an_invented_socket_through(self):
+        """The tests of the source distribution run under the guard. A socket of the standard library can neither
+        connect nor bind there. A test that invents the socket itself, as the kit does for a host with several
+        addresses, runs as it does anywhere else."""
+        url, clock = adapter_fruitflies.BASE, kit.Clock(1790000000)
+        host = urlsplit(url).hostname
+        with contextlib.ExitStack() as stack:
+            # What the guard replaces is as it was when this test is over, also where the guard is on already.
+            for name in ('connect', 'connect_ex', 'bind'):
+                stack.enter_context(mock.patch.object(socket.socket, name))
+            stack.enter_context(mock.patch.object(socket, 'create_connection', socket.create_connection))
+            stack.enter_context(mock.patch.object(sys, '_boardmail_artifact_guard_active', False, create=True))
+            exec(checker.GUARD, {})
+            self.assertIs(sys._boardmail_artifact_guard_active, True)
+            refused = 'forbid network connect and bind'
+            for forbidden in (lambda real: real.connect(('127.0.0.1', 9)), lambda real: real.connect_ex(('127.0.0.1', 9)),
+                              lambda real: real.bind(('127.0.0.1', 0))):
+                with socket.socket() as real, self.assertRaisesRegex(RuntimeError, refused):
+                    forbidden(real)
+            # create_connection() is not replaced. It makes a socket, which cannot connect, and leaves it open.
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', ResourceWarning)
+                with self.assertRaisesRegex(RuntimeError, refused):
+                    socket.create_connection(('127.0.0.1', 9), 1)
+            # The first address of the host takes no connection, and the second one does.
+            network = kit.Network({host: lambda request: (200, {'invented': True})}, {host: [None, 0]}, clock)
+            with kit.fixed(clock), network:
+                self.assertEqual(transport.fetch('fruitflies', url, left=5), {'invented': True})
+            self.assertEqual([number for _, number, _ in network.attempts], [0, 1])
+
+    def test_the_tests_are_given_what_the_source_distribution_holds_but_for_the_package(self):
+        found = {}
+
+        def successful(command, **kwargs):
+            cwd = Path(kwargs['cwd'])
+            if 'from setuptools.build_meta' in str(command[-1]):
+                with zipfile.ZipFile(cwd.parents[1] / 'build-output/fixture.whl', 'w') as archive:
+                    archive.writestr('fixture.txt', 'mock wheel')
+                # What a build leaves in the folder of the source distribution is not given to the tests.
+                (cwd / 'build/lib/boardmail').mkdir(parents=True)
+            if 'unittest' in command:
+                found['entries'] = sorted(entry.name for entry in cwd.iterdir())
+                found['guide'] = (cwd / 'AGENT_GUIDE.md').is_file() and (cwd / 'docs/reference.md').is_file()
+            return subprocess.CompletedProcess(command, 0, '{}', '')
+        status, report = self.invoke(successful)
+        self.assertEqual((status, report['status']), (0, 'passed'))
+        self.assertIs(found['guide'], True)
+        self.assertEqual(found['entries'], ['AGENT_GUIDE.md', 'LICENSE', 'README.md', 'docs', 'examples', 'guard',
+                                            'pyproject.toml', 'scripts', 'tests'])
 
     def test_timeout_keeps_partial_output_for_bytes_text_and_none(self):
         for output, stderr, expected_out, expected_err in (

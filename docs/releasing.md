@@ -76,8 +76,10 @@ python -B scripts/check_sdist.py dist/boardmail-VERSION.tar.gz \
 The checker inventories both archives, unpacks the sdist outside the checkout,
 rebuilds its wheel, and installs each wheel in a disposable environment. It verifies
 installed module and entry-point origins, runs both help commands, the offline demo,
-and focused custom-adapter, migration and consumer-recovery tests. It uses only the
-archive's tests and examples. Installation uses `--no-index`; the checker makes no
+and focused custom-adapter, migration and consumer-recovery tests. It runs them in a
+folder that holds what the archive holds but for the package: its tests, examples,
+scripts and guides. A test there imports the installed package and finds the guides
+that it reads. Installation uses `--no-index`; the checker makes no
 provider requests. It preserves neither the temporary inboxes nor the environments.
 Use `--rebuilt-wheel-dir PATH` to keep the rebuilt artifact.
 
@@ -85,6 +87,8 @@ The publish workflow first downloads the declared MCP dependency wheels, then pa
 their directory with `--mcp-wheels PATH --full-suite` to run every bundled test against
 both installations. Without that directory, the checker installs the dependency-free
 runtime and runs the focused smoke by default; `--full-suite` can skip optional MCP
-tests. Its Python socket guard is cooperative
+tests. The test workflow runs the same check on every push, so a change that breaks it
+is red before a release is built. Its Python socket guard lets no socket of the standard
+library connect or bind; a test that invents the socket itself runs under it. It is cooperative
 fixture isolation, not operating-system containment. A local pass does not validate
 the complete Python-version matrix or the later integrated release artifacts.

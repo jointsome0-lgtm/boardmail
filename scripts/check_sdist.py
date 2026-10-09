@@ -41,6 +41,9 @@ REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
             'tests/test_board_requests.py', 'tests/board_requests.txt',
             'tests/fixtures/v1.sql', 'tests/fixtures/v1-written-0.15.1.sql',
             'tests/fixtures/v1-collected-0.15.1.sql', 'tests/fixtures/created-0.15.1.sql']
+# What the tests run under: a socket of the standard library can neither connect nor bind. Nothing else is
+# replaced, so socket.create_connection() still walks over the addresses of a host, and fails at the first one.
+# A test that invents the socket itself, as tests/kit.py does for a host with several addresses, runs as it is.
 GUARD = '''import socket
 import sys
 def denied(*args, **kwargs):
@@ -48,7 +51,6 @@ def denied(*args, **kwargs):
 socket.socket.connect = denied
 socket.socket.connect_ex = denied
 socket.socket.bind = denied
-socket.create_connection = denied
 sys._boardmail_artifact_guard_active = True
 '''
 
@@ -114,6 +116,10 @@ def check(args, report):
             if missing:
                 raise ValueError('Source distribution lacks: ' + ', '.join(missing))
             report['required_files_present'] = REQUIRED
+            # What the tests are given: all that the source distribution holds but for the package and what
+            # setuptools wrote of it. It is listed before the wheel is built, which leaves more in the folder.
+            bundled = [entry for entry in sorted(source.iterdir())
+                       if entry.name != 'boardmail' and not entry.name.endswith('.egg-info')]
             rebuilt = work/'build-output'
             rebuilt.mkdir()
             build = ('from setuptools.build_meta import build_wheel; '
@@ -137,8 +143,9 @@ def check(args, report):
                 report['wheels'].append(artifact)
                 smoke = work/label
                 smoke.mkdir()
-                for directory in ('examples', 'tests', 'scripts'):
-                    shutil.copytree(source/directory, smoke/directory)
+                # The tests find the guides that they read here, and import the package that is installed.
+                for entry in bundled:
+                    (shutil.copytree if entry.is_dir() else shutil.copyfile)(entry, smoke/entry.name)
                 guard = smoke/'guard'
                 guard.mkdir()
                 (guard/'sitecustomize.py').write_text(GUARD)
