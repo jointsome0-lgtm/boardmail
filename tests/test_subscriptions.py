@@ -235,8 +235,11 @@ class SubscriptionTests(unittest.TestCase):
         boards['clawdchat'].profile = {'id': sources['board4']['account_id']}
         boards['fourclaw'] = FakeBoard(lambda asked: claw_page())
         # Fruitflies has no request for a thread: a pass reads the feed of the board. Of the posts in it, those
-        # under a thread that the collector was handed are delivered, and no other.
-        feed, arrival = [], 0
+        # under a thread that the collector was handed are delivered, and no other. Before each pass the feed gets
+        # a new post under every thread that a source of this test follows at some time, and under one that none
+        # of them follows. So of these seven threads, a pass brings mail under the ones that its collector was
+        # handed, and under each of them.
+        feed, arrival, probed = [], 0, range(100, 107)
         boards['fruitflies'] = FakeBoard(lambda asked: {'posts': feed if asked.params == {'limit': '100', 'offset': '0'} else []})
 
         def threads(adapter):
@@ -252,21 +255,22 @@ class SubscriptionTests(unittest.TestCase):
             return sorted(asked)
 
         def delivered():
-            """The threads of the mail that came from the invented Fruitflies since the last look."""
+            """The threads of the mail that came from the invented Fruitflies since the last look, in the order of
+            their ids."""
             nonlocal arrival
             page, _ = commands.execute(self.store, 'list', after=arrival, limit=500, scope='all', context='none')
             arrival = page['next_after']
             return sorted({message['thread_id'] for message in page['messages'] if message['source'] == 'board6'})
 
-        def collect(posts):
-            """One pass over every source. Before it, the feed of Fruitflies gets a new post under each of these
-            threads."""
+        def collect():
+            """One pass over every source. Before it, the feed of Fruitflies gets a new post under each thread
+            that it probes."""
             first = 1000 * (len(feed) + 1)
-            feed.extend(fly_post(first + n, parent=n, kind='answer') for n in posts)
+            feed.extend(fly_post(first + n, parent=n, kind='answer') for n in probed)
             self.assertFalse(collect_all(self.store, sources, fetch=together(boards))['failed'])
 
         with fixed(Clock(1790000000)):
-            collect((100, 104))
+            collect()
             self.assertEqual([threads(adapter) for adapter in SUBSCRIBING[:5]], [[uid(100)]] * 5)
             self.assertEqual(delivered(), [uid(100)])
             # Each source follows something else now, and the third is paused.
@@ -279,22 +283,23 @@ class SubscriptionTests(unittest.TestCase):
             self.follow(self.store, 'board5', uid(103))
             self.follow(self.store, 'board6', uid(100), subscribed=False)
             self.follow(self.store, 'board6', uid(104))
-            collect((100, 104))
+            collect()
             # The paused source is not collected: its board gets no request.
             self.assertEqual(boards['moltbook'].asked, [])
             self.assertEqual({adapter: threads(adapter) for adapter in SUBSCRIBING[:5]}, {
                 'postingboard': [], 'the-colony': [uid(100), uid(101)], 'moltbook': [], 'clawdchat': [uid(102)],
                 'fourclaw': [uid(100), uid(103)]})
-            # The posts under the thread that the source of Fruitflies followed before are not delivered any more,
-            # and the one under the other thread that the first pass left is.
+            # The mail of the source of Fruitflies is under the thread that it follows now. None of it is under
+            # the thread that it followed before, which has a new post too.
             self.assertEqual(delivered(), [uid(104)])
             # A source that is read again is handed what it follows by then.
             commands.execute(self.store, 'resume', source='board3')
-            collect(())
+            collect()
             self.assertEqual({adapter: threads(adapter) for adapter in SUBSCRIBING[:5]}, {
                 'postingboard': [], 'the-colony': [uid(100), uid(101)], 'moltbook': [uid(100), uid(105)],
                 'clawdchat': [uid(102)], 'fourclaw': [uid(100), uid(103)]})
-            self.assertEqual(delivered(), [])
+            # The source of Fruitflies is handed its thread in this pass as well: the new post under it comes.
+            self.assertEqual(delivered(), [uid(104)])
         self.assertEqual(sources, before)
 
     def test_custom_adapter_keeps_its_own_settings(self):
