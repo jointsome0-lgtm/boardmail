@@ -306,7 +306,10 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                         return False
         return True
 
-    if resolve(list(pending)[:8], resolve_seconds):
+    # Eight of the references that wait: first those that are not known to be gone, so that mail that may be
+    # there does not wait behind originals that the board no longer has. Each of the two groups keeps the order
+    # of the queue.
+    if resolve(sorted(pending, key=lambda mid: "gone" in pending[mid])[:8], resolve_seconds):
         fresh = []
         # Always inspect the head. The second request resumes an independent sweep.
         for page_offset in dict.fromkeys((0, batch.state["offset"])):
