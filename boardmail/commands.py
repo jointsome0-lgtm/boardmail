@@ -247,18 +247,19 @@ def run_expand(store, *, sources, fetch, source, thread, through, after, limit, 
 @handles("reply_list")
 def run_reply_list(store, *, after, limit):
     with store.connect() as db:
-        return {'event': 'reply_attempts', **replies.pending(db, after, limit),
-                'collection_performed': False, 'publication_performed': False}, 0
+        return {'event': 'reply_attempts', **replies.pending(db, after, limit), 'collection_performed': False}, 0
 
 
 def journal(function):
-    """A reply command: where the inbox file fails it, the result names the read that recovers the attempt."""
+    """A reply command. Its result has a field only where the field holds something. Where the inbox file fails
+    it, the result names the read that recovers the attempt."""
     @wraps(function)
     def run(store, *, source, id, **more):
         try:
-            return function(store, source=source, id=id, **more)
+            result, code = function(store, source=source, id=id, **more)
         except LOCAL_FAILURES as exc:
             return local_state_result(exc, {"source": source, "id": id})
+        return replies.written(result), code
     return run
 
 

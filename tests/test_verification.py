@@ -115,21 +115,50 @@ class VerificationTests(unittest.TestCase):
         result, code = self.call()
         self.assertEqual(code, 1, result)
         self.assertFalse(result['send_allowed'])
-        self.assertFalse(result['remote_verified'])
+        self.assertNotIn('remote_verified', result)
         self.assertEqual(result['reply']['state'], 'unknown')
-        self.assertIsNone(result['confirmation_basis'])
+        self.assertNotIn('confirmation_basis', result)
         self.assertNotIn('replied_at', result['message'])
         if reason:
             self.assertEqual(result['verification']['reason'], reason, result)
         self.assertEqual(result['reply'], self.before_result['reply'])
         self.assertEqual(result['message'], self.before_result['message'])
-        self.assertIsNone(result['verification_receipt'])
+        self.assertNotIn('verification_receipt', result)
         repeated, code = self.call()
         self.assertEqual(code, 1)
         self.assertEqual(repeated['reply'], result['reply'])
         self.assertEqual(repeated['message'], result['message'])
         self.assertTrue(repeated['last_check_saved'])
         return result
+
+    def test_a_result_has_a_field_of_a_verification_only_where_it_holds_something(self):
+        self.setup_source('postingboard')
+        sides = {name: set() for name in replies.SPARSE + replies.LATER}
+
+        def held(result):
+            for name in replies.SPARSE:
+                sides[name].add(name in result)
+            for name in replies.LATER:
+                sides[name].add(name in result['reply'])
+            # A field that is there holds something.
+            self.assertTrue(all(result[name] for name in replies.SPARSE if name in result))
+            self.assertNotIn(None, result['reply'].values())
+            return {name for name in replies.SPARSE if name in result}
+
+        self.assertEqual(held(self.before_result), {'recovery_guidance'})
+        with self.unreached():
+            failed, code = self.call()
+        self.assertEqual(code, 1)
+        self.assertEqual(held(failed), {'recovery_guidance', 'reply_candidates', 'verification'})
+        self.assertEqual(held(self.call('show')[0]), {'recovery_guidance', 'reply_candidates'})
+        verified, code = self.call()
+        self.assertEqual((code, verified['remote_verified']), (0, True))
+        self.assertEqual(held(verified), {'confirmation_basis', 'remote_verified', 'verification',
+                                          'verification_receipt'})
+        self.assertEqual(held(self.call('show')[0]), {'confirmation_basis', 'verification_receipt'})
+        # Each field was there in one result and absent in another. An attempt of this test has begun, so it has
+        # attempted_at throughout; tests/test_replies.py has that field on both sides.
+        self.assertEqual({name for name, seen in sides.items() if seen != {True, False}}, {'attempted_at'})
 
     def test_candidate_survives_timeout_and_reopen_without_becoming_evidence(self):
         self.setup_source('postingboard')
@@ -155,11 +184,11 @@ class VerificationTests(unittest.TestCase):
         self.assertNotIn('secret-token', json.dumps(shown))
         self.assertEqual(shown['reply'], self.before_result['reply'])
         self.assertEqual(shown['message'], self.before_result['message'])
-        self.assertIsNone(shown['confirmation_basis'])
-        self.assertIsNone(shown['verification_receipt'])
+        self.assertNotIn('confirmation_basis', shown)
+        self.assertNotIn('verification_receipt', shown)
         self.assertFalse(shown['send_allowed'])
-        self.assertFalse(shown['remote_verified'])
-        self.assertEqual(self.before_result['reply_candidates'], [])
+        self.assertNotIn('remote_verified', shown)
+        self.assertNotIn('reply_candidates', self.before_result)
         self.assertTrue(failed['changed'])
         # A later completed failure replaces the diagnostic, even if the local clock moved back.
         self.raw['agent_id'] = uid(2)
@@ -199,9 +228,9 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual([c['reply_ref'] for c in shown['reply_candidates']], [self.ref])
         self.assertIsNone(shown['reply_candidates'][0]['last_check'])
         self.assertEqual(shown['reply']['state'], 'unknown')
-        self.assertIsNone(shown['reply']['reply_ref'])
-        self.assertIsNone(shown['confirmation_basis'])
-        self.assertIsNone(shown['verification_receipt'])
+        self.assertNotIn('reply_ref', shown['reply'])
+        self.assertNotIn('confirmation_basis', shown)
+        self.assertNotIn('verification_receipt', shown)
         self.assertFalse(shown['send_allowed'])
 
     def test_candidates_are_bounded_without_replacing_an_earlier_url(self):
@@ -223,8 +252,8 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         # The bounded candidate directory does not block independent caller readback.
         confirmed, code = self.call('confirm', key=self.key, ref=refs[8], readback_body=self.body)
         self.assertEqual((code, confirmed['confirmation_basis']), (0, 'caller_supplied_readback'))
-        self.assertEqual(confirmed['reply_candidates'], [])
-        self.assertIsNone(confirmed['verification_receipt'])
+        self.assertNotIn('reply_candidates', confirmed)
+        self.assertNotIn('verification_receipt', confirmed)
 
     def test_concurrent_candidate_admission_keeps_exactly_eight_and_reads_only_the_winner(self):
         self.setup_source('postingboard')
@@ -261,7 +290,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(len(shown['reply_candidates']), 8)
         self.assertEqual(shown['reply'], self.before_result['reply'])
         self.assertEqual(shown['message'], self.before_result['message'])
-        self.assertIsNone(shown['verification_receipt'])
+        self.assertNotIn('verification_receipt', shown)
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM reply_candidates').fetchone()[0], 8)
 
@@ -296,10 +325,10 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(shown['verification_receipt']['reply_ref'], refs[winner])
         self.assertEqual(shown['verification_receipt']['idempotency_key'], self.key)
         self.assertEqual(shown['reply']['body'], self.body)
-        self.assertFalse(confirmed['send_allowed'] or confirmed['publication_performed'])
+        self.assertFalse(confirmed['send_allowed'])
         self.assertEqual(shown['message']['read_at'], self.before_result['message']['read_at'])
         self.assertEqual(shown['message']['needs_reply'], self.before_result['message']['needs_reply'])
-        self.assertEqual(shown['reply_candidates'], [])
+        self.assertNotIn('reply_candidates', shown)
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM reply_candidates').fetchone()[0], 2)
             evidence = json.loads(db.execute('SELECT evidence FROM reply_verifications').fetchone()[0])
@@ -337,6 +366,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(failed[0]['verification_receipt'], succeeded[0]['verification_receipt'])
         self.assertEqual(failed[0]['reply'], succeeded[0]['reply'])
         self.assertEqual(failed[0]['message'], succeeded[0]['message'])
+        # The workers called the verification itself, which holds every field of a result.
         self.assertEqual(failed[0]['reply_candidates'], [])
         self.assertEqual(self.call('show')[0]['verification_receipt'], succeeded[0]['verification_receipt'])
         self.assertEqual(self.path.read_bytes(), snapshot['bytes'])
@@ -387,7 +417,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertEqual(code, 1)
         self.assertFalse(result['last_check_saved'])
         self.assertEqual(result['reply']['state'], 'confirmed')
-        self.assertEqual(result['reply_candidates'], [])
+        self.assertNotIn('reply_candidates', result)
         self.assertEqual(result['verification_receipt'], committed['result']['verification_receipt'])
         self.assertEqual(self.path.read_bytes(), committed['bytes'])
 
@@ -463,7 +493,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         confirmed, code = self.call()
         self.assertEqual((code, confirmed['confirmation_basis']), (0, 'provider_readback'))
         self.assertEqual(confirmed['reply']['reply_ref'], self.ref)
-        self.assertEqual(confirmed['reply_candidates'], [])
+        self.assertNotIn('reply_candidates', confirmed)
 
     def test_candidate_write_failure_prevents_provider_request(self):
         self.setup_source('postingboard')
@@ -510,8 +540,8 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertFalse(any('notifications' in path or '/agents/me' in path for path, _, _ in self.client.calls))
                 before, calls = self.path.read_bytes(), len(self.client.calls)
                 local = self.call('show')[0]
-                self.assertFalse(local['remote_verified'])
-                self.assertIsNone(local['verification'])
+                self.assertNotIn('remote_verified', local)
+                self.assertNotIn('verification', local)
                 self.assertEqual(local['verification_receipt'], evidence)
                 self.assertEqual(local['confirmation_basis'], 'provider_readback')
                 self.assertEqual((self.path.read_bytes(), len(self.client.calls)), (before, calls))
@@ -522,7 +552,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertEqual(failed['reply']['state'], 'confirmed')
                 self.assertEqual(failed['verification_receipt'], evidence)
                 self.assertEqual(failed['confirmation_basis'], 'provider_readback')
-                self.assertFalse(failed['remote_verified'])
+                self.assertNotIn('remote_verified', failed)
                 self.assertEqual(self.path.read_bytes(), before)
 
     def test_unknown_guidance_survives_failed_verify_and_clears_on_confirmation(self):
@@ -534,16 +564,16 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         failed = self.assert_unverified('reply_target_mismatch')
         self.assertEqual(failed['recovery_guidance'], guidance)
         self.assertEqual(failed['reply'], shown['reply'])
-        self.assertIsNone(failed['verification_receipt'])
+        self.assertNotIn('verification_receipt', failed)
         self.raw['reply_to_id'] = self.target
         confirmed, code = self.call()
         self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
-        self.assertIsNone(confirmed['recovery_guidance'])
+        self.assertNotIn('recovery_guidance', confirmed)
         before = self.path.read_bytes()
         self.raw['reply_to_id'] = None
         failed, code = self.call()
         self.assertEqual((code, failed['reply']['state']), (1, 'confirmed'))
-        self.assertIsNone(failed['recovery_guidance'])
+        self.assertNotIn('recovery_guidance', failed)
         self.assertEqual(failed['verification_receipt'], confirmed['verification_receipt'])
         self.assertEqual(self.path.read_bytes(), before)
 
@@ -560,7 +590,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         shown, code = self.call('show')
         self.assertEqual(code, 0)
         self.assertEqual(shown['verification_receipt'], {**legacy, 'key_scope': 'local'})
-        self.assertFalse(shown['remote_verified'])
+        self.assertNotIn('remote_verified', shown)
         self.assertEqual((self.path.read_bytes(), len(self.client.calls)), (before, calls))
 
     def test_exact_author_target_thread_text_and_provider_status_are_required(self):
@@ -729,7 +759,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 self.assertEqual((code, result['error']), (2, expected))
                 self.assertEqual(self.call('show')[0]['reply']['state'], 'unknown')
                 if column == 'idempotency_key':
-                    self.assertEqual(self.call('show')[0]['reply_candidates'], [])
+                    self.assertNotIn('reply_candidates', self.call('show')[0])
                 with closing(sqlite3.connect(self.path)) as db, db:
                     db.execute(f'UPDATE {table} SET {column}=? WHERE source=?', (old, self.source))
 
@@ -742,7 +772,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         before = self.path.read_bytes()
         self.assertEqual(self.call()[0]['error'], 'local_state_error')
         self.assertEqual(self.path.read_bytes(), before)
-        self.assertIsNone(self.call('show')[0]['verification_receipt'])
+        self.assertNotIn('verification_receipt', self.call('show')[0])
         self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], self.ref)
 
     def test_successful_verification_on_a_version_1_file_keeps_other_mail(self):
@@ -778,7 +808,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         del self.settings['adapter']
         self.client, self.ref = expected_client, expected_ref
         before = self.path.read_bytes()
-        self.assertEqual(self.call('show')[0]['reply_candidates'], [])
+        self.assertNotIn('reply_candidates', self.call('show')[0])
         self.assertEqual(self.path.read_bytes(), before)
         with self.unreached():
             failed, code = self.call()

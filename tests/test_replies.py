@@ -120,7 +120,7 @@ class ReplyRecoveryTests(unittest.TestCase):
                     if state == 'confirmed':
                         replies.execute(store, 'confirm', 'moltbook', uid(10), key=key,
                                         ref=self.ref, readback_body=self.body)
-                original, _ = replies.execute(store, 'show', 'moltbook', uid(10))
+                original, _ = commands.execute(store, 'reply_show', source='moltbook', id=uid(10))
                 for action, changed_fields in (
                         ('read', {'read_at'}), ('unread', {'read_at'}),
                         ('needs-reply', {'needs_reply'}), ('clear-reply', {'needs_reply'}),
@@ -161,7 +161,8 @@ class ReplyRecoveryTests(unittest.TestCase):
                             self.assertEqual(recovered.returncode, 0, recovered.stderr)
                             journal = json.loads(recovered.stdout)
                             self.assertEqual(journal['reply'], original['reply'])
-                            self.assertEqual(journal['confirmation_basis'], original['confirmation_basis'])
+                            self.assertEqual(journal.get('confirmation_basis'), original.get('confirmation_basis'))
+                            self.assertEqual('confirmation_basis' in journal, state == 'confirmed')
                         self.assertEqual(path.read_bytes(), snapshot)
 
     def test_repeated_same_reference_mark_preserves_reply_recovery(self):
@@ -260,8 +261,8 @@ os._exit(79)
         self.assertEqual(confirmed['message']['read_at'], incoming['read_at'])
         self.assertTrue(confirmed['message']['needs_reply'])
         self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
-        self.assertFalse(confirmed['remote_verified'])
-        self.assertFalse(confirmed['publication_performed'])
+        self.assertNotIn('remote_verified', confirmed)
+        self.assertNotIn('publication_performed', confirmed)
         saved = self.path.read_bytes()
         repeat, code = self.cli('confirm', '--key', external['key'], '--ref', self.ref, '--readback-file', readback)
         self.assertEqual((code, repeat['changed'], repeat['reply']), (0, False, confirmed['reply']))
@@ -292,7 +293,7 @@ os._exit(79)
         begun, _ = self.cli('begin', '--key', key)
         self.assertTrue(begun['send_allowed'])
         for result in (absent, prepared, begun):
-            self.assertIsNone(result['recovery_guidance'])
+            self.assertNotIn('recovery_guidance', result)
         before = self.path.read_bytes()
         shown, _ = self.cli('show')
         guidance = shown['recovery_guidance']
@@ -307,12 +308,12 @@ os._exit(79)
         before = self.path.read_bytes()
         marked, _ = self.cli('show')
         self.assertEqual((marked['recovery_guidance'], marked['reply']), (guidance, shown['reply']))
-        self.assertIsNone(marked['confirmation_basis'])
+        self.assertNotIn('confirmation_basis', marked)
         self.assertEqual(self.path.read_bytes(), before)
         confirmed, code = self.command('confirm', key=key, ref=self.ref, readback_body=self.body)
         self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
-        self.assertIsNone(confirmed['recovery_guidance'])
-        self.assertIsNone(self.cli('show')[0]['recovery_guidance'])
+        self.assertNotIn('recovery_guidance', confirmed)
+        self.assertNotIn('recovery_guidance', self.cli('show')[0])
 
     def test_confirmation_basis_requires_a_confirmed_attempt_not_a_reply_mark(self):
         absent, _ = self.cli('show')
@@ -328,13 +329,46 @@ os._exit(79)
         for state, result in [('absent', absent), ('prepared', prepared),
                               ('unknown', unknown), ('independently_marked_replied', marked)]:
             with self.subTest(state=state):
-                self.assertIsNone(result['confirmation_basis'])
+                self.assertNotIn('confirmation_basis', result)
         readback = self.root / 'readback.txt'; readback.write_bytes(self.body.encode('utf-8'))
         confirmed, code = self.cli('confirm', '--key', key, '--ref', self.ref, '--readback-file', readback)
         self.assertEqual((code, confirmed['reply']['state']), (0, 'confirmed'))
         self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
         shown, _ = self.cli('show')
         self.assertEqual(shown['confirmation_basis'], 'caller_supplied_readback')
+
+    def test_a_result_has_a_field_of_its_attempt_only_from_the_step_that_sets_it(self):
+        always = {'event', 'message', 'reply', 'changed', 'send_allowed', 'next_action', 'collection_performed'}
+        steps = []
+
+        def step(action, **options):
+            result, code = self.command(action, **options)
+            self.assertEqual(code, 0, result)
+            # What every result has, true or false, and what none has.
+            self.assertLessEqual(always, set(result))
+            self.assertEqual({type(result['changed']), type(result['send_allowed'])}, {bool})
+            self.assertNotIn('publication_performed', result)
+            # A field that is there holds something.
+            self.assertTrue(all(result[name] for name in replies.SPARSE if name in result))
+            there = {name for name in replies.LATER if name in (result['reply'] or {})}
+            self.assertNotIn(None, [result['reply'][name] for name in there])
+            steps.append((there, {name for name in replies.SPARSE if name in result}))
+            return result
+
+        self.assertIsNone(step('show')['reply'])
+        key = step('prepare', body=self.body)['reply']['idempotency_key']
+        self.assertEqual(steps, [(set(), set())] * 2)
+        self.assertTrue(step('begin', key=key)['send_allowed'])
+        self.assertEqual(steps[-1], ({'attempted_at'}, set()))
+        self.assertFalse(step('begin', key=key)['send_allowed'])
+        step('show')
+        self.assertEqual(steps[-2:], [({'attempted_at'}, {'recovery_guidance'})] * 2)
+        step('confirm', key=key, ref=self.ref, readback_body=self.body)
+        step('show')
+        self.assertEqual(steps[-2:], [(set(replies.LATER), {'confirmation_basis'})] * 2)
+        listed, code = commands.execute(Store(self.path), 'reply_list')
+        self.assertEqual((code, listed['counts']['confirmed']), (0, 1))
+        self.assertNotIn('publication_performed', listed)
 
     def test_explicit_draft_replacement_fences_stale_begin_and_never_replaces_unknown(self):
         first = self.command('prepare', body=self.body)[0]['reply']
@@ -445,7 +479,8 @@ os._exit(79)
                     self.assertEqual((replaced[1], replaced[0]['error']), (2, 'reply_already_started'))
                     self.assertEqual((shown['state'], shown['body'], shown['idempotency_key']),
                                      ('unknown', self.body, old_key))
-                    self.assertEqual(begun[0]['reply'], shown)
+                    # The worker called the journal itself, which holds every field of an attempt.
+                    self.assertEqual(replies.written(begun[0])['reply'], shown)
                     active_key = old_key
                 repeat, code = self.command('begin', id=target, key=active_key)
                 self.assertEqual((code, repeat['send_allowed']), (0, False))
@@ -533,8 +568,8 @@ os._exit(79)
                 self.assertIsNotNone(confirmed['message']['read_at'])
                 self.assertTrue(confirmed['message']['needs_reply'])
                 self.assertEqual(confirmed['confirmation_basis'], 'caller_supplied_readback')
-                self.assertFalse(confirmed['remote_verified'])
-                self.assertIsNone(confirmed['verification_receipt'])
+                self.assertNotIn('remote_verified', confirmed)
+                self.assertNotIn('verification_receipt', confirmed)
 
     def test_reply_reference_1025_characters_rejects_mark_and_confirm_without_writing(self):
         for number, (scheme, character) in enumerate(
@@ -594,7 +629,7 @@ os._exit(79)
         before = self.path.read_bytes()
         shown, code = self.command('show')
         self.assertEqual((code, shown['reply'], shown['next_action']), (0, None, 'inspect_recorded_reply'))
-        self.assertIsNone(shown['confirmation_basis'])
+        self.assertNotIn('confirmation_basis', shown)
         result, code = self.command('prepare', body=self.body)
         self.assertEqual((code, result['error']), (2, 'reply_already_recorded'))
         self.assertEqual(before, self.path.read_bytes())
