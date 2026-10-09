@@ -99,8 +99,8 @@ class CheckSdistTests(unittest.TestCase):
         status, report = self.invoke(successful)
         self.assertEqual((status, report['status']), (0, 'passed'))
         self.assertIs(found['guide'], True)
-        self.assertEqual(found['entries'], ['AGENT_GUIDE.md', 'LICENSE', 'README.md', 'docs', 'examples', 'guard',
-                                            'pyproject.toml', 'scripts', 'tests'])
+        self.assertEqual(found['entries'], ['ADAPTERS.md', 'AGENT_GUIDE.md', 'LICENSE', 'README.md', 'docs', 'examples',
+                                            'guard', 'pyproject.toml', 'scripts', 'tests'])
 
     def test_timeout_keeps_partial_output_for_bytes_text_and_none(self):
         for output, stderr, expected_out, expected_err in (

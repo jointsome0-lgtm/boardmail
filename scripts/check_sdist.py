@@ -18,7 +18,7 @@ SMOKE_TESTS = [
     'test_adapters.AdapterTests.test_v1_read_then_additive_migration_preserves_arrivals_and_marks',
     'test_agent_loop',
 ]
-REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'LICENSE',
+REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'ADAPTERS.md', 'LICENSE',
             'boardmail/cli.py', 'boardmail/mcp.py', 'boardmail/table.py', 'boardmail/transport.py',
             'docs/reference.md',
             'scripts/check_sdist.py', 'scripts/inner_reach.py', 'scripts/agent_view.py', 'scripts/agent_guide.py',

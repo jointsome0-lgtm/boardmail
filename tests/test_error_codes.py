@@ -4,6 +4,7 @@ import ast
 from http.client import HTTPException
 import inspect
 from pathlib import Path
+import re
 import unittest
 
 import boardmail
@@ -159,6 +160,28 @@ class ErrorCodeTests(unittest.TestCase):
         # The codes that only one board had are nowhere in the package, so no pass and no command gives one.
         package = ''.join(path.read_text(encoding='utf-8') for path in sorted(PACKAGE.glob('*.py')))
         self.assertEqual([code for code in GONE if code in package], [])
+
+    def test_an_adapter_file_is_told_what_the_boards_of_the_package_call_a_failed_request(self):
+        notes = (TESTS.parent / 'ADAPTERS.md').read_text(encoding='utf-8')
+        told = notes.split('\n## What a failure is called\n')[1].split('\n## ')[0]
+        listed = dict(re.findall(r'^\| `(\w+)` \|.*\| `(\w+)` \|$', told, re.MULTILINE))
+        # Each code of the list is one of the catalog, and the list says the hint that a result gives for it.
+        self.assertEqual(set(listed) - set(errors.CODES), set())
+        self.assertEqual({code: errors.next_action(code) for code in listed}, listed)
+        # The list has what the transport calls a failed request: each code that it raises, and each that
+        # failure() gives one that has no code of its own. A status has its number in its code, and the list has
+        # the three statuses that have a hint of their own.
+        raises = {node.args[0].value for node in ast.walk(ast.parse(inspect.getsource(transport)))
+                  if isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'MailError'}
+        called = {transport.failure(exc) for exc in (OSError(), HTTPException(), ValueError())}
+        self.assertEqual((raises | called | {code for code in errors.CODES if code.startswith('http_')}) - set(listed), set())
+        # Any other code gets the hint that the notes say: a status that has no entry, the one that they name
+        # among them, and a code of the file's own.
+        self.assertIn('Every code without an entry gets `retry_collect`.', told)
+        for code in ('http_503', transport.failure(status(404)), 'a_code_from_a_custom_adapter'):
+            self.assertNotIn(code, errors.CODES)
+            self.assertEqual(errors.next_action(code), 'retry_collect')
+        self.assertIn('`http_503`', told)
 
     def test_mcp_flags_every_error_code(self):
         for code in [*errors.CODES, *UNLISTED]:

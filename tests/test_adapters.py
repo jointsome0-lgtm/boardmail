@@ -1,4 +1,5 @@
 """Public extension, durable progress and 0.1 database compatibility contracts."""
+import ast
 from contextlib import closing, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import unittest
 
+import boardmail
 from boardmail import cli, commands, reader
 from boardmail.adapters import Batch
 from boardmail.boards import collect_all
@@ -301,6 +303,13 @@ class AdapterTests(unittest.TestCase):
                 self.assertEqual(result['added'], 0)
                 self.assert_extension_checkpoint(cfg, before)
         self.assertEqual(calls, [])
+
+    def test_no_module_of_the_package_says_a_version_of_the_interface(self):
+        # The version is what an adapter file says of itself. Nothing asks a board of the package for one.
+        says = [path.name for path in sorted(Path(boardmail.__file__).parent.glob('*.py'))
+                if any(isinstance(node, ast.Name) and node.id == 'API_VERSION' and isinstance(node.ctx, ast.Store)
+                       for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))))]
+        self.assertEqual(says, [])
 
     def test_invalid_extension_contract_matrix_preserves_committed_data(self):
         cfg, before = self.extension_checkpoint()

@@ -3,8 +3,9 @@
 Values: ``direct`` (a reply to something this account authored), ``mention``
 (an explicit native or textual @mention), ``direct+mention``, ``thread`` (activity
 inside a thread without a confirmed direct reply or mention) or ``None`` (unknown).
-Only actual provider evidence seen during collection sets a value; the legacy
-``kind`` is never a source. Unknown stays visible to readers.
+Only actual provider evidence seen during collection sets a value; ``kind``,
+the word of the board or the adapter for a message, is never a source. Unknown
+stays visible to readers.
 
 The same module keeps already fetched public originals for the core's bounded
 cache: roots, parents and our own authored posts that the inbox itself discards.

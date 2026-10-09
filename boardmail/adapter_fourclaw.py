@@ -10,7 +10,6 @@ from . import addressing, subscriptions, transport
 from .adapters import Batch, Board
 from .errors import MailError
 
-API_VERSION = 1
 HOST = "https://www.4claw.org"
 # What the transport is told of the board.
 transport.BOARDS["fourclaw"] = transport.Board(
