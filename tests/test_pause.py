@@ -91,15 +91,14 @@ class PauseTests(unittest.TestCase):
             commands.execute(self.store, 'resume', source='example', sources={'example': {'account_id': 'another-agent'}})
         self.assertTrue(self.store.is_paused('example'))
 
-    def test_legacy_reads_do_not_migrate_and_pause_preserves_records_and_schema_version(self):
-        for version in (1, 2):
-            with self.subTest(version=version):
-                path = self.root / f'v{version}.sqlite3'
+    def test_a_file_from_before_pauses_has_no_source_paused_and_a_pause_keeps_its_mail(self):
+        # Neither file has a pause column: a version-1 file, and that file after the first collect of 0.15.1.
+        for older in ('v1.sql', 'v1-collected-0.15.1.sql'):
+            with self.subTest(older=older):
+                path = self.root / f'{older}.sqlite3'
                 with closing(sqlite3.connect(path)) as db:
-                    db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
+                    db.executescript((Path(__file__).parent / 'fixtures' / older).read_text())
                 store = Store(path)
-                if version == 2:
-                    commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
                 messages = store.page()['messages']
                 raw = path.read_bytes()
                 self.assertFalse(store.is_paused('moltbook'))

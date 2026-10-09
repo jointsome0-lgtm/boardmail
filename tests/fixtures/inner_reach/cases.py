@@ -157,10 +157,9 @@ class Replacements(unittest.TestCase):
 
 class StoreWrites(unittest.TestCase):
     def test_every_write_method(self):
-        """store failure; store initialize; store mark; store prepare_collection; store save; store save_collection; store set_paused; store set_subscription"""
+        """store failure; store initialize; store mark; store save; store save_collection; store set_paused; store set_subscription"""
         store = Store('inbox.sqlite3')
         store.initialize()
-        store.prepare_collection()
         store.save('board', 'account', [])
         store.save_collection('board', 'account', 'board', 0, Batch([], {}, True))
         store.failure('board', 'account', 'board_down')

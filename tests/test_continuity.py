@@ -515,8 +515,8 @@ class ContextTests(unittest.TestCase):
         # Offline, a row stored before reply targets were kept cannot name its parent.
         result, code = self.context(uid(902), None)
         self.assertEqual((code, result['parent']['status'], result['parent']['id']), (1, 'unknown', None))
-        # A row of today says how it was found. The pass that brings the file up to date watches the thread and
-        # finds a comment that names the account and answers no other comment. The inbox of the board is empty.
+        # A row of today says how it was found. A pass watches the thread and finds a comment that names the
+        # account and answers no other comment. The inbox of the board is empty.
         self.fixture.inbox.clear()
         self.assertEqual(self.arrives(store=self.store, threads=[uid(900)]), 1)
         self.assertEqual(self.store.show('postingboard', uid(903))['discovery'], 'thread')

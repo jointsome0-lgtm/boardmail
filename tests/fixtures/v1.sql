@@ -1,3 +1,4 @@
+-- An inbox file of version 1. The data is invented.
 BEGIN TRANSACTION;
 CREATE TABLE messages (
                 arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT,

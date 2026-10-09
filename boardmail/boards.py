@@ -48,8 +48,6 @@ def collect_all(store, sources, *, fetch=transport.fetch):
 
     fetch asks a board: the transport, or an invented board in its place. Every board of the package is handed
     it. An adapter file of an operator gets the three arguments of the interface."""
-    # This is the only automatic migration point. Local readers never migrate.
-    store.prepare_collection()
     added, errors = 0, []
     for source, settings in sources.items():
         if store.is_paused(source):

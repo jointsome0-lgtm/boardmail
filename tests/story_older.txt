@@ -1521,7 +1521,7 @@ exit code 0
   "history_complete": false
 }
 
-== 33. The older file with all of this
+== 33. The file with all of this
 $ boardmail status
 exit code 0
 {
@@ -1561,7 +1561,7 @@ exit code 0
       "paused": false,
       "last_ok_age": null,
       "stale_after": 540,
-      "coverage": "Configured adapter scope; consult its instructions.",
+      "coverage": "Configured roots, optional native Inbox/alias search, and activity in locally subscribed roots. Bounded backfill does not prove complete history.",
       "history_complete": false,
       "backlog_pending": false,
       "next_action": "collect_periodically"
@@ -1615,7 +1615,7 @@ exit code 0
   "history_complete": false
 }
 
-== 36. The first collection brings the file up to date
+== 36. The first collection
 $ boardmail collect
 exit code 0
 {

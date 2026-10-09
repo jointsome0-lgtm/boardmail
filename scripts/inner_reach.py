@@ -38,9 +38,9 @@ test side does one of three things.
    the test's method in place of its own.
 
 3. It uses a Store write path: initialize, save, save_collection, failure,
-   set_paused, set_subscription, prepare_collection or mark, called or handed
-   to something else to call; settings with an argument; connect with write
-   or create. The receiver has to be a Store, as in Store(path).save(...) or
+   set_paused, set_subscription or mark, called or handed to something else
+   to call; settings with an argument; connect with write or create. The
+   receiver has to be a Store, as in Store(path).save(...) or
    self.store.mark(...).
 
 Nothing else is counted. A test that calls any other package function, even
@@ -107,7 +107,7 @@ SIDE = {'': TESTS, 'examples.': ROOT / 'examples'}     # import prefix -> folder
 PACKAGE = 'boardmail'
 INTERFACE = ('boardmail.adapters.Batch',)
 WRITES = ('initialize', 'save', 'save_collection', 'failure', 'set_paused',
-          'set_subscription', 'prepare_collection', 'mark')
+          'set_subscription', 'mark')
 FIXTURES = ('setUp', 'tearDown', 'setUpClass', 'tearDownClass', 'asyncSetUp', 'asyncTearDown',
             'setUpModule', 'tearDownModule')
 WRAPPERS = ('getattr', 'vars', 'copy', 'deepcopy', 'closing', 'iter', 'next', 'list', 'tuple',

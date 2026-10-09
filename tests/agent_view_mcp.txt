@@ -3,10 +3,10 @@
 
 size:
   tools: 26
-  tool descriptions: 10003
+  tool descriptions: 9981
   input schemas: 10596
   server instructions: 1493
-  tool catalog as JSON: 24923
+  tool catalog as JSON: 24901
 
 server:
   name: boardmail
@@ -532,7 +532,7 @@ tool boardmail_subscriptions:
   description: >
     List local thread subscriptions and when each was made.
     The command line and MCP share them without a restart.
-    No collection, migration or read marks.
+    No collection or read marks.
   inputSchema:
     type: object
     properties:
@@ -641,7 +641,7 @@ tool boardmail_tags:
   description: >
     List local topics and unread counts without message bodies.
     The untagged queue is always listed.
-    No collection, read marks or migration.
+    No collection or read marks.
     Each has a read route to its unread mail; start from it at each visit, since a late tag includes older mail.
     Topics can overlap; counts.unread is tagged_unread plus untagged_unread and counts a message once.
   inputSchema: {type: object, properties: {}, required: [], additionalProperties: false}

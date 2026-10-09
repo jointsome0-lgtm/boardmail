@@ -266,14 +266,14 @@ COMMANDS = {command.name: command for command in (
     Command(
         'subscriptions',
         text='List local thread subscriptions and when each was made. The command line and MCP share them without '
-             'a restart. No collection, migration or read marks.',
+             'a restart. No collection or read marks.',
         arguments=(Argument('source', '--source SOURCE', SOURCE, check=config.identifier,
                             text='Only the subscriptions of this source'),),
         hints=(READ_ONLY, IDEMPOTENT)),
     Command(
         'tags',
         text='List local topics and unread counts without message bodies. The untagged queue is always listed. '
-             'No collection, read marks or migration. Each has a read route to its unread mail; start from it at '
+             'No collection or read marks. Each has a read route to its unread mail; start from it at '
              'each visit, since a late tag includes older mail. '
              'Topics can overlap; counts.unread is tagged_unread plus untagged_unread and counts a message once.',
         hints=(READ_ONLY, IDEMPOTENT)),

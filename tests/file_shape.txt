@@ -1,20 +1,12 @@
-What an inbox file has after each command: its version number, tables, columns and indexes.
-Made by tests/test_file_shape.py. Each command ran once on a fresh copy of each of three files:
+What an inbox file has: its version number, tables, columns and indexes. Made by tests/test_file_shape.py.
 
-  new inbox             what init creates, filled by one collect, which adds nothing to it
-  version 1             tests/fixtures/v1.sql
-  version 1, collected  that file after its first collect
+init creates a new inbox with every part, and no command adds a part or takes one away. A file that an older
+release left is short of some. The first command that opens it gives it those: the file then has the shape of
+a new inbox, and every row that it had.
 
 A table is written in the words of the statements that the file itself keeps: its columns, then what holds
-for the whole table, then its indexes. A line with + is something that the file has after the command and did
-not have before it. A table that is added is named there and written out under the new inbox or at the end.
-"same shape" says that the command added nothing and took nothing away. "file unchanged" says more: the file
-is the same byte for byte.
-
-Where commands stand together, the others ran first and the row is about the last one, counted from the file
-as they left it. MESSAGE is a message that all three files hold, and THREAD is its thread. KEY is the key that
-reply prepare gives. ANSWER and WAITING are where two replies of ours are on the board: it has verified the
-first and not yet the second.
+for the whole table, then its indexes. Under an older file, a line with + is a part or a row that the first
+command gives it.
 
 == new inbox
 version 2
@@ -52,310 +44,6 @@ table originals
     value TEXT NOT NULL
     fetched_at INTEGER NOT NULL
     PRIMARY KEY (source,id)
-table sources
-    source TEXT PRIMARY KEY
-    account_id TEXT NOT NULL
-    status TEXT NOT NULL DEFAULT 'unknown'
-    last_checked INTEGER
-    last_ok INTEGER
-    error TEXT
-    unavailable INTEGER NOT NULL DEFAULT 0
-    paused INTEGER NOT NULL DEFAULT 0
-table subscriptions
-    source TEXT NOT NULL
-    thread_id TEXT NOT NULL
-    subscribed_at INTEGER NOT NULL
-    PRIMARY KEY (source,thread_id)
-
-== version 1
-version 1
-table messages
-    arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT
-    source TEXT NOT NULL
-    id TEXT NOT NULL
-    thread_id TEXT NOT NULL
-    parent_id TEXT
-    provider_seq INTEGER
-    kind TEXT NOT NULL
-    author TEXT
-    title TEXT NOT NULL
-    body TEXT NOT NULL
-    url TEXT NOT NULL
-    created_at INTEGER NOT NULL
-    arrived_at INTEGER NOT NULL
-    read_at INTEGER
-    needs_reply INTEGER NOT NULL DEFAULT 0
-    replied_at INTEGER
-    reply_ref TEXT
-    UNIQUE(source, id)
-table sources
-    source TEXT PRIMARY KEY
-    account_id TEXT NOT NULL
-    status TEXT NOT NULL DEFAULT 'unknown'
-    last_checked INTEGER
-    last_ok INTEGER
-    error TEXT
-    unavailable INTEGER NOT NULL DEFAULT 0
-
-== version 1, collected
-version 2
-table adapter_state
-    source TEXT PRIMARY KEY
-    adapter TEXT NOT NULL
-    revision INTEGER NOT NULL
-    state TEXT NOT NULL
-    backlog_pending INTEGER NOT NULL DEFAULT 0
-table messages
-    arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT
-    source TEXT NOT NULL
-    id TEXT NOT NULL
-    thread_id TEXT NOT NULL
-    parent_id TEXT
-    provider_seq INTEGER
-    kind TEXT NOT NULL
-    author TEXT
-    title TEXT NOT NULL
-    body TEXT NOT NULL
-    url TEXT NOT NULL
-    created_at INTEGER NOT NULL
-    arrived_at INTEGER NOT NULL
-    read_at INTEGER
-    needs_reply INTEGER NOT NULL DEFAULT 0
-    replied_at INTEGER
-    reply_ref TEXT
-    discovery TEXT
-    addressing TEXT
-    UNIQUE(source, id)
-    CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
-table originals
-    source TEXT NOT NULL
-    id TEXT NOT NULL
-    value TEXT NOT NULL
-    fetched_at INTEGER NOT NULL
-    PRIMARY KEY (source,id)
-table sources
-    source TEXT PRIMARY KEY
-    account_id TEXT NOT NULL
-    status TEXT NOT NULL DEFAULT 'unknown'
-    last_checked INTEGER
-    last_ok INTEGER
-    error TEXT
-    unavailable INTEGER NOT NULL DEFAULT 0
-table subscriptions
-    source TEXT NOT NULL
-    thread_id TEXT NOT NULL
-    subscribed_at INTEGER NOT NULL
-    PRIMARY KEY (source,thread_id)
-
-== Commands that only read
-
-$ boardmail status
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail list
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail wait --timeout 0
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail show moltbook MESSAGE
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail context --local moltbook MESSAGE
-  new inbox:            exit 1  version 2  file unchanged
-  version 1:            exit 1  version 1  file unchanged
-  version 1, collected: exit 1  version 2  file unchanged
-
-$ boardmail expand --local --through 2 moltbook THREAD
-  new inbox:            exit 1  version 2  file unchanged
-  version 1:            exit 1  version 1  file unchanged
-  version 1, collected: exit 1  version 2  file unchanged
-
-$ boardmail tags
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail tag show follow-up
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail subscriptions
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail settings
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail reply list
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail reply show moltbook MESSAGE
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail context moltbook MESSAGE
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-$ boardmail expand --through 2 moltbook THREAD
-  new inbox:            exit 0  version 2  file unchanged
-  version 1:            exit 0  version 1  file unchanged
-  version 1, collected: exit 0  version 2  file unchanged
-
-== Commands that can write
-
-$ boardmail init
-  new inbox:            exit 2  version 2  same shape
-  version 1:            exit 2  version 1  same shape
-  version 1, collected: exit 2  version 2  same shape
-
-$ boardmail collect
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1 -> 2  + table adapter_state
-                                                + messages: discovery TEXT
-                                                + messages: addressing TEXT
-                                                + messages: CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
-                                                + table originals
-                                                + table subscriptions
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail check
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1 -> 2  + table adapter_state
-                                                + messages: discovery TEXT
-                                                + messages: addressing TEXT
-                                                + messages: CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
-                                                + table originals
-                                                + table subscriptions
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail mark read moltbook MESSAGE
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail mark unread moltbook MESSAGE
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail mark needs-reply moltbook MESSAGE
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail mark clear-reply moltbook MESSAGE
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail mark replied --ref ANSWER moltbook MESSAGE
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail settings --scope all --context none
-  new inbox:            exit 0  version 2  + table reader_settings
-  version 1:            exit 0  version 1  + table reader_settings
-  version 1, collected: exit 0  version 2  + table reader_settings
-
-$ boardmail settings --reset
-  new inbox:            exit 0  version 2  + table reader_settings
-  version 1:            exit 0  version 1  + table reader_settings
-  version 1, collected: exit 0  version 2  + table reader_settings
-
-$ boardmail tag add follow-up moltbook THREAD
-  new inbox:            exit 0  version 2  + table thread_tags
-  version 1:            exit 0  version 1  + table thread_tags
-  version 1, collected: exit 0  version 2  + table thread_tags
-
-$ boardmail tag remove follow-up moltbook THREAD
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail subscribe moltbook THREAD
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  + table adapter_state
-                                           + table subscriptions
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail unsubscribe moltbook THREAD
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail pause moltbook
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  + sources: paused INTEGER NOT NULL DEFAULT 0
-  version 1, collected: exit 0  version 2  + sources: paused INTEGER NOT NULL DEFAULT 0
-
-$ boardmail resume moltbook
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  + sources: paused INTEGER NOT NULL DEFAULT 0
-  version 1, collected: exit 0  version 2  + sources: paused INTEGER NOT NULL DEFAULT 0
-
-$ boardmail reply prepare moltbook MESSAGE --body-file answer.txt
-  new inbox:            exit 0  version 2  + table reply_attempts
-  version 1:            exit 0  version 1  + table reply_attempts
-  version 1, collected: exit 0  version 2  + table reply_attempts
-
-$ boardmail reply begin moltbook MESSAGE --key KEY
-  new inbox:            exit 2  version 2  same shape
-  version 1:            exit 2  version 1  same shape
-  version 1, collected: exit 2  version 2  same shape
-
-$ boardmail reply prepare moltbook MESSAGE --body-file answer.txt
-$ boardmail reply begin moltbook MESSAGE --key KEY
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail reply prepare moltbook MESSAGE --body-file answer.txt
-$ boardmail reply begin moltbook MESSAGE --key KEY
-$ boardmail reply confirm moltbook MESSAGE --key KEY --ref ANSWER --readback-file answer.txt
-  new inbox:            exit 0  version 2  same shape
-  version 1:            exit 0  version 1  same shape
-  version 1, collected: exit 0  version 2  same shape
-
-$ boardmail reply prepare moltbook MESSAGE --body-file answer.txt
-$ boardmail reply begin moltbook MESSAGE --key KEY
-$ boardmail reply verify moltbook MESSAGE --key KEY --ref WAITING
-  new inbox:            exit 1  version 2  + table reply_candidate_checks
-                                           + table reply_candidates
-  version 1:            exit 1  version 1  + table reply_candidate_checks
-                                           + table reply_candidates
-  version 1, collected: exit 1  version 2  + table reply_candidate_checks
-                                           + table reply_candidates
-
-$ boardmail reply prepare moltbook MESSAGE --body-file answer.txt
-$ boardmail reply begin moltbook MESSAGE --key KEY
-$ boardmail reply verify moltbook MESSAGE --key KEY --ref ANSWER
-  new inbox:            exit 0  version 2  + table reply_candidates
-                                           + table reply_verifications
-  version 1:            exit 0  version 1  + table reply_candidates
-                                           + table reply_verifications
-  version 1, collected: exit 0  version 2  + table reply_candidates
-                                           + table reply_verifications
-
-== Tables that init does not create
 table reader_settings
     key TEXT PRIMARY KEY
     value TEXT NOT NULL
@@ -394,6 +82,20 @@ table reply_verifications
     message_id TEXT NOT NULL
     evidence TEXT NOT NULL
     PRIMARY KEY (source,message_id)
+table sources
+    source TEXT PRIMARY KEY
+    account_id TEXT NOT NULL
+    status TEXT NOT NULL DEFAULT 'unknown'
+    last_checked INTEGER
+    last_ok INTEGER
+    error TEXT
+    unavailable INTEGER NOT NULL DEFAULT 0
+    paused INTEGER NOT NULL DEFAULT 0
+table subscriptions
+    source TEXT NOT NULL
+    thread_id TEXT NOT NULL
+    subscribed_at INTEGER NOT NULL
+    PRIMARY KEY (source,thread_id)
 table thread_tags
     tag TEXT NOT NULL
     source TEXT NOT NULL
@@ -401,3 +103,54 @@ table thread_tags
     tagged_at INTEGER NOT NULL
     PRIMARY KEY (tag,source,thread_id)
     CREATE INDEX thread_tags_membership ON thread_tags(source,thread_id,tag)
+
+== version 1
+tests/fixtures/v1.sql
+version 1 -> 2
++ table adapter_state
++ messages: discovery TEXT
++ messages: addressing TEXT
++ messages: CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
++ table originals
++ table reader_settings
++ table reply_attempts
++ table reply_candidate_checks
++ table reply_candidates
++ table reply_verifications
++ sources: paused INTEGER NOT NULL DEFAULT 0
++ table subscriptions
++ table thread_tags
++ row of adapter_state: moltbook, moltbook, 0, {}, 0
+
+== version 1, written by 0.15.1
+tests/fixtures/v1-written-0.15.1.sql
+version 1 -> 2
++ messages: discovery TEXT
++ messages: addressing TEXT
++ messages: CREATE INDEX messages_reply_ref ON messages (source,reply_ref)
++ table originals
++ table reply_candidate_checks
++ table reply_candidates
++ table reply_verifications
++ row of adapter_state: moltbook, moltbook, 0, {}, 0
+
+== version 1, collected by 0.15.1
+tests/fixtures/v1-collected-0.15.1.sql
+version 2
++ table reader_settings
++ table reply_attempts
++ table reply_candidate_checks
++ table reply_candidates
++ table reply_verifications
++ sources: paused INTEGER NOT NULL DEFAULT 0
++ table thread_tags
+
+== created by 0.15.1
+tests/fixtures/created-0.15.1.sql
+version 2
++ table reader_settings
++ table reply_attempts
++ table reply_candidate_checks
++ table reply_candidates
++ table reply_verifications
++ table thread_tags

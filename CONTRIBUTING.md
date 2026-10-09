@@ -74,10 +74,12 @@ After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover 
 
 ## The inbox file
 
-`tests/file_shape.txt` says what an inbox file has after each command: its version number, tables, columns and indexes. `tests/test_file_shape.py` runs each command once on a fresh copy of three files: a new inbox, the bundled version-1 file, and that file after its first collect. The test suite fails when a file then differs from the stored table, when a command that only reads changes a byte of a file, and when a command has no row. A new command needs a row there. What a command does to the shape of the file belongs in this table and not in another test.
+`tests/file_shape.txt` says what an inbox file has: its version number, tables, columns and indexes. `init` creates a new inbox with every part, and no command adds a part or takes one away. A file that an older release left is short of some, and the first command that opens it gives it those. `tests/fixtures` has four such files as SQL, and the top of each says how it came about. `tests/file_shape.txt` says what each of them gets.
+
+`tests/test_file_shape.py` runs each command once on a fresh copy of a new inbox and of each older file. The test suite fails when a file then has another shape than a new inbox or has lost a row, when a command that only reads changes a byte of a file that has every part, and when a command has no row. A new command needs a row there.
 
 After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_file_shape.py'` and review the difference.
 
 `boardmail/schema.py` holds every statement that gives the file a table, a column or an index, and every question about what the file has: its version number, whether it has a table, which columns a table has. Another module calls it. `tests/test_schema_guard.py` fails when another module of the package writes such a statement or asks such a question itself.
 
-A command that only reads sees every table and column, whatever the file has. Its connection gets an empty stand-in, in memory, for each part that the file lacks, so the code that reads has no branch for a missing part. A command that writes gets no stand-in: one would hide the table that the command is about to make. Before it reads a part that it does not make, it asks the schema module. `tests/test_story_older.py` fails when a connection that writes has a stand-in, and when a stand-in is not in memory.
+A new table or column goes into the schema module for both kinds of file: a new inbox, and a file that does not have it yet. The step that gives an older file its parts runs when a command opens the file: in the transaction of a command that writes, and in a transaction of its own before a command that only reads. So a command finds every part there. A part that an older release could not read or write around needs a new version number, and that is a decision for an issue.

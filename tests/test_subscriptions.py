@@ -88,7 +88,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertIn('/v1/posts/' + thread, [path for path, _, _ in board.calls])
         self.assertEqual(self.store.show('postingboard', message), saved)
 
-    def test_old_databases_read_without_migration_and_explicit_selection_preserves_mail(self):
+    def test_an_older_file_has_no_selection_and_an_explicit_one_keeps_its_mail(self):
         for version in (1, 2):
             with self.subTest(version=version):
                 path = self.root / f'v{version}.sqlite3'
@@ -96,7 +96,7 @@ class SubscriptionTests(unittest.TestCase):
                     db.executescript((Path(__file__).parent / 'fixtures/v1.sql').read_text())
                 store = Store(path)
                 if version == 2:
-                    commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
+                    store.status()  # The first command that opens the file gives it every part.
                     # No command takes the table away again. The file has lost it somewhere else.
                     with closing(sqlite3.connect(path)) as db, db:
                         db.execute('DROP TABLE subscriptions')
@@ -106,9 +106,9 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertEqual(store.status()['subscriptions'], [])
                 self.assertEqual(path.read_bytes(), before)
                 if version == 1:
-                    with self.assertRaisesRegex(config.MailError, 'subscription_config_required'):
-                        self.follow(store, 'moltbook', uid(100))
-                    self.assertEqual(path.read_bytes(), before)
+                    # Version 1 knew a source by the name of its board, so the file says which adapter reads this
+                    # one and no config has to.
+                    self.assertTrue(self.follow(store, 'moltbook', uid(100)))
                 for active in (False, True, True, False):
                     commands.execute(store, 'subscribe' if active else 'unsubscribe', source='moltbook',
                                      thread=uid(100), sources={'moltbook': {'account_id': uid(2)}})
@@ -144,7 +144,7 @@ class SubscriptionTests(unittest.TestCase):
                 commands.execute(self.store, 'subscribe', sources=sources, source='research', thread=uid(100))
             self.assertEqual(self.path.read_bytes(), before)
 
-    def test_v1_subscription_rejects_adapter_rebind_before_migration(self):
+    def test_a_source_of_version_1_cannot_be_bound_to_another_adapter(self):
         for earlier_alias in (False, True):
             with self.subTest(earlier_alias=earlier_alias):
                 path = self.root / f'legacy-{earlier_alias}.sqlite3'
@@ -167,13 +167,12 @@ class SubscriptionTests(unittest.TestCase):
                 self.assertTrue(self.follow(store, 'moltbook', uid(100), {'account_id': uid(2), 'adapter': 'moltbook'}))
                 with store.connect() as db:
                     self.assertEqual(dict(db.execute("SELECT * FROM sources WHERE source='moltbook'").fetchone()), source)
-                commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
                 known, state, revision = store.collection_state('moltbook', uid(2), 'moltbook')
                 self.assertEqual((known, state, revision), ({uid(10), uid(11)}, {}, 0))
                 self.assertEqual(store.page()['messages'], saved)
                 self.assertEqual(store.subscriptions('moltbook')[0]['thread'], uid(100))
 
-    def test_v1_new_source_alias_keeps_explicit_adapter_during_migration(self):
+    def test_a_new_source_of_a_version_1_file_keeps_the_adapter_that_its_config_names(self):
         for source in ('research', 'postingboard'):
             with self.subTest(source=source):
                 path = self.root / f'new-alias-{source}.sqlite3'
@@ -183,7 +182,6 @@ class SubscriptionTests(unittest.TestCase):
                 saved = store.page()['messages']
                 self.assertTrue(self.follow(store, source, uid(200), {'account_id': uid(1), 'adapter': 'the-colony'}))
                 self.assertFalse(self.follow(store, source, uid(200)))
-                commands.execute(store, 'collect', sources={})  # A pass over no source brings the file up to date.
                 self.assertEqual(store.collection_state(source, uid(1), 'the-colony'), (set(), {}, 0))
                 self.assertEqual(store.adapter('moltbook'), 'moltbook')
                 self.assertEqual(store.page()['messages'], saved)

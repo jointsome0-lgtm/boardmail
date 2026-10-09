@@ -704,6 +704,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
                 if remove_table:
                     with closing(sqlite3.connect(self.path)) as db, db:
                         db.execute('DROP TABLE adapter_state')
+                    self.store.status()  # The first command that opens the file gives the table back, empty.
                 before = self.path.read_bytes()
                 result, code = self.call()
                 self.assertEqual((code, result['error']), (2, 'reply_adapter_identity_unknown'))
@@ -746,7 +747,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         self.assertIsNone(self.call('show')[0]['verification_receipt'])
         self.assertEqual(self.call('show')[0]['reply_candidates'][0]['reply_ref'], self.ref)
 
-    def test_successful_verification_on_v1_keeps_the_schema_and_other_mail(self):
+    def test_successful_verification_on_a_version_1_file_keeps_other_mail(self):
         self.path = self.path.parent / 'legacy.sqlite3'
         db = sqlite3.connect(self.path)
         try:
@@ -765,7 +766,7 @@ verification.execute(Store(path), {source: settings}, source, target, key=key, r
         other = self.store.show('moltbook', uid(10))
         self.key = self.call('prepare', body=self.body)[0]['reply']['idempotency_key']
         self.call('begin', key=self.key)
-        # A v1 source name identifies its original built-in even without adapter_state.
+        # Version 1 knew a source by the name of its board, so the file says that the moltbook adapter reads it.
         expected_client, expected_ref = self.client, self.ref
         self.settings['adapter'] = 'postingboard'
         self.client = FixtureBoard('postingboard', self.settings)
