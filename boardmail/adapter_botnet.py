@@ -15,7 +15,9 @@ MAX_REQUESTS = 40
 SOURCE_SECONDS = 45
 FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, OverflowError)
 # What the original of a notification is called when it is gone from the board: refused, missing, deleted or
-# hidden. That is no failure of the source. The original counts as unavailable and its reference waits on.
+# hidden. That is no failure of the source. The original counts as unavailable and its reference waits on, with
+# "gone" in its entry of the state. A reference that waits so is asked for again and is no backlog: it does not
+# keep a pass from being finished.
 GONE = ("http_403", "http_404", "http_410", "original_deleted", "original_unavailable")
 # The time of a phase is over: it has none left to ask, or an answer came after it. Both end the phase alike.
 OVER = ("budget_exhausted", "source_timeout")
@@ -182,7 +184,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     """Read the newest page and rotate older pages; retain failed public lookups.
 
     Inbox cursors run backwards, unlike Botnet's separate topic activity cursors.
-    Only IDs/reasons survive in pending state; notification prose is never mail.
+    Only IDs/reasons survive in pending state, and whether the board has answered
+    that the original is gone; notification prose is never mail.
 
     fetch asks the board: the transport, or an invented board in its place.
     """
@@ -202,6 +205,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                 raise ValueError()
             if mid not in known:
                 pending[mid] = {"id": mid, "reasons": sorted(set(reasons))}
+                if entry.get("gone") is True:
+                    pending[mid]["gone"] = True
         if len(pending) > MAX_PENDING:
             raise ValueError()
     except FAILURES as exc:
@@ -288,14 +293,23 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                     addressing.cache_original(batch, message)
             except FAILURES as exc:
                 pending[mid] = entry
-                if isinstance(exc, MailError) and str(exc) in GONE:
+                code = str(exc) if isinstance(exc, MailError) else "invalid_response"
+                if code in GONE:
+                    entry["gone"] = True
                     batch.unavailable += 1
-                elif _error(batch, exc) in ("http_429", *OVER):
+                elif code in OVER:
+                    # The reference got no answer in the time of its phase, so it keeps what it remembers.
                     break
+                else:
+                    # A request that fails in another way leaves it open whether the original is gone.
+                    entry.pop("gone", None)
+                    if _error(batch, exc) == "http_429":
+                        break
             if batch.error == "http_429":
                 break
     batch.state["pending"] = list(pending.values())
-    batch.complete = batch.complete and not pending and batch.state.get("cursor") is None
+    waiting = [entry for entry in pending.values() if not entry.get("gone")]
+    batch.complete = batch.complete and not waiting and batch.state.get("cursor") is None
     return batch
 
 

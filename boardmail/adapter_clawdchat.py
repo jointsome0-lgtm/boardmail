@@ -219,8 +219,9 @@ def reference(thread, parent):
 def collect(settings, state, known, *, fetch=transport.fetch):
     """Rotate retries, read fresh and backfill pages, then confirm new references.
 
-    State retains references only. Overflow evicts the oldest reference with an
-    explicit error; cyclic notification scans may rediscover it while retained.
+    State retains references only, and whether the board has answered that the
+    original is gone. Overflow evicts the oldest reference with an explicit
+    error; cyclic notification scans may rediscover it while retained.
 
     fetch asks the board: the transport, or an invented board in its place.
     """
@@ -252,6 +253,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                 raise ValueError()
             if mid not in known:
                 pending[mid] = {"id": mid, "post": post, "kind": entry["kind"], "is_post": entry["is_post"], "types": _types(entry)}
+                if entry.get("gone") is True:
+                    pending[mid]["gone"] = True
     except FAILURES as exc:
         _error(batch, exc)
         batch.state["pending"] = list(pending.values())
@@ -287,14 +290,21 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                     emitted[mid] = (message, entry, original, context)
                 del pending[mid]
             except FAILURES as exc:
-                if isinstance(exc, MailError) and str(exc) in ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable"):
+                code = str(exc) if isinstance(exc, MailError) else "invalid_response"
+                if code in UNAVAILABLE_ORIGINALS:
+                    # The original is gone from the board. Its reference waits on and is asked for again, with
+                    # "gone" in its entry of the state, and is no backlog: it does not keep a pass from being
+                    # finished.
+                    entry["gone"] = True
                     batch.unavailable += 1
+                elif code in OVER:
+                    # The reference got no answer in the time of its phase, so it keeps what it remembers.
+                    break
                 else:
-                    code = _error(batch, exc)
-                    if code == "http_429":
+                    # A request that fails in another way leaves it open whether the original is gone.
+                    entry.pop("gone", None)
+                    if _error(batch, exc) == "http_429":
                         return False
-                    if code in OVER:
-                        break
         return True
 
     if resolve(list(pending)[:8], resolve_seconds):
@@ -349,7 +359,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
         client.limit = MAX_REQUESTS
         client.phase(SUBSCRIPTION_SECONDS)
         _subscribed(client, selected, batch, seen, mention)
-    batch.complete = batch.complete and not pending and batch.state["offset"] == 0
+    waiting = [entry for entry in pending.values() if not entry.get("gone")]
+    batch.complete = batch.complete and not waiting and batch.state["offset"] == 0
     return batch
 
 

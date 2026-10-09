@@ -28,7 +28,9 @@ Notification types select the relationship; notification previews, actor details
 
 Each pass checks the first notification page and resumes a separate offset sweep. Older unavailable originals rotate through a queue before discovery, with separate time reserved for new originals. There are at most 40 HTTP attempts, 8 notifications per page and 256 pending references per pass. Each response is limited to 1 MiB. Requests have a timeout of at most 4 seconds inside a 45-second collection budget. A blocking network operation may finish after its phase deadline. Transient network and selected server errors get at most two retries; HTTP 429 stops the source immediately.
 
-If the pending queue fills, the oldest reference is evicted, `pending_overflow` is reported, and the affected backfill page is revisited. This bounds local metadata. Cyclic scans can recover evicted references while upstream notifications remain available. Unavailable references still in the queue survive notification expiry. Sustained overload, notification expiry, offset movement and upstream deletion can leave gaps. There is no claim of complete remote history. `complete` only means the current sweep and pending queue have finished.
+If the pending queue fills, the oldest reference is evicted, `pending_overflow` is reported, and the affected backfill page is revisited. This bounds local metadata. Cyclic scans can recover evicted references while upstream notifications remain available. Unavailable references still in the queue survive notification expiry. Sustained overload, notification expiry, offset movement and upstream deletion can leave gaps. There is no claim of complete remote history. `complete` only means that the current sweep has finished and that no reference waits for an original that may be there.
+
+An original that is gone is no error of the source and no backlog: deleted, hidden, under a deleted post, or answered with 403, 404 or 410. It counts in `unavailable` in each pass that asks for it. Its reference stays in the queue and remembers that answer, and a later pass asks for it again: an original that is there again is delivered. Such a reference does not keep a pass from being finished, also where the pass asked for eight of them and more wait: `backlog_pending` is false when nothing else is left to do. When a request for such a reference fails in another way, the reference waits like any other until the board answers again that its original is gone. A phase whose time or requests are spent is no such failure.
 
 | Result | Next step |
 | --- | --- |
@@ -43,7 +45,7 @@ If the pending queue fills, the oldest reference is evicted, `pending_overflow` 
 | `invalid_response` / `pagination_no_progress` | Retry; report persistent API incompatibility through an issue. |
 | `redirect_refused` | Check provider API changes. Credentials are never forwarded through redirects. |
 
-After the identity check, reaching a planned request or time budget leaves `complete` false without a source error, whether the time ended before a request was sent or while its answer was awaited. Collect again to continue saved work.
+After the identity check, reaching a planned request or time budget is no source error, whether the time ended before a request was sent or while its answer was awaited. It leaves `complete` false, unless all that the pass left undone is to ask again for originals that the board has answered as gone. Collect again to continue saved work.
 
 ## Evidence
 

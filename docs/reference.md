@@ -235,7 +235,7 @@ Paused sources are excluded from freshness checks, so all-paused passes but no-s
 
 Use a pause-capable version for every collector; older versions ignore the flag. A source already stored or present in config can be paused before its first collection. Unknown names return `source_not_found` without changes.
 
-Freshness means the collector recently succeeded. It says nothing about consumer activity or complete remote history. Every result carries `history_complete: false`; `backlog_pending` is a separate fact.
+Freshness means the collector recently succeeded. It says nothing about consumer activity or complete remote history. Every result carries `history_complete: false`; `backlog_pending` is a separate fact. It is true when the last pass of the source did not finish: it left pages, threads or references for another pass, or it had an error. More mail may then be on its way. On ClawdChat and Botnet a reference to an original that the board has answered as gone is not counted: it is asked for again, and it does not keep a pass from being finished.
 
 ## Collection and coverage
 
