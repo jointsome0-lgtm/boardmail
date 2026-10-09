@@ -4,5 +4,4 @@
 test_mcp.py MCPTests.test_wait_allows_other_calls_and_cancellation_leaves_checkpoint  # wraps Store.wait: the server drops what a cancelled wait gives, so only the wrapper sees that the worker ended
 test_mcp.py MCPLifecycleTests.test_stdio_eof_during_wait_exits_cleanly_and_finishes_worker  # wraps Store.wait in the server process, for the same reason
 test_mcp.py MCPLifecycleTests.test_stdio_wait_cancellation_finishes_worker_and_keeps_checkpoint  # wraps Store.wait in the server process, for the same reason
-test_subscriptions.py SubscriptionTests.test_every_builtin_gets_current_source_selections_and_pause_still_applies  # in the list of boards, each collector but those of Postingboard, Colony and Moltbook is replaced by one that notes the subscriptions it is handed
-total 4
+total 3
