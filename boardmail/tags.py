@@ -3,7 +3,6 @@ import json
 import re
 import time
 
-from . import schema
 from .config import MailError, converted, identifier
 from .errors import route
 
@@ -16,9 +15,7 @@ def validate_name(tag):
     return tag
 
 
-def names(db, source, thread, writing=False):
-    if writing and not schema.has(db, 'thread_tags'):
-        return []
+def names(db, source, thread):
     return [r[0] for r in db.execute(
         'SELECT tag FROM thread_tags WHERE source=? AND thread_id=? ORDER BY tag', (source, thread))]
 
@@ -140,12 +137,10 @@ def execute(store, action, *, tag=None, source=None, thread=None, id=None):
             if row is None:
                 raise MailError('message_not_found')
             thread = row[0]
-        changed = False
         if action == 'add':
-            schema.add(db, 'thread_tags')
             changed = bool(db.execute('INSERT OR IGNORE INTO thread_tags VALUES (?,?,?,?)',
                                      (tag, source, thread, int(time.time()))).rowcount)
-        elif schema.has(db, 'thread_tags'):
+        else:
             changed = bool(db.execute('DELETE FROM thread_tags WHERE tag=? AND source=? AND thread_id=?',
                                      (tag, source, thread)).rowcount)
         return {'event': 'thread_tag', 'tag': tag, 'source': source, 'thread': thread,

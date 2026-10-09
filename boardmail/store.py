@@ -84,8 +84,7 @@ class Store:
                 raise MailError("source_not_found")
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
-            previous = bool(schema.whole("sources", row)["paused"]) if row else False
-            schema.add_pause(db)
+            previous = bool(row["paused"]) if row else False
             if row is None:
                 db.execute("INSERT INTO sources (source, account_id) VALUES (?, ?)",
                            (source, settings["account_id"]))
@@ -111,18 +110,11 @@ class Store:
             row = db.execute("SELECT account_id FROM sources WHERE source=?", (source,)).fetchone()
             if row is None and settings is None:
                 raise MailError("source_not_found")
-            progress = None
-            if schema.has(db, "adapter_state"):
-                progress = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
+            progress = db.execute("SELECT adapter FROM adapter_state WHERE source=?", (source,)).fetchone()
             if settings is not None:
                 self._check_account(db, source, settings["account_id"])
                 adapter = boards.owner(source, settings)
-                previous_adapter = progress["adapter"] if progress is not None else None
-                if (previous_adapter is None and row is not None and boards.declared(source).since_v1
-                        and schema.version(db) == 1):
-                    # Version 1 used fixed source names before adapter bindings existed.
-                    previous_adapter = source
-                if previous_adapter is not None and previous_adapter != adapter:
+                if progress is not None and progress["adapter"] != adapter:
                     raise MailError("adapter_mismatch")
             else:
                 if progress is None:
@@ -134,13 +126,9 @@ class Store:
                 if row is None:
                     db.execute("INSERT INTO sources (source,account_id) VALUES (?,?)", (source, settings["account_id"]))
                 # Keep aliases usable by a later --db-only command before collection.
-                schema.add(db, "adapter_state")
                 db.execute("INSERT OR IGNORE INTO adapter_state VALUES (?,?,0,'{}',0)", (source, adapter))
-                schema.add(db, "subscriptions")
                 return bool(db.execute("INSERT OR IGNORE INTO subscriptions VALUES (?,?,?)",
                                        (source, thread, int(time.time()))).rowcount)
-            if not schema.has(db, "subscriptions"):
-                return False
             return bool(db.execute("DELETE FROM subscriptions WHERE source=? AND thread_id=?", (source, thread)).rowcount)
 
     def collection_state(self, source, account_id, adapter):
@@ -193,17 +181,12 @@ class Store:
         for item in sorted(messages, key=lambda m: (m["created_at"], m.get("provider_seq") or 0, m["id"])):
             if db.execute("SELECT 1 FROM messages WHERE source=? AND id=?", (source, item["id"])).fetchone():
                 continue
-            columns, values = "", ()
-            for key in ("discovery", "addressing"):
-                # Only collection supplies this.
-                if item.get(key) is not None:
-                    columns += "," + key
-                    values += (item[key],)
-            db.execute(f"""INSERT INTO messages
-                (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at{columns})
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?{",?"*len(values)})""", (source, item["id"], item["thread_id"],
+            db.execute("""INSERT INTO messages
+                (source,id,thread_id,parent_id,provider_seq,kind,author,title,body,url,created_at,arrived_at,
+                 discovery,addressing) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (source, item["id"], item["thread_id"],
                 item.get("parent_id"), item.get("provider_seq"), item["kind"], item.get("author"),
-                item["title"], item["body"], item["url"], item["created_at"], stamp, *values))
+                item["title"], item["body"], item["url"], item["created_at"], stamp,
+                item.get("discovery"), item.get("addressing")))
             added += 1
         return added
 
@@ -247,10 +230,10 @@ class Store:
         return result
 
     @staticmethod
-    def record(row, db, writing=False):
-        item = schema.whole("messages", row) if writing else dict(row)
+    def record(row, db):
+        item = dict(row)
         item["needs_reply"] = bool(item["needs_reply"])
-        item['tags'] = tags.names(db, item['source'], item['thread_id'], writing)
+        item['tags'] = tags.names(db, item['source'], item['thread_id'])
         return item
 
     def settings(self, *, scope=None, context=None, reset=False):
@@ -259,13 +242,11 @@ class Store:
             raise MailError("invalid_arguments")
         write = reset or scope is not None or context is not None
         with self.connect(write=write) as db:
-            if write:
-                schema.add(db, "reader_settings")
-                if reset:
-                    db.execute("DELETE FROM reader_settings")
-                for key, value in (("scope", scope), ("context", context)):
-                    if value is not None:
-                        db.execute("INSERT INTO reader_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+            if reset:
+                db.execute("DELETE FROM reader_settings")
+            for key, value in (("scope", scope), ("context", context)):
+                if value is not None:
+                    db.execute("INSERT INTO reader_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
             saved = dict(db.execute("SELECT key,value FROM reader_settings"))
             if any(key not in reader.CHOICES or value not in reader.CHOICES[key] for key, value in saved.items()):
                 raise MailError("invalid_settings")

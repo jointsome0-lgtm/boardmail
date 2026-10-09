@@ -1,9 +1,10 @@
 """The shape of the inbox file: every statement that gives it a table, a column or an index, and every question
-about what it has. No other module writes one of these; tests/test_schema_guard.py checks that.
+about what it has. No other module writes one of these, and only the store calls this one, where it opens a
+file and where init creates one; tests/test_schema_guard.py checks both.
 
 An inbox file has every part. init creates it whole. A file that an older release left is short of some, and
-complete gives it those when a command first opens it. tests/file_shape.txt has the shape of a file, and what
-each kind of older file gets.
+complete gives it those when a command first opens it. So no command asks whether a part is there.
+tests/file_shape.txt has the shape of a file, and what each kind of older file gets.
 The file keeps the text of a statement as it is written here, line breaks and spaces included.
 """
 from .config import MailError
@@ -50,8 +51,10 @@ LATER = {
     PRIMARY KEY (source,message_id,reply_ref))""",),
 }
 
-# The columns that an older file can be short of, each with what a row says without it.
-LATER_COLUMNS = {"messages": {"discovery": None, "addressing": None}, "sources": {"paused": 0}}
+# The columns that an older file can be short of, each as it is added. A row from before has NULL in one of
+# messages, and is not paused.
+LATER_COLUMNS = {"messages": {"discovery": "TEXT", "addressing": "TEXT"},
+                 "sources": {"paused": "INTEGER NOT NULL DEFAULT 0"}}
 
 # Every table and index that an older file can be short of, by name.
 PARTS = {"messages_reply_ref", "thread_tags_membership", *LATER}
@@ -67,10 +70,6 @@ def check_version(db):
         raise MailError("unsupported_database")
 
 
-def has(db, table):
-    return bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone())
-
-
 def columns(db, table):
     return {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
 
@@ -79,12 +78,7 @@ def lacks(db):
     """Whether the file is short of a part that a new inbox has."""
     there = {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
     return (version(db) != VERSION or not PARTS <= there
-            or any(not later.keys() <= columns(db, table) for table, later in LATER_COLUMNS.items()))
-
-
-def whole(table, row):
-    """A row with each later column that it does not have."""
-    return {**dict(row), **{name: value for name, value in LATER_COLUMNS[table].items() if name not in row.keys()}}
+            or any(not added.keys() <= columns(db, table) for table, added in LATER_COLUMNS.items()))
 
 
 def create(db):
@@ -104,20 +98,14 @@ def create(db):
                 last_ok INTEGER, error TEXT, unavailable INTEGER NOT NULL DEFAULT 0,
                 paused INTEGER NOT NULL DEFAULT 0)""")
     db.execute(f"PRAGMA user_version={VERSION}")
-    for table in LATER:
-        add(db, table)
+    later(db)
 
 
-def add(db, table):
-    """Give the file one of the tables of LATER. Nothing happens when it has it."""
-    for statement in LATER[table]:
-        db.execute(statement)
-
-
-def add_pause(db):
-    """The pause column, for a file from before a source could be paused."""
-    if "paused" not in columns(db, "sources"):
-        db.execute("ALTER TABLE sources ADD COLUMN paused INTEGER NOT NULL DEFAULT 0")
+def later(db):
+    """Each table of LATER that the file does not have."""
+    for statements in LATER.values():
+        for statement in statements:
+            db.execute(statement)
 
 
 def complete(db, since_v1):
@@ -129,15 +117,16 @@ def complete(db, since_v1):
     if not lacks(db):
         return
     older = version(db) == 1
-    for column in ("discovery", "addressing"):
-        if column not in columns(db, "messages"):
-            # Additive and nullable: earlier 0.2.0+ readers still open this file.
-            db.execute(f"ALTER TABLE messages ADD COLUMN {column} TEXT")
-    add_pause(db)
+    for table, added in LATER_COLUMNS.items():
+        had = columns(db, table)
+        for column, kind in added.items():
+            if column not in had:
+                # Additive, and nullable or with a default, so that an older release can go on with the file.
+                # docs/reference.md names the releases that were checked.
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
     # An index changes no row and no version: 0.14.2 and earlier still read and write this file.
     db.execute(REPLY_INDEX)
-    for table in LATER:
-        add(db, table)
+    later(db)
     if older:
         for source in since_v1:
             db.execute("""INSERT OR IGNORE INTO adapter_state
