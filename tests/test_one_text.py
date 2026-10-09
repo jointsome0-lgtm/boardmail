@@ -1,20 +1,18 @@
 """A command has one text, and both entry points show it: the command line with its names as they are typed, and a
-tool with its names as they are called.
-
-The commands of ONE_TEXT have their one text. The others still have a text for each of the two readers.
+tool with its names as they are called. The table has no place for a text that only one of the two would read.
 """
+import re
 import unittest
 
-from boardmail import mcp, table
+from boardmail import mcp, store, table
 import kit
 from test_agent_view import view
 
 
-ONE_TEXT = {'init', 'collect', 'status', 'settings', 'pause', 'resume', 'subscribe', 'unsubscribe', 'subscriptions',
-            'tags', 'tag_show', 'tag_add', 'tag_remove',
-            'reply_list', 'reply_prepare', 'reply_begin', 'reply_show', 'reply_confirm', 'reply_verify'}
-# What a command without the one text says to each reader apart. Its description is the fourth, and it may have none.
-APART = ('summary', 'epilog', 'tool')
+# The fields that held a text for one reader alone.
+APART = {'summary', 'description', 'epilog', 'tool', 'help'}
+# status applies the default of this argument itself, so the kind of the argument has none.
+APPLIED = {('status', 'stale_after'): store.STALE_AFTER}
 
 
 def texts(command, typed):
@@ -50,27 +48,23 @@ class NameTests(unittest.TestCase):
 
 
 class OneTextTests(unittest.TestCase):
-    def test_a_command_has_one_text_or_a_text_for_each_reader(self):
-        self.assertEqual({name for name, command in table.COMMANDS.items() if command.text is not None}, ONE_TEXT)
+    def test_the_table_has_no_place_for_a_text_that_one_reader_alone_would_read(self):
+        self.assertEqual(APART & {*table.Command._fields, *table.Argument._fields}, set())
+        with self.assertRaises(TypeError):
+            table.Command('named')  # a command is not written without its text
         for name, command in table.COMMANDS.items():
             with self.subTest(command=name):
-                apart = [getattr(command, field) for field in APART]
-                if name in ONE_TEXT:
-                    self.assertEqual([*apart, command.description], [None] * 4)
-                    self.assertEqual({(argument.help, argument.tool) for argument in command.arguments} - {(None, None)},
-                                     set())
-                    # An option is named in braces, so that a tool does not read how it is typed. And a text has
-                    # no per cent sign, which the parser of the command line reads as its own.
-                    written = [command.text, *(argument.text or '' for argument in command.arguments)]
-                    self.assertEqual([text for text in written if '--' in text or '%' in text], [])
-                else:
-                    self.assertNotIn(None, apart)
-                    self.assertEqual({argument.text for argument in command.arguments} - {None}, set())
+                self.assertTrue(command.text)
+                # An option is named in braces, so that a tool does not read how it is typed. And a text has
+                # no per cent sign, which the parser of the command line reads as its own.
+                written = [command.text, *(argument.text or '' for argument in command.arguments)]
+                self.assertEqual([text for text in written if '--' in text or '%' in text], [])
+        # What stands before a command is typed only, so its text may name an option as it is typed.
+        self.assertEqual([argument.name for argument in table.BEFORE if '%' in argument.text], [])
 
     def test_the_help_page_of_a_command_is_its_one_text_as_it_is_typed(self):
         pages = view.cli_tree()
-        for name in sorted(ONE_TEXT):
-            command = table.COMMANDS[name]
+        for name, command in table.COMMANDS.items():
             page = pages[' '.join(['boardmail', *kit.words({'tool': 'boardmail_' + name, 'arguments': {}})])]
             text, arguments = texts(command, typed=True)
             with self.subTest(command=name):
@@ -86,8 +80,7 @@ class OneTextTests(unittest.TestCase):
                                  arguments)
 
     def test_the_schema_of_a_tool_says_the_one_text_of_each_argument_as_it_is_called(self):
-        for name in sorted(ONE_TEXT):
-            command = table.COMMANDS[name]
+        for name, command in table.COMMANDS.items():
             with self.subTest(command=name):
                 properties = mcp.input_schema(command)['properties']
                 self.assertEqual({name: said.get('description') for name, said in properties.items()},
@@ -96,10 +89,26 @@ class OneTextTests(unittest.TestCase):
     @unittest.skipIf(kit.mcp_missing(), kit.NO_EXTRA)
     def test_the_description_of_a_tool_is_the_one_text_of_its_command_as_it_is_called(self):
         tools = view.mcp_tree()
-        for name in sorted(ONE_TEXT):
-            command = table.COMMANDS[name]
+        for name, command in table.COMMANDS.items():
             with self.subTest(command=name):
                 self.assertEqual(tools['tool boardmail_' + name]['description'], texts(command, typed=False)[0])
+
+    def test_a_bound_or_a_default_that_a_text_names_is_the_one_that_holds(self):
+        # The command line shows no schema, so a text names the bounds and the default of an argument by hand.
+        named = []
+        for command in table.COMMANDS.values():
+            for argument in command.arguments:
+                text, holds = argument.text or '', {**argument.kind}
+                holds.setdefault('default', APPLIED.get((command.name, argument.name)))
+                with self.subTest(command=command.name, argument=argument.name):
+                    for found, limits in ((re.search(r'(\d+) to (\d+)', text), ('minimum', 'maximum')),
+                                          (re.search(r'default (\d+)', text), ('default',))):
+                        if found:
+                            named.append((command.name, argument.name))
+                            self.assertEqual([int(number) for number in found.groups()],
+                                             [holds.get(limit) for limit in limits])
+        self.assertIn(('wait', 'timeout'), named)
+        self.assertIn(('list', 'limit'), named)
 
 
 if __name__ == '__main__':
