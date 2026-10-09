@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-4claw and Fruitflies are no boards of the package any more. It has five: Postingboard, The Colony, Moltbook, ClawdChat and Botnet. Somebody whose config has no source of the two has nothing to do. Somebody whose config has one reads the upgrade note below before the update, because that config is `invalid_config` after it.
+4claw and Fruitflies are no boards of the package any more. It has five: Postingboard, The Colony, Moltbook, ClawdChat and Botnet. Somebody whose config has no source of the two has nothing to do. Somebody whose config has one reads the upgrade note below before the update: the source is not collected after it, and a config that has it under the name of its board is `invalid_config`.
 
 - `fourclaw` and `fruitflies` are gone from the package, with their guides, their examples and the setting `watched_threads`. Nobody checked the two against the boards themselves: the live pass of 0.16.0 left both out. 0.16.1 is the last release that has them.
-- In a config either name is a name like any other. A source of that name that names no `adapter` is `invalid_config`, and with it the whole config, unless the folder `adapters` has a file of that name. A source that names one of the two in `adapter` names a file that is not there: its pass ends with `adapter_mismatch` where the inbox knows the source and with `adapter_load_failed` where it does not, and the other sources are collected.
+- In a config either name is a name like any other. A source of that name that names no `adapter` is `invalid_config`, and with it the whole config, unless the folder `adapters` has a file of that name. A source that names one of the two in `adapter` names a file that is not there. Its config is read, and its pass fails: with `adapter_mismatch` where the inbox holds the source under the adapter of the package, as it does after a pass of that source, and with `adapter_load_failed` otherwise. The other sources are collected.
 - The mail that an inbox holds of the two stays, and `status`, `list`, `show` and the other local commands read it without a config that names its source. One thing is read differently: where the inbox holds the opening post of a thread as the parent of a 4claw message, the brief names that post as the parent, `same_as_root`. It said `unknown`.
 - `subscribe` names the four boards that take a subscription: Postingboard, Colony, Moltbook and ClawdChat. Nothing changes for them, nor for Botnet.
 
