@@ -11,7 +11,8 @@ from test_agent_view import view
 
 
 ONE_TEXT = {'init', 'collect', 'status', 'settings', 'pause', 'resume', 'subscribe', 'unsubscribe', 'subscriptions',
-            'tags', 'tag_show', 'tag_add', 'tag_remove'}
+            'tags', 'tag_show', 'tag_add', 'tag_remove',
+            'reply_list', 'reply_prepare', 'reply_begin', 'reply_show', 'reply_confirm', 'reply_verify'}
 # What a command without the one text says to each reader apart. Its description is the fourth, and it may have none.
 APART = ('summary', 'epilog', 'tool')
 
