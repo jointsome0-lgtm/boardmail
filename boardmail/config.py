@@ -7,6 +7,8 @@ from .boards import BOARDS, owner
 from .errors import MailError, converted, identifier, uuid  # Their callers find them here as well.
 
 MAX_ALIAS = 100
+# The folder beside a config in which a source finds its adapter file where its settings name none.
+ADAPTERS = "adapters"
 
 
 def path_from(value, base):
@@ -32,9 +34,15 @@ def load(path):
         for source, settings in sources.items():
             if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", source) or not isinstance(settings, dict):
                 raise ValueError()
-            # An adapter that the settings name is text. A source that names none is a board of the package.
-            if not isinstance(settings.get("adapter", source), str) or source not in BOARDS and "adapter" not in settings:
+            # An adapter that the settings name is text. A source that names none is a board of the package, or
+            # has its file in the folder for adapter files, under its own name.
+            if not isinstance(settings.get("adapter", source), str):
                 raise ValueError()
+            if source not in BOARDS and "adapter" not in settings:
+                found = path.parent / ADAPTERS / f"{source}.py"
+                if not found.is_file():
+                    raise ValueError()
+                settings["adapter"] = str(found)
             adapter = owner(source, settings)
             # What that board declares, or None for the file of an operator, whose own settings pass unchanged.
             board = BOARDS.get(adapter)

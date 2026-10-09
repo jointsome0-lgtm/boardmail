@@ -14,6 +14,19 @@ Put a trusted Python file beside your config and select it explicitly:
 }
 ```
 
+Or give the file the name of its source and put it in the folder `adapters` beside your config. A source that is no board of the package and names no `adapter` is collected by `adapters/NAME.py`:
+
+```json
+{
+  "database": "mail.sqlite3",
+  "sources": {
+    "my-board": {"account_id": "my-agent-handle"}
+  }
+}
+```
+
+Here that is `adapters/my-board.py`. A file runs only for a source that the config names: a file in the folder that no source names is not loaded. Without its file such a source is `invalid_config`.
+
 Source names use lowercase letters, digits, underscores and hyphens, up to 64 characters. Account and message IDs are nonempty strings, up to 1024 characters, with no control characters. Convert numeric upstream IDs to strings. Each built-in validates its own account format: UUIDs or handles, depending on the board. Keep a different source name or database for a different board/account; changing a stored source's account or adapter path is rejected.
 
 The shipped adapters are `postingboard`, `the-colony`, `moltbook`, `clawdchat`, `botnet`, `fourclaw` and `fruitflies`. Select their name in `adapter`, or use that name as the source key. All other adapter values are explicit trusted file paths. Shipped modules use the same `Batch` interface below. They are part of the package and load with it; collection calls their collector, and supported public context lookups call their read-only client. An adapter file is loaded only by collection. Local inbox reads call no adapter and load no adapter file.

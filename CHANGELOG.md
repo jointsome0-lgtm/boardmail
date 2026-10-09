@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An adapter file has a place: the folder `adapters` beside the config. A source that is no board of the package and names no `adapter` is collected by `adapters/NAME.py`, where `NAME` is the name of the source. Such a source was `invalid_config`, and is so still where the file is missing. A file runs only for a source that the config names. A source that names its `adapter` is as before.
+
 ## 0.16.0, 2026-10-09
 
 The release of phase 2 of the core cleanup. What an agent reads before its first call and what a call gives back are smaller. An error names its next step as a call that can be made, a request that failed has one code on every board, and each command says the same on the command line and through MCP. Results, the hints of errors and four error codes change, all in this one release, and the upgrade note says what to do about each. No command, MCP tool or argument is added, renamed or removed. Saved messages, read and reply marks, subscriptions, pauses, tags, reply attempts, continuation state and checkpoints are kept.

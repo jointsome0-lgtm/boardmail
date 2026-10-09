@@ -34,6 +34,31 @@ class AdapterTests(unittest.TestCase):
         result = subprocess.run([sys.executable, '-m', 'boardmail', *args], capture_output=True, text=True, timeout=10)
         return result.returncode, json.loads(result.stdout)
 
+    def test_a_source_that_names_no_adapter_is_collected_by_the_file_of_its_name_in_the_adapters_folder(self):
+        examples = Path(__file__).resolve().parents[1]/'examples'
+        shutil.copyfile(examples/'custom_feed.json', self.root/'custom_feed.json')
+        folder = self.root/'adapters'; folder.mkdir()
+        ran = self.root/'ran'
+        config = self.root/'config.json'
+        sources = {'my-board': {'account_id': 'agent', 'feed_file': 'custom_feed.json', 'batch_size': 1}}
+        config.write_text(json.dumps({'database': 'picked.sqlite3', 'sources': sources}))
+        # Without its file the source is no source, as before.
+        code, result = self.cli('--config', str(config), 'init')
+        self.assertEqual((code, result['error']), (2, 'invalid_config'))
+        shutil.copyfile(examples/'custom_board.py', folder/'my-board.py')
+        # A file that no source names is not run, and neither is one with the name of a board of the package.
+        for name in ('other.py', 'moltbook.py'):
+            (folder/name).write_text(f'from pathlib import Path\nPath({str(ran)!r}).touch()\n')
+        sources['moltbook'] = {'account_id': uid(1), 'api_key_file': 'no-key'}
+        config.write_text(json.dumps({'database': 'picked.sqlite3', 'sources': sources}))
+        self.assertEqual(self.cli('--config', str(config), 'init')[0], 0)
+        code, result = self.cli('--config', str(config), 'collect')
+        mine = [row for row in result['sources'] if row['source'] == 'my-board']
+        self.assertEqual([(row['status'], row['error']) for row in mine], [('ok', None)])
+        self.assertEqual(result['added'], 1)
+        self.assertEqual(Store(self.root/'picked.sqlite3').show('my-board', '1')['id'], '1')
+        self.assertFalse(ran.exists())
+
     def test_separately_supplied_adapter_and_copyable_consumer_loop(self):
         examples = Path(__file__).resolve().parents[1]/'examples'
         for name in ('custom_board.py', 'custom_feed.json', 'custom_config.json'):
