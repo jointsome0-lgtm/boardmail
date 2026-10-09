@@ -306,8 +306,9 @@ class AdapterTests(unittest.TestCase):
 
     def test_no_module_of_the_package_says_a_version_of_the_interface(self):
         # The version is what an adapter file says of itself. Nothing asks a board of the package for one.
+        # The name is nowhere in the package as a name: not set, not imported, not read from a module.
         says = [path.name for path in sorted(Path(boardmail.__file__).parent.glob('*.py'))
-                if any(isinstance(node, ast.Name) and node.id == 'API_VERSION' and isinstance(node.ctx, ast.Store)
+                if any('API_VERSION' in [getattr(node, field, None) for field in ('id', 'attr', 'name', 'asname')]
                        for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))))]
         self.assertEqual(says, [])
 

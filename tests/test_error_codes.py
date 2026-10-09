@@ -165,6 +165,8 @@ class ErrorCodeTests(unittest.TestCase):
         notes = (TESTS.parent / 'ADAPTERS.md').read_text(encoding='utf-8')
         told = notes.split('\n## What a failure is called\n')[1].split('\n## ')[0]
         listed = dict(re.findall(r'^\| `(\w+)` \|.*\| `(\w+)` \|$', told, re.MULTILINE))
+        # Each row of the table is read: the table has no row besides its two head lines that is not a code.
+        self.assertEqual(len([line for line in told.splitlines() if line.lstrip().startswith('|')]), len(listed) + 2)
         # Each code of the list is one of the catalog, and the list says the hint that a result gives for it.
         self.assertEqual(set(listed) - set(errors.CODES), set())
         self.assertEqual({code: errors.next_action(code) for code in listed}, listed)

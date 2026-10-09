@@ -60,7 +60,7 @@ A message is a dictionary with these required fields:
 }
 ```
 
-`kind` is `mention`, `reply_to_post`, `reply_to_comment` or `thread_activity` (added in 0.8.0). It is your word for the message, or the word of your board. It confirms no recipient, and the core decides nothing by it; `addressing` below is what says who a message is for. `author` may be null or omitted. `title`, `body` and `url` are strings. URLs must be HTTP(S) without embedded credentials; preserve provider-supplied canonical URLs when available. `created_at` is an integer Unix timestamp in seconds within signed 64-bit range. Optional `parent_id` is a string ID or null; optional `provider_seq` is a signed 64-bit integer or null. Optional `discovery` is a short string, up to 128 characters without control characters, naming how the message was found; it is stored once and returned with the message. Local `arrival_seq`, read/reply marks and source identity are assigned by the core.
+`kind` is `mention`, `reply_to_post`, `reply_to_comment` or `thread_activity` (added in 0.8.0). It is your word for the message, or the word of your board. The core checks that it is one of the four and stores it. It confirms no recipient, and nothing else is decided by it; `addressing` below is what says who a message is for. `author` may be null or omitted. `title`, `body` and `url` are strings. URLs must be HTTP(S) without embedded credentials; preserve provider-supplied canonical URLs when available. `created_at` is an integer Unix timestamp in seconds within signed 64-bit range. Optional `parent_id` is a string ID or null; optional `provider_seq` is a signed 64-bit integer or null. Optional `discovery` is a short string, up to 128 characters without control characters, naming how the message was found; it is stored once and returned with the message. Local `arrival_seq`, read/reply marks and source identity are assigned by the core.
 
 Validate provider data before appending a message. Catch recoverable failures and return confirmed messages plus resumable state with an error code. If the function raises, the core discards that call's result and reports `adapter_failed`. Malformed batches, including state that fails JSON serialization, produce `invalid_adapter_result` before saving messages, cached originals or progress. The core records the source failure and continues collecting independent sources. Do not print on stdout.
 
@@ -84,12 +84,12 @@ The core cannot prove public visibility or interrupt a hung adapter function. Ke
 | `source_timeout` | An answer came after the time that its request had. | `retry_collect` |
 | `invalid_response` | An answer cannot be read, or is not what the board is known to send. | `retry_collect` |
 | `response_too_large` | An answer is larger than the adapter reads. | `report_to_the_operator` |
-| `redirect_refused` | The board answered with a redirect. A board of the package follows none. | `report_to_the_operator` |
+| `redirect_refused` | The board answered with a redirect to another address. A board of the package follows none. | `report_to_the_operator` |
 | `http_401` | The board answered with status 401. | `check_config_and_credentials` |
 | `http_403` | The board answered with status 403. | `check_config_and_credentials` |
 | `http_429` | The board answered with status 429: it asks for a pause. | `wait_before_collecting_again` |
 | `credentials_unavailable` | The key file of the account cannot be read, or holds no key. | `check_config_and_credentials` |
 | `budget_exhausted` | The pass had no time or no request left to ask the board. | `retry_collect` |
-| `pagination_no_progress` | The pages of the board do not move on: a page names itself as the next one. | `retry_collect` |
+| `pagination_no_progress` | The pages of the board do not move on: a page names itself as the next one, is empty where more are announced, or is not the page that was asked for. | `retry_collect` |
 
 Any other status that is no success is `http_` and its number, such as `http_503`. Such a status has no entry in the error catalog, and neither has a code of your own. Every code without an entry gets `retry_collect`. A code that has one means what the catalog says, so report it only for that. The catalog is `CODES` in `boardmail/errors.py`.
