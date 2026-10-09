@@ -235,7 +235,10 @@ class ClawdChatTests(unittest.TestCase):
 
     def test_a_reference_that_was_gone_and_fails_in_another_way_is_backlog_until_it_is_gone_again(self):
         for name, failure, error in (("not reached", URLError("The board is not reached"), "network_error"),
-                                     ("of another post", original(1002, post_id=uid(999)), "invalid_response")):
+                                     ("of another post", original(1002, post_id=uid(999)), "invalid_response"),
+                                     # Another comment that is gone says nothing of the one that was asked for.
+                                     ("another, deleted", original(999, is_deleted=True), "invalid_response"),
+                                     ("another, hidden", original(999, is_hidden=True), "invalid_response")):
             with self.subTest(failure=name):
                 self.board = Board()
                 self.board.originals[uid(1002)] = failure

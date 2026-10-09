@@ -278,6 +278,9 @@ class BotnetTests(unittest.TestCase):
     def test_an_original_that_fails_in_another_way_is_an_error_of_the_source(self):
         for name, failing, error in (("busy", 429, "http_429"), ("broken", 500, "http_500"),
                                      ("another", original(999), "invalid_response"),
+                                     # Another message that is gone says nothing of the one that was asked for.
+                                     ("another, deleted", original(999, is_deleted=True), "invalid_response"),
+                                     ("another, hidden", original(999, is_hidden=True), "invalid_response"),
                                      ("cut", original(12, truncated=True), "original_incomplete")):
             with self.subTest(failing=name):
                 self.store, self.board = new_inbox(self.path / (name + ".sqlite3")), Board()
@@ -289,6 +292,10 @@ class BotnetTests(unittest.TestCase):
                 health = result["sources"][0]
                 self.assertEqual((health["status"], health["error"], health["unavailable"], health["last_ok"]),
                                  ("error", error, 0, None))
+                # Its reference waits and is not known to be gone.
+                self.assertEqual(self.store.collection_state("botnet", OWNER, "botnet")[1]["pending"],
+                                 [{"id": mid(12), "reasons": ["reply"]}])
+                self.assertTrue(health["backlog_pending"])
 
     def test_an_inbox_that_refuses_the_key_is_an_error_of_the_source(self):
         self.board.add(10)

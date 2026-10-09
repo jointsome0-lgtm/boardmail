@@ -101,9 +101,10 @@ def _visible(item):
 def _message(client, mid, root=None):
     mid = message_id(mid)
     raw = client.get("/topic-messages/" + quote(mid, safe=""))
-    _visible(raw)
+    # An answer about another message says nothing of this one, also not that it is gone.
     if message_id(raw["id"]) != mid:
         raise ValueError()
+    _visible(raw)
     topic = uuid(raw["topicId"])
     if root is not None and topic != root:
         raise ValueError()
