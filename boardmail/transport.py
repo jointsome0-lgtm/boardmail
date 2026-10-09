@@ -97,10 +97,10 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def key(file):
-    """The key of an account as its file gives it, without the spaces and line breaks around it. A key is up to
-    KEY characters, each printable ASCII and none a space, whichever board the account is on. Where the file
-    cannot be read, holds no such key or holds more than the key, a MailError says that the credentials are
-    not there."""
+    """The key of an account as its file gives it, without the white space around it: spaces, tabs, line breaks
+    and whatever else str.strip() takes for it. A key is up to KEY characters, each printable ASCII and none a
+    space, whichever board the account is on. Where the file cannot be read, holds no such key or holds more
+    than the key, a MailError says that the credentials are not there."""
     try:
         with Path(file).open() as stream:
             # What stands before the key does not count, and one character more than a key may have is enough
@@ -111,7 +111,7 @@ def key(file):
             key = key.rstrip()
             if not key or len(key) > KEY or any(ord(letter) < 33 or ord(letter) > 126 for letter in key):
                 raise ValueError('The file holds no key')
-            # The rest of the file is read only to see that nothing stands in it, however far after the key.
+            # The rest of the file is read only to see that it is white space, however far after the key.
             while more := stream.read(KEY + 1):
                 if more.strip():
                     raise ValueError('The file holds more than a key')
@@ -126,14 +126,15 @@ def fetch(board, url, *, left=None, headers=None, body=None):
 
     left is the completion window of this request, where the board has no time budget of its own. A collection
     client checks admission separately; its phase's remaining time need not be this window. headers are sent
-    with the headers of the board. A body is sent as JSON, and the request is then a POST.
-    Without one it is a GET.
+    with the headers of the board, and none of them takes the place of one of those. A body is sent as JSON, and
+    the request is then a POST. Without one it is a GET.
 
     A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
     that cannot be read, and a MailError for a redirect that is refused and for an answer that is too large or
     late."""
     about = BOARDS[board]
-    send = {'Accept': about.accept, 'User-Agent': AGENT, **(headers or {})}
+    # What the board is told comes last, so a header of the client under the same name does not replace it.
+    send = {**(headers or {}), 'Accept': about.accept, 'User-Agent': AGENT}
     if about.protocol:
         send['X-Agent-Protocol'] = about.protocol
     if body is not None:

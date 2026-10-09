@@ -273,7 +273,7 @@ KEYS = {
     'a folder is where the key file should be': (FOLDER, None),
     'the key file is empty': (b'', None),
     'the key file has a line break and no key': (b'\n', None),
-    'the key has spaces and line breaks around it': (f'\n  {KEY} \n\n'.encode(), KEY),
+    'the key has spaces, tabs and line breaks around it': (f'\n \t {KEY} \t\n\n'.encode(), KEY),
     'the key has a space in it': (b'an invented key\n', None),
     'the key is two lines': (b'an-invented\nkey\n', None),
     'the key has a letter that is not ASCII': ('an-invented-kl\u00fcc'.encode(), None),
@@ -418,6 +418,24 @@ class BoardRequestTests(unittest.TestCase):
             # The tests stand next to an installed package and not in its checkout.
             version = importlib.metadata.version('boardmail')
         self.assertEqual(transport.AGENT, 'boardmail/' + version)
+
+    def test_no_header_of_a_client_takes_the_place_of_the_user_agent(self):
+        """A client hands the transport headers of its own, such as the key of an account. Whatever one of them is
+        called, the board is told the user agent of the package."""
+        for name, board in BOARDS.items():
+            told = []
+
+            def asked(request):
+                told.append(request.headers['User-Agent'])
+                return 200, {}
+
+            with self.subTest(board=name), kit.Network({board.host: asked}):
+                for header in ('User-Agent', 'user-agent'):
+                    try:
+                        transport.fetch(name, f'https://{board.host}/', left=2, headers={header: 'another'})
+                    except transport.FAILED:
+                        pass    # what the invented board answers is not what this board must answer
+                self.assertEqual(told, [AGENT, AGENT])
 
     def test_an_address_that_takes_no_connection_costs_three_seconds_on_every_board(self):
         """The host of a board has several addresses. One that takes no connection held a request for as long as
