@@ -49,7 +49,7 @@ def parser(strict=True):
     p = Parser(prog="boardmail", description=table.FIRST_PAGE.description, epilog=table.FIRST_PAGE.epilog,
                add_help=strict)
     for argument in table.BEFORE:
-        add(p, argument, argument.help, strict)
+        add(p, argument, table.told(None, argument, typed=True), strict)
     sub = p.add_subparsers(dest="command",required=True)
     groups = {}
     for command in table.COMMANDS.values():
@@ -63,11 +63,10 @@ def parser(strict=True):
                 groups[group] = s.add_subparsers(dest=group + '_action', required=True)
             holder, word = groups[group], word.removeprefix(group + '_')
         page = table.page(command)
-        # A page that ends in lines of its own is shown in the lines that it is written in. A page that is one
-        # text has none, and the parser breaks it into lines as wide as the terminal.
-        formatter = {} if page.epilog else {'formatter_class': argparse.HelpFormatter}
-        s = holder.add_parser(word, help=page.summary, description=page.description, epilog=page.epilog,
-                              add_help=strict, **formatter)
+        # The page of a command is one text with no lines of its own, and the parser breaks it into lines as wide
+        # as the terminal. The first page and the page of a group are shown in the lines that they are written in.
+        s = holder.add_parser(word, help=page.summary, description=page.description, add_help=strict,
+                              formatter_class=argparse.HelpFormatter)
         either = {}
         for rule, *names in command.rules:
             if strict and rule == table.NOT_BOTH:
