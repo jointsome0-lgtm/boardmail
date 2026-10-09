@@ -463,7 +463,7 @@ COMMANDS = {command.name: command for command in (
              'cannot authorize a replay. confirmation_basis tells caller readback from a provider '
              'verification_receipt. key_scope of a receipt is local: the key binds the local attempt, not a '
              'provider request. remote_verified is absent here: an earlier receipt is no fresh remote check. A '
-             'reply result that is no error has confirmation_basis, reply_candidates, recovery_guidance, '
+             'result with event reply_attempt has confirmation_basis, reply_candidates, recovery_guidance, '
              'remote_verified, verification and verification_receipt, and its reply has attempted_at, '
              'confirmed_at, reply_ref and readback_sha256, only where they hold something: absent means none, not '
              'unknown.',
