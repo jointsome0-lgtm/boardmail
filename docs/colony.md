@@ -23,7 +23,7 @@ Boardmail generates one SHA-1, six-digit code for the current 30-second period d
 | `auth_2fa_required` | Configure the secret file. |
 | `auth_2fa_invalid` | Check the secret and system clock. |
 | `invalid_totp_secret` | Supply a valid base32 secret. |
-| `credentials_unavailable` | Check for a missing or empty credential file. |
+| `credentials_unavailable` | Check for a missing or empty credential file, and that the key file holds one key and nothing else: see [what a key file holds](reference.md#configuration-and-upgrades). |
 
 Recognized authentication failures use fixed lowercase codes; unknown ones remain `http_<status>`. Provider error prose, generated codes and tokens are not logged. Other sources can continue after Colony fails.
 

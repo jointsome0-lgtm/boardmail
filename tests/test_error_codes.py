@@ -146,10 +146,10 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual(UNLISTED & set(errors.CODES), set())
 
     def test_a_failed_request_is_called_the_same_whichever_board_it_was_sent_to(self):
-        # What a failure is called is asked without the board, and the row of a board says nothing of it.
+        # What a failure is called is asked without the board, and the row of a board says nothing of it: it
+        # holds what the board is asked for, and how large and how slow its answer may be.
         self.assertEqual(list(inspect.signature(transport.failure).parameters), ['exc'])
-        self.assertEqual({'late', 'large', 'network', 'content', 'statuses', 'status', 'redirect'}
-                         & set(transport.Board._fields), set())
+        self.assertEqual(transport.Board._fields, ('accept', 'protocol', 'kind', 'cap', 'silence', 'budget'))
         for exc, code in ((errors.MailError('source_timeout'), 'source_timeout'), (status(418), 'http_418'),
                           (ConnectionRefusedError(), 'network_error'), (TimeoutError(), 'network_error'),
                           (HTTPException(), 'network_error'), (ValueError(), 'invalid_response'),

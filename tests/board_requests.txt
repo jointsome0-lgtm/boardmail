@@ -1,13 +1,12 @@
 What each board client sent and what the command gave, case by case. A case is one collect on a new inbox.
 A request line ends with the headers that the request carried, the seconds that its socket may stay silent and
 the seconds since the pass began at which it left. The sets of headers are numbered under the name of the board.
+VERSION in a user agent stands for the version of the package.
 A board that has a key file has cases for what the file holds. Its board is healthy in them.
 
 == postingboard
-    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/0.2; X-Agent-Protocol: getpostingboard/1
-    headers 2: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an invented key; Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/0.2; X-Agent-Protocol: getpostingboard/1
-    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/0.2; X-Agent-Protocol: getpostingboard/1
-    headers 4: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4104 characters); Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/0.2; X-Agent-Protocol: getpostingboard/1
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/VERSION; X-Agent-Protocol: getpostingboard/1
+    headers 2: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: getpostingboard.dev; User-Agent: boardmail/VERSION; X-Agent-Protocol: getpostingboard/1
 
 -- a healthy board
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
@@ -140,10 +139,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer comes when its time budget ends
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 45 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 46.1 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 47.2 s]
-    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
@@ -218,36 +214,42 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- the key has a space in it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is two lines
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has a letter that is not ASCII
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is 4096 characters long
     GET https://getpostingboard.dev/v1/me  [headers 2, silent 10 s, at 0 s]
     GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 2, silent 10 s, at 1.1 s]
     GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 2, silent 10 s, at 2.2 s]
     GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 2, silent 10 s, at 3.3 s]
     exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
 
--- the key is two lines
-    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
-
--- the key is 4096 characters long
-    GET https://getpostingboard.dev/v1/me  [headers 3, silent 10 s, at 0 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 3, silent 10 s, at 1.1 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 3, silent 10 s, at 2.2 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 3, silent 10 s, at 3.3 s]
-    exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
-
 -- the key is 4097 characters long
-    GET https://getpostingboard.dev/v1/me  [headers 4, silent 10 s, at 0 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 4, silent 10 s, at 1.1 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 4, silent 10 s, at 2.2 s]
-    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 4, silent 10 s, at 3.3 s]
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is 4097 characters long and stands after a line break
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has 4097 line breaks before it
+    GET https://getpostingboard.dev/v1/me  [headers 1, silent 10 s, at 0 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012d?limit=30  [headers 1, silent 10 s, at 1.1 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000138  [headers 1, silent 10 s, at 2.2 s]
+    GET https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-00000000012e?limit=30  [headers 1, silent 10 s, at 3.3 s]
     exit code 0, added 3, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the key has 4097 spaces and then a word after it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
 == the-colony
-    headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 53; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/0.2
-    headers 2: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-token; Connection: close; Host: thecolony.ai; User-Agent: boardmail/0.2
-    headers 3: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: thecolony.ai; User-Agent: boardmail/0.2
-    headers 4: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 54; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/0.2
-    headers 5: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 4134; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/0.2
-    headers 6: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 4135; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/0.2
+    headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 53; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/VERSION
+    headers 2: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-token; Connection: close; Host: thecolony.ai; User-Agent: boardmail/VERSION
+    headers 3: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: thecolony.ai; User-Agent: boardmail/VERSION
+    headers 4: Accept: application/json; Accept-Encoding: identity; Connection: close; Content-Length: 4134; Content-Type: application/json; Host: thecolony.ai; User-Agent: boardmail/VERSION
 
 -- a healthy board
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
@@ -413,7 +415,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 -- the first answer comes when its time budget ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
         {"api_key": "an-invented-key", "totp_code": "721529"}
-    exit code 1, added 0, errors: budget_exhausted; the source: status error, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
@@ -504,25 +506,16 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
 
 -- the key has a space in it
-    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
-        {"api_key": "an invented key", "totp_code": "721529"}
-    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
-    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
-    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 0 s]
-    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 0 s]
-    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
 -- the key is two lines
-    POST https://thecolony.ai/api/v1/auth/token  [headers 4, silent 10 s, at 0 s]
-        {"api_key": "an-invented\nkey", "totp_code": "721529"}
-    GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
-    GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
-    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 0 s]
-    GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 0 s]
-    exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has a letter that is not ASCII
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
 -- the key is 4096 characters long
-    POST https://thecolony.ai/api/v1/auth/token  [headers 5, silent 10 s, at 0 s]
+    POST https://thecolony.ai/api/v1/auth/token  [headers 4, silent 10 s, at 0 s]
         {"api_key": "kkkkkkkkkkkkkkkkkkkkkkkkkkk... (4134 characters)
     GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
     GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
@@ -531,20 +524,27 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
 
 -- the key is 4097 characters long
-    POST https://thecolony.ai/api/v1/auth/token  [headers 6, silent 10 s, at 0 s]
-        {"api_key": "kkkkkkkkkkkkkkkkkkkkkkkkkkk... (4135 characters)
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is 4097 characters long and stands after a line break
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has 4097 line breaks before it
+    POST https://thecolony.ai/api/v1/auth/token  [headers 1, silent 10 s, at 0 s]
+        {"api_key": "an-invented-key", "totp_code": "721529"}
     GET https://thecolony.ai/api/v1/agents/me  [headers 2, silent 10 s, at 0 s]
     GET https://thecolony.ai/api/v1/notifications?limit=100  [headers 2, silent 10 s, at 0 s]
     GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-00000000006f  [headers 3, silent 10 s, at 0 s]
     GET https://thecolony.ai/api/v1/comments/00000000-0000-0000-0000-000000000070  [headers 3, silent 10 s, at 0 s]
     exit code 0, added 2, errors: none; the source: status ok, unavailable 0, backlog pending
 
+-- the key has 4097 spaces and then a word after it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
 == moltbook
-    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
-    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
-    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an invented key; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
-    headers 4: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
-    headers 5: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4104 characters); Connection: close; Host: www.moltbook.com; User-Agent: boardmail/0.2
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/VERSION
+    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: www.moltbook.com; User-Agent: boardmail/VERSION
+    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: www.moltbook.com; User-Agent: boardmail/VERSION
 
 -- a healthy board
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
@@ -677,10 +677,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer comes when its time budget ends
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 45 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 45 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 45 s]
-    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
     GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
@@ -755,33 +752,41 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
 
 -- the key has a space in it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is two lines
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has a letter that is not ASCII
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is 4096 characters long
     GET https://www.moltbook.com/api/v1/agents/me  [headers 3, silent 10 s, at 0 s]
     GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 3, silent 10 s, at 0 s]
     GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 0 s]
     GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 0 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
 
--- the key is two lines
-    exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
-
--- the key is 4096 characters long
-    GET https://www.moltbook.com/api/v1/agents/me  [headers 4, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 4, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 0 s]
-    exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
-
 -- the key is 4097 characters long
-    GET https://www.moltbook.com/api/v1/agents/me  [headers 5, silent 10 s, at 0 s]
-    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 5, silent 10 s, at 0 s]
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key is 4097 characters long and stands after a line break
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has 4097 line breaks before it
+    GET https://www.moltbook.com/api/v1/agents/me  [headers 1, silent 10 s, at 0 s]
+    GET https://www.moltbook.com/api/v1/notifications?limit=100  [headers 1, silent 10 s, at 0 s]
     GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9  [headers 2, silent 10 s, at 0 s]
     GET https://www.moltbook.com/api/v1/posts/00000000-0000-0000-0000-0000000000c9/comments?limit=100&sort=old  [headers 2, silent 10 s, at 0 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 1, backlog done
+
+-- the key has 4097 spaces and then a word after it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
 == clawdchat
-    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: clawdchat.cn; User-Agent: boardmail/0.2
-    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: clawdchat.cn; User-Agent: boardmail/0.2
-    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: clawdchat.cn; User-Agent: boardmail/0.2
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: clawdchat.cn; User-Agent: boardmail/VERSION
+    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: clawdchat.cn; User-Agent: boardmail/VERSION
+    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: clawdchat.cn; User-Agent: boardmail/VERSION
 
 -- a healthy board
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
@@ -947,9 +952,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
-    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 5.5 s]
-    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 5.5 s]
-    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
     GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
@@ -1013,6 +1016,9 @@ A board that has a key file has cases for what the file holds. Its board is heal
 -- the key is two lines
     exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
+-- the key has a letter that is not ASCII
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
 -- the key is 4096 characters long
     GET https://clawdchat.cn/api/v1/agents/me  [headers 3, silent 4 s, at 0 s]
     GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 3, silent 4 s, at 0 s]
@@ -1022,10 +1028,22 @@ A board that has a key file has cases for what the file holds. Its board is heal
 -- the key is 4097 characters long
     exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
+-- the key is 4097 characters long and stands after a line break
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has 4097 line breaks before it
+    GET https://clawdchat.cn/api/v1/agents/me  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/notifications?limit=8&offset=0  [headers 1, silent 4 s, at 0 s]
+    GET https://clawdchat.cn/api/v1/comments/00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the key has 4097 spaces and then a word after it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
 == botnet
-    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: botnet.com; User-Agent: boardmail
-    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: botnet.com; User-Agent: boardmail
-    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: botnet.com; User-Agent: boardmail
+    headers 1: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer an-invented-key; Connection: close; Host: botnet.com; User-Agent: boardmail/VERSION
+    headers 2: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: botnet.com; User-Agent: boardmail/VERSION
+    headers 3: Accept: application/json; Accept-Encoding: identity; Authorization: Bearer kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk... (4103 characters); Connection: close; Host: botnet.com; User-Agent: boardmail/VERSION
 
 -- a healthy board
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
@@ -1172,7 +1190,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
 
 -- the first answer is whole in time and ends half a second after its time budget ends
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
-    exit code 0, added 0, errors: none; the source: status ok, unavailable 0, backlog pending
+    exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
     GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
@@ -1244,6 +1262,9 @@ A board that has a key file has cases for what the file holds. Its board is heal
 -- the key is two lines
     exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
+-- the key has a letter that is not ASCII
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
 -- the key is 4096 characters long
     GET https://botnet.com/api/forum/me  [headers 3, silent 4 s, at 0 s]
     GET https://botnet.com/api/forum/inbox?limit=8  [headers 3, silent 4 s, at 0 s]
@@ -1255,8 +1276,22 @@ A board that has a key file has cases for what the file holds. Its board is heal
 -- the key is 4097 characters long
     exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
 
+-- the key is 4097 characters long and stands after a line break
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
+-- the key has 4097 line breaks before it
+    GET https://botnet.com/api/forum/me  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/inbox?limit=8  [headers 1, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/post%3A00000000-0000-0000-0000-000000000046  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topics/00000000-0000-0000-0000-0000000000c8  [headers 2, silent 4 s, at 0 s]
+    GET https://botnet.com/api/forum/topic-messages/thread%3A00000000-0000-0000-0000-000000000064  [headers 2, silent 4 s, at 0 s]
+    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+
+-- the key has 4097 spaces and then a word after it
+    exit code 1, added 0, errors: credentials_unavailable; the source: status error, unavailable 0, backlog pending
+
 == fruitflies
-    headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: api.fruitflies.ai; User-Agent: boardmail/fruitflies
+    headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: api.fruitflies.ai; User-Agent: boardmail/VERSION
 
 -- a healthy board
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
@@ -1463,7 +1498,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=0  [headers 1, silent 8 s, at 8.5 s]
     GET https://api.fruitflies.ai/v1/feed?limit=100&offset=100  [headers 1, silent 8 s, at 8.5 s]
-    exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
+    exit code 1, added 1, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
     GET https://api.fruitflies.ai/v1/feed?agent=reader&limit=100&offset=0  [headers 1, silent 8 s, at 0 s]
@@ -1514,7 +1549,7 @@ A board that has a key file has cases for what the file holds. Its board is heal
     exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
 
 == fourclaw
-    headers 1: Accept: text/html; Accept-Encoding: identity; Connection: close; Host: www.4claw.org; User-Agent: boardmail/1
+    headers 1: Accept: text/html; Accept-Encoding: identity; Connection: close; Host: www.4claw.org; User-Agent: boardmail/VERSION
 
 -- a healthy board
     GET https://www.4claw.org/t/10000000-0000-4000-8000-000000000001  [headers 1, silent 5 s, at 0 s]

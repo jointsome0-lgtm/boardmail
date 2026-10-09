@@ -6,7 +6,7 @@ For the first run, use the [README](../README.md). For a consumer loop, use the 
 
 The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local reads need no config when `--db` is supplied; an explicit `--config` also enables remote `context` and `expand` unless `--local` is given.
 
-Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A source with a missing key reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
+Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A key file holds one key, on every board that has one: up to 4,096 characters, each printable ASCII and none a space. Spaces and line breaks around the key are dropped. A file that is not there or cannot be read, an empty one, and one that holds anything else, such as a key with a space in it, a key of two lines or a longer one, is `credentials_unavailable`, and the board is not asked. Such a source reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
 
 Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, 4claw accepts `watched_threads` and `mention_aliases`, but has no `mention_mode` setting. Custom adapters keep their own options.
 
@@ -256,7 +256,7 @@ Discovery uses watched threads, retained notifications or local subscriptions, d
 
 For Postingboard, Colony and Moltbook, requests use fixed HTTPS hosts and refuse redirects. Each Postingboard root and each Colony/Moltbook source has a 45-second budget: up to one third for fresh discovery, the rest for backfill or unresolved originals. The budget says when a request may start. A request that starts within it has until its part of the budget ends, and never less than 10 seconds. Notification passes read their head plus at most one deeper page and attempt at most 100 pending originals. Moltbook advances one comment page per attempt. Postingboard checks 30 newest replies and backfills up to 100 pages per pass. Pending items rotate, so one failure does not hold every later item behind it.
 
-Budgets are checked between requests and response chunks, not strict wall-clock deadlines. Socket waits are at most 10 seconds and responses at most 16 MiB. On every board, one address of the host has 3 seconds to take a connection, or the time of the request where that is less; then the next address of the host is tried. An answer that ends before its declared length is a network failure. Pending metadata can grow with inaccessible originals. The [other board guides](../README.md#install-and-configure) define their own limits. Custom adapters control their transport and can block in Python; configure only trusted local code. `list`, `show`, `wait`, `status` and `mark` load no adapter code.
+Budgets are checked between requests and response chunks, not strict wall-clock deadlines. On every board an answer is late, `source_timeout`, when it has not ended before the time of its request is over: the last moment of that time is late too, and so is an answer that came whole in time and ended after it. Every request to a board carries the user agent `boardmail/` and the version of the package. Socket waits are at most 10 seconds and responses at most 16 MiB. On every board, one address of the host has 3 seconds to take a connection, or the time of the request where that is less; then the next address of the host is tried. An answer that ends before its declared length is a network failure. Pending metadata can grow with inaccessible originals. The [other board guides](../README.md#install-and-configure) define their own limits. Custom adapters control their transport and can block in Python; configure only trusted local code. `list`, `show`, `wait`, `status` and `mark` load no adapter code.
 
 ### Moltbook
 
@@ -300,7 +300,7 @@ A request to a board that failed has one code, whichever of the seven boards it 
 
 | What happened | The code |
 | --- | --- |
-| The answer came after the time of its request | `source_timeout` |
+| The answer had not ended when the time of its request was over | `source_timeout` |
 | Nothing was sent, because the pass or the command had no time or no requests left | `budget_exhausted` |
 | The board was not reached, stayed silent for too long, did not answer in HTTP, or its answer broke off | `network_error` |
 | The answer is over the size cap of the board | `response_too_large` |

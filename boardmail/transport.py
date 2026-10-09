@@ -2,10 +2,12 @@
 
 A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
 the size cap and when the time is over, and reads the answer as what it must be. It gives each address of the
-host ATTEMPT seconds to take the connection. failure() says what a request that failed is called, which is the
-same on every board, and key() reads the key of an account from its file. BOARDS holds every other difference
-between the boards that a board or an agent can see. The module of a board enters the row of its board when it
-loads. None of those differences is unified here, and none is decided outside that row.
+host ATTEMPT seconds to take the connection. Four things are the same on every board: the user agent that a
+board is told, AGENT; the moment from which an answer is late; what a request that failed is called, which
+failure() says; and what the key of an account is, which key() reads from its file. BOARDS holds what differs
+between the boards: what a board is asked for, and how large and how slow its answer may be. The module of a
+board enters the row of its board when it loads. None of those differences is unified here, and none is decided
+outside that row.
 
 What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
 it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
@@ -22,25 +24,25 @@ from typing import NamedTuple
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
+from . import __version__
 from .errors import MailError
 
 
 class Board(NamedTuple):
     """What a request to one board carries and what its answer may take."""
     accept: str             # the Accept header
-    agent: str              # the User-Agent header
     protocol: str | None    # the X-Agent-Protocol header. None: the board gets none.
-    key: int | None         # the most characters of the key of an account. Each must be printable ASCII and
-                            # no space. None: a key is any text, or the board has no key.
     kind: str | None        # the content type that an answer must have; it is then UTF-8 text.
                             # None: an answer is JSON, whatever type it gives.
     cap: int                # the most bytes of an answer that are read. One more is too large.
     silence: float          # the seconds that the socket may stay silent, and never more than the time has left
     budget: float | None    # the seconds that a request may take. None: the client says how many it has left.
-    at_the_end: bool        # an answer is late at the very moment at which the time is over. Else only after it.
-    to_the_end: bool        # an answer that has come whole is still late when its end comes after that moment
 
 
+# The User-Agent header of every request: the name and the version of the package.
+AGENT = 'boardmail/' + __version__
+# The most characters of the key of an account.
+KEY = 4096
 # The row of each board under its name. A board module enters its own, so a board is asked only once its module
 # has loaded.
 BOARDS = {}
@@ -94,20 +96,25 @@ class NoRedirect(HTTPRedirectHandler):
     http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
 
 
-def key(board, file):
-    """The key of an account as its file gives it, without the spaces and line breaks around it. Where the file
-    cannot be read, or holds no key that the board takes, a MailError says that the credentials are not there."""
-    most = BOARDS[board].key
+def key(file):
+    """The key of an account as its file gives it, without the spaces and line breaks around it. A key is up to
+    KEY characters, each printable ASCII and none a space, whichever board the account is on. Where the file
+    cannot be read, holds no such key or holds more than the key, a MailError says that the credentials are
+    not there."""
     try:
-        if most is None:
-            key = file.read_text().strip()
-        else:
-            with Path(file).open() as stream:
-                key = stream.read(most + 1).strip()
-            if len(key) > most or any(ord(letter) < 33 or ord(letter) > 126 for letter in key):
-                raise ValueError('The board takes no such key')
-        if not key:
-            raise ValueError('The file holds no key')
+        with Path(file).open() as stream:
+            # What stands before the key does not count, and one character more than a key may have is enough
+            # to know that it is too long.
+            key = stream.read(KEY + 1).lstrip()
+            while len(key) <= KEY and (more := stream.read(KEY + 1 - len(key))):
+                key = (key + more).lstrip()
+            key = key.rstrip()
+            if not key or len(key) > KEY or any(ord(letter) < 33 or ord(letter) > 126 for letter in key):
+                raise ValueError('The file holds no key')
+            # The rest of the file is read only to see that nothing stands in it, however far after the key.
+            while more := stream.read(KEY + 1):
+                if more.strip():
+                    raise ValueError('The file holds more than a key')
     except (OSError, ValueError, TypeError):
         raise MailError('credentials_unavailable') from None
     return key
@@ -126,7 +133,7 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     that cannot be read, and a MailError for a redirect that is refused and for an answer that is too large or
     late."""
     about = BOARDS[board]
-    send = {'Accept': about.accept, 'User-Agent': about.agent, **(headers or {})}
+    send = {'Accept': about.accept, 'User-Agent': AGENT, **(headers or {})}
     if about.protocol:
         send['X-Agent-Protocol'] = about.protocol
     if body is not None:
@@ -137,19 +144,19 @@ def fetch(board, url, *, left=None, headers=None, body=None):
     end = time.monotonic() + left
 
     def in_time():
-        now = time.monotonic()
-        if now > end or about.at_the_end and now == end:
+        # The time is over from its last moment on, as it is for a request that a client may no longer send.
+        if time.monotonic() >= end:
             raise MailError('source_timeout')
 
     with build_opener(NoRedirect(), Attempts()).open(request, timeout=min(about.silence, left)) as answer:
         if about.kind and answer.headers.get_content_type() != about.kind:
             raise ValueError('The answer is not ' + about.kind)
         content = bytearray()
+        in_time()
         while True:
-            in_time()
             chunk = answer.read1(min(65536, about.cap + 1 - len(content)))
-            if about.to_the_end:
-                in_time()
+            # After each read, the last one too: an answer that has come whole is late when its end comes late.
+            in_time()
             if not chunk:
                 # read1() can reach the socket's EOF before Content-Length is satisfied without raising.
                 # A JSON-shaped prefix is not a complete HTTP answer.

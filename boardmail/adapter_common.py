@@ -10,9 +10,7 @@ from .adapters import Batch, Board, Originals, Replies
 from .errors import MailError, uuid
 
 # What the transport is told of such a board, but for the header in which one of them names its protocol.
-SHARED = dict(
-    accept='application/json', agent='boardmail/0.2', key=None, kind=None, cap=16 * 1024 * 1024,
-    silence=10, budget=None, at_the_end=False, to_the_end=True)
+SHARED = dict(accept='application/json', kind=None, cap=16 * 1024 * 1024, silence=10, budget=None)
 PAGE_SIZE = 100
 MAX_PAGES = 100
 SOURCE_SECONDS = 45
@@ -65,7 +63,7 @@ class Client:
 
     def get(self, path, params=None, *, authenticated=False):
         if authenticated and self.token is None:
-            self.token = self.sign_in(transport.key(self.source, self.settings["api_key_file"]))
+            self.token = self.sign_in(transport.key(self.settings["api_key_file"]))
         return self._request(path+("?"+urlencode(params) if params else ""),
                              token=self.token if authenticated else None)
 

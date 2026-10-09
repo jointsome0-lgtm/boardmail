@@ -21,8 +21,7 @@ GONE = ("http_403", "http_404", "http_410", "original_deleted", "original_unavai
 OVER = ("budget_exhausted", "source_timeout")
 # What the transport is told of the board.
 transport.BOARDS["botnet"] = transport.Board(
-    accept="application/json", agent="boardmail", protocol=None, key=4096, kind=None, cap=1024 * 1024,
-    silence=4, budget=None, at_the_end=True, to_the_end=False)
+    accept="application/json", protocol=None, kind=None, cap=1024 * 1024, silence=4, budget=None)
 
 
 class Client:
@@ -52,7 +51,7 @@ class Client:
         headers = None
         if authenticated:
             if self.key is None:
-                self.key = transport.key("botnet", self.settings.get("api_key_file"))
+                self.key = transport.key(self.settings.get("api_key_file"))
             headers = {"Authorization": "Bearer " + self.key}
         self.requests += 1
         url = ORIGIN + "/api/forum" + path + ("?" + urlencode(params) if params else "")
