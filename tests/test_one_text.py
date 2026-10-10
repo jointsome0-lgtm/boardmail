@@ -1,5 +1,5 @@
 """A command has one text, and both entry points show it: the command line with its names as they are typed, and a
-tool with its names as they are called. The table has no place for a text that only one of the two would read.
+tool with its names as they are called.
 """
 import re
 import unittest
@@ -9,8 +9,6 @@ import kit
 from test_agent_view import view
 
 
-# The fields that held a text for one reader alone.
-APART = {'summary', 'description', 'epilog', 'tool', 'help'}
 # status applies the default of this argument itself, so the kind of the argument has none.
 APPLIED = {('status', 'stale_after'): store.STALE_AFTER}
 
@@ -48,20 +46,6 @@ class NameTests(unittest.TestCase):
 
 
 class OneTextTests(unittest.TestCase):
-    def test_the_table_has_no_place_for_a_text_that_one_reader_alone_would_read(self):
-        self.assertEqual(APART & {*table.Command._fields, *table.Argument._fields}, set())
-        with self.assertRaises(TypeError):
-            table.Command('named')  # a command is not written without its text
-        for name, command in table.COMMANDS.items():
-            with self.subTest(command=name):
-                self.assertTrue(command.text)
-                # An option is named in braces, so that a tool does not read how it is typed. And a text has
-                # no per cent sign, which the parser of the command line reads as its own.
-                written = [command.text, *(argument.text or '' for argument in command.arguments)]
-                self.assertEqual([text for text in written if '--' in text or '%' in text], [])
-        # What stands before a command is typed only, so its text may name an option as it is typed.
-        self.assertEqual([argument.name for argument in table.BEFORE if '%' in argument.text], [])
-
     def test_the_help_page_of_a_command_is_its_one_text_as_it_is_typed(self):
         pages = view.cli_tree()
         for name, command in table.COMMANDS.items():

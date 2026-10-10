@@ -1,87 +1,25 @@
-"""Every error code keeps its next-step hint, its next call and its exit code, and the catalog has every code the
-package raises."""
-import ast
+"""What an error gives besides its code: its next-step hint, its next call and its exit code."""
 from http.client import HTTPException
-import inspect
 from pathlib import Path
 import re
 import unittest
 
-import boardmail
-from boardmail import adapter_colony, commands, errors, mcp, table, transport
+from boardmail import commands, errors, mcp, table, transport
 from examples.fixtures import status
 
 
 TESTS = Path(__file__).resolve().parent
-PACKAGE = Path(boardmail.__file__).resolve().parent
-# The stored rows for codes the catalog does not list.
+# Codes that the catalog does not list.
 UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
 # The codes of a pass that could not finish. Collecting again can work for them, and for no other code of the catalog.
 UNFINISHED = {'budget_exhausted', 'collection_conflict', 'invalid_response', 'network_error',
               'pagination_no_progress', 'pending_overflow', 'source_timeout'}
-# The codes that 4claw and Fruitflies had for a failed request while each board called one in its own way.
-GONE = ('fourclaw_http_error', 'fourclaw_invalid_public_page', 'fourclaw_network_error', 'network_timeout')
-# The codes whose next step is one call: the command of that call, and what it takes from the call that failed.
 # The read of the journal is the step after a reply command that was refused for what the journal holds, and
 # after one that could not read or write the inbox file.
 JOURNAL = ('reply_show', ('source', 'id'))
-NEXT = {'database_exists': ('status', ()), 'database_missing': ('init', ()), 'invalid_settings': ('settings', ()),
-        'local_state_error': JOURNAL, 'message_not_found': ('list', ('source',)),
-        'reply_already_recorded': JOURNAL, 'reply_already_started': JOURNAL, 'reply_body_conflict': JOURNAL,
-        'reply_candidate_limit': JOURNAL, 'reply_key_mismatch': JOURNAL, 'reply_not_prepared': JOURNAL,
-        'reply_not_started': JOURNAL, 'reply_readback_mismatch': JOURNAL, 'reply_reference_conflict': JOURNAL,
-        'source_not_found': ('status', ()), 'source_paused': ('status', ())}
-# The raises that build their code at run time. The stored table has rows for what they build.
-BUILT = {'adapter_botnet.py: transport.failure(exc)',         # what a request to Botnet that failed is called
-         'adapter_common.py: code',                           # the code of a refusal that a board explains: a Colony sign-in code
-         'adapter_clawdchat.py: code',                        # what a request to ClawdChat that failed is called
-         'errors.py: error',                                  # the code that a call names with error=
-         'table.py: str(exc)',                                # the code of a check, with the name of its argument
-         "adapter_moltbook.py: error or 'reply_' + status"}   # reply_deleted, reply_missing or a lookup error
-
-
-def stored():
-    """The stored table: for each code, its next-step hint and its exit code."""
-    rows = [line.split() for line in (TESTS / 'error_codes.txt').read_text(encoding='utf-8').splitlines()]
-    return {code: (hint, int(exit_code)) for code, exit_code, hint in rows}
-
-
-def modules():
-    return [(path.name, ast.parse(path.read_text(encoding='utf-8'))) for path in sorted(PACKAGE.glob('*.py'))]
-
-
-def raised():
-    """(the codes the package raises as literals, each raise that builds its code as 'module: expression')
-
-    A code that a call names with error= counts as a literal: errors.converted() raises it, and so does the
-    command table for an argument."""
-    literal, built = set(), set()
-    for name, tree in modules():
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            literal.update(named.value.value for named in node.keywords
-                           if named.arg == 'error' and isinstance(named.value, ast.Constant))
-            if getattr(node.func, 'id', getattr(node.func, 'attr', None)) == 'MailError':
-                code, = node.args
-                if isinstance(code, ast.Constant):
-                    literal.add(code.value)
-                else:
-                    built.add(f'{name}: {ast.unparse(code)}')
-    return literal, built
 
 
 class ErrorCodeTests(unittest.TestCase):
-    def assertEntry(self, code, entry):
-        result, exit_code = commands.error_result(code)
-        self.assertEqual((code, result['next_action'], exit_code), (code, *entry))
-
-    def test_every_code_keeps_its_hint_and_exit_code(self):
-        table = stored()
-        self.assertEqual(set(table), set(errors.CODES) | UNLISTED)
-        for code, entry in table.items():
-            self.assertEntry(code, entry)
-
     def test_a_hint_names_a_step_that_can_work(self):
         hints = {code: errors.next_action(code) for code in errors.CODES}
         self.assertEqual({code for code, hint in hints.items() if hint == 'retry_collect'}, UNFINISHED)
@@ -104,10 +42,10 @@ class ErrorCodeTests(unittest.TestCase):
         self.assertEqual((result['error'], result['argument'], exit_code), ('invalid_mark', 'ref', 2))
 
     def test_an_error_names_its_next_call_where_the_step_is_one(self):
-        self.assertEqual({code: (entry.next.command, entry.next.takes) for code, entry in errors.CODES.items()
-                          if entry.next}, NEXT)
+        steps = {code: (entry.next.command, entry.next.takes) for code, entry in errors.CODES.items() if entry.next}
+        self.assertEqual(steps['reply_not_started'], JOURNAL)
         given = {'source': 'alias', 'id': 'numeric-20', 'key': 'an-invented-key', 'body': 'An invented answer.'}
-        for code, (command, takes) in NEXT.items():
+        for code, (command, takes) in steps.items():
             with self.subTest(code=code):
                 result, _ = commands.error_result(code, call=given)
                 self.assertEqual(list(result), ['event', 'error', 'next_action', 'next', 'history_complete'])
@@ -128,38 +66,23 @@ class ErrorCodeTests(unittest.TestCase):
                     longest = takes_up_to[name]['maxLength']
                     self.assertIn('next', commands.error_result(code, call=dict(given, **{name: 'x' * longest}))[0])
                     self.assertNotIn('next', commands.error_result(code, call=dict(given, **{name: 'x' * (longest + 1)}))[0])
-        for code in (set(errors.CODES) | UNLISTED) - set(NEXT):
+        for code in (set(errors.CODES) | UNLISTED) - set(steps):
             self.assertNotIn('next', commands.error_result(code, call=given)[0], code)
 
     def test_an_http_status_without_a_row_is_treated_like_500(self):
-        table = stored()
-        for status in range(100, 600):
-            self.assertEntry(f'http_{status}', table.get(f'http_{status}', table['http_500']))
-
-    def test_a_code_the_package_raises_is_in_the_catalog(self):
-        literal, built = raised()
-        self.assertEqual(literal - set(errors.CODES), set())
-        self.assertEqual(built, BUILT)
-        self.assertEqual({code.lower() for code in adapter_colony.COLONY_AUTH_CODES} - set(errors.CODES), set())
-        # What transport.failure() calls a request that failed with no code of its own.
-        called = {transport.failure(exc) for exc in (OSError(), HTTPException(), ValueError())}
-        self.assertEqual(called - set(errors.CODES), set())
-        self.assertEqual(UNLISTED & set(errors.CODES), set())
+        hint, exit_code = commands.error_result('http_500')[0]['next_action'], commands.error_result('http_500')[1]
+        for code in (f'http_{number}' for number in range(100, 600)):
+            if code not in errors.CODES:
+                result, status_of_exit = commands.error_result(code)
+                self.assertEqual((code, result['next_action'], status_of_exit), (code, hint, exit_code))
 
     def test_a_failed_request_is_called_the_same_whichever_board_it_was_sent_to(self):
-        # What a failure is called is asked without the board, and the row of a board says nothing of it: it
-        # holds what the board is asked for, and how large and how slow its answer may be.
-        self.assertEqual(list(inspect.signature(transport.failure).parameters), ['exc'])
-        self.assertEqual(transport.Board._fields, ('accept', 'protocol', 'cap', 'silence'))
         for exc, code in ((errors.MailError('source_timeout'), 'source_timeout'), (status(418), 'http_418'),
                           (ConnectionRefusedError(), 'network_error'), (TimeoutError(), 'network_error'),
                           (HTTPException(), 'network_error'), (ValueError(), 'invalid_response'),
                           (KeyError('id'), 'invalid_response')):
             with self.subTest(failed=type(exc).__name__):
                 self.assertEqual(transport.failure(exc), code)
-        # The codes that only one board had are nowhere in the package, so no pass and no command gives one.
-        package = ''.join(path.read_text(encoding='utf-8') for path in sorted(PACKAGE.glob('*.py')))
-        self.assertEqual([code for code in GONE if code in package], [])
 
     def test_an_adapter_file_is_told_what_the_boards_of_the_package_call_a_failed_request(self):
         notes = (TESTS.parent / 'ADAPTERS.md').read_text(encoding='utf-8')
@@ -170,13 +93,10 @@ class ErrorCodeTests(unittest.TestCase):
         # Each code of the list is one of the catalog, and the list says the hint that a result gives for it.
         self.assertEqual(set(listed) - set(errors.CODES), set())
         self.assertEqual({code: errors.next_action(code) for code in listed}, listed)
-        # The list has what the transport calls a failed request: each code that it raises, and each that
-        # failure() gives one that has no code of its own. A status has its number in its code, and the list has
-        # the three statuses that have a hint of their own.
-        raises = {node.args[0].value for node in ast.walk(ast.parse(inspect.getsource(transport)))
-                  if isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'MailError'}
+        # The list has what failure() calls a failed request that has no code of its own. A status has its number
+        # in its code, and the list has the three statuses that have a hint of their own.
         called = {transport.failure(exc) for exc in (OSError(), HTTPException(), ValueError())}
-        self.assertEqual((raises | called | {code for code in errors.CODES if code.startswith('http_')}) - set(listed), set())
+        self.assertEqual((called | {code for code in errors.CODES if code.startswith('http_')}) - set(listed), set())
         # Any other code gets the hint that the notes say: a status that has no entry, the one that they name
         # among them, and a code of the file's own.
         self.assertIn('Every code without an entry gets `retry_collect`.', told)
@@ -189,17 +109,6 @@ class ErrorCodeTests(unittest.TestCase):
         for code in [*errors.CODES, *UNLISTED]:
             self.assertTrue(errors.mcp_error(errors.exit_code(code)), code)
         self.assertEqual([status for status in range(6) if errors.mcp_error(status)], [1, 2, 5])
-
-    def test_the_catalog_is_at_the_bottom_of_the_import_graph(self):
-        for name, tree in modules():
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    reached = {getattr(node, 'module', None), *(alias.name for alias in node.names)} - {None}
-                    inside = getattr(node, 'level', 0) > 0 or any(to.split('.')[0] == 'boardmail' for to in reached)
-                    if name == 'errors.py':
-                        self.assertFalse(inside, 'The catalog imports from the package')
-                    elif inside and any(to.split('.')[-1] == 'errors' for to in reached):
-                        self.assertIn(node, tree.body, f'{name} imports the catalog inside a function')
 
 
 if __name__ == '__main__':

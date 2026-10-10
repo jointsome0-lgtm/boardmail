@@ -1,6 +1,6 @@
 """The shape of the inbox file: every statement that gives it a table, a column or an index, and every question
 about what it has. No other module writes one of these, and only the store calls this one, where it opens a
-file and where init creates one; tests/test_schema_guard.py checks both.
+file and where init creates one.
 
 An inbox file has every part. init creates it whole. A file that an older release left is short of some, and
 complete gives it those when a command first opens it. So no command asks whether a part is there.

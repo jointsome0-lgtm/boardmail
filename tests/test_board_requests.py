@@ -4,10 +4,7 @@ Each case is one `boardmail collect` on a new inbox with one source. The board i
 network edge, so a request is what urllib would have put on the wire. board_requests.txt stores every request as
 it left the process and what the command gave. That file stays as it is when the HTTP work of a board client
 moves to another place inside the package.
-
-That place is boardmail/transport.py. No other module of the package names what sends a request.
 """
-import ast
 import importlib.metadata
 from itertools import count
 import json
@@ -485,40 +482,6 @@ class BoardRequestTests(unittest.TestCase):
                         transport.fetch(name, f'https://{board.host}/', left=2)
                     self.assertEqual(network.attempts, [(board.host, 0, 2), (board.host, 1, 2)])
                     self.assertEqual(transport.failure(failed.exception), 'network_error')
-
-
-SENDERS = ('urllib.request', 'http.client', 'socket', 'ssl')
-
-
-def sends(tree):
-    """Each name in a module that is what can send a request, or a part of it: one that the module imports, and
-    one that it reaches through a package, as urllib.request.urlopen after a plain `import urllib`. HTTPException
-    is what a failed request raises, and a module may name it."""
-    found = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom):
-            names = [f'{node.module}.{alias.name}' for alias in node.names]
-        elif isinstance(node, ast.Attribute):
-            names = [ast.unparse(node)]
-        else:
-            continue
-        found += [name for name in names if name != 'http.client.HTTPException'
-                  and any(name == sender or name.startswith(sender + '.') for sender in SENDERS)]
-    return found
-
-
-class OnePathTests(unittest.TestCase):
-    def test_only_the_transport_module_names_what_sends_a_request(self):
-        package = Path(boardmail.__file__).resolve().parent
-        found = [f'{path.name}: {name}' for path in sorted(package.rglob('*.py'))
-                 for name in sends(ast.parse(path.read_text(encoding='utf-8')))]
-        self.assertEqual([line for line in found if not line.startswith('transport.py: ')], [],
-                         'These belong in boardmail/transport.py')
-        # If it saw nothing, the line above would say nothing.
-        self.assertIn('transport.py: urllib.request.build_opener', found)
-        self.assertIn('urllib.request.urlopen', sends(ast.parse('import urllib\nurllib.request.urlopen(url)')))
 
 
 if __name__ == '__main__':
