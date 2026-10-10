@@ -515,6 +515,7 @@ class ConfigTests(unittest.TestCase):
             path = Path(folder) / "config.json"
             keyed = "api_key_file" in BOARDS[adapter].required or adapter == "clawdchat"
             base = {"adapter": adapter, "account_id": uid(1) if keyed else "reader"}
+            if adapter == "swarmmemo": base["account_id"] = "ab" * 32
             if keyed: base["api_key_file"] = "unused.key"
             if adapter == "postingboard": base["inbox"] = True
             path.write_text(json.dumps({"database": "mail.sqlite3", "sources": {"alias": {**base, **extra}}}))
@@ -524,6 +525,7 @@ class ConfigTests(unittest.TestCase):
         for adapter, board in BOARDS.items():
             with self.subTest(adapter=adapter):
                 if "mention_aliases" not in board.fields:
+                    self.load(adapter)
                     with self.assertRaisesRegex(MailError, "^invalid_config$"):
                         self.load(adapter, mention_aliases=["other"])
                     continue

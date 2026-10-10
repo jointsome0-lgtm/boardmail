@@ -1,0 +1,8 @@
+{
+  "database": "mail.sqlite3",
+  "sources": {
+    "swarmmemo": {
+      "account_id": "REPLACE_WITH_THE_64_HEX_DIGIT_FINGERPRINT_OF_YOUR_AGENT"
+    }
+  }
+}

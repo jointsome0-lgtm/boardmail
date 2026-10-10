@@ -100,10 +100,14 @@ class IdentityTests(unittest.TestCase):
                     self.assertEqual(next(s for s in store.status()['sources'] if s['source'] == 'alias')['last_ok'], last_ok)
 
 
+# An account that a board takes, where it is no UUID: SwarmMemo names one by the fingerprint of its key.
+ACCOUNT = {'swarmmemo': 'ab' * 32}
+
+
 class ConfigFieldsTests(unittest.TestCase):
     def test_builtin_typos_and_settings_for_other_adapters_are_rejected(self):
         for adapter, board in BOARDS.items():
-            base = {'adapter': adapter, 'account_id': uid(1)}
+            base = {'adapter': adapter, 'account_id': ACCOUNT.get(adapter, uid(1))}
             if 'api_key_file' in board.required: base['api_key_file'] = 'unused.key'
             if adapter == 'postingboard': base['inbox'] = True
             for key in ('mention_mode', 'unrecognized_setting'):
@@ -118,12 +122,14 @@ class ConfigFieldsTests(unittest.TestCase):
 
     def test_what_a_config_may_and_must_give_each_board(self):
         # For each board: the settings that a config may give a source of it, whether it must give a key file,
-        # and whether the account may be a handle and not a UUID. The list of boards is not asked: a config is.
+        # and whether the account may be a handle and not the id that the board has for it. The list of boards is
+        # not asked: a config is.
         expected = {'postingboard': ('alias_search api_key_file inbox mention_aliases threads', True, False),
                     'the-colony': ('api_key_file mention_aliases totp_secret_file', True, False),
                     'moltbook': ('api_key_file mention_aliases', True, False),
                     'clawdchat': ('api_key_file mention_aliases', False, True),
-                    'botnet': ('api_key_file', False, True)}
+                    'botnet': ('api_key_file', False, True),
+                    'swarmmemo': ('', False, False)}
         valid = {'alias_search': ['name'], 'api_key_file': 'unused.key', 'inbox': True, 'mention_aliases': ['@name'],
                  'threads': [uid(1)], 'totp_secret_file': 'unused.totp'}
         self.assertEqual(list(BOARDS), list(expected))
@@ -140,11 +146,15 @@ class ConfigFieldsTests(unittest.TestCase):
 
             for adapter, (may, key, handle) in expected.items():
                 with self.subTest(adapter=adapter):
-                    base = {'account_id': uid(1), **({'api_key_file': 'unused.key'} if key else {})}
+                    account = ACCOUNT.get(adapter, uid(1))
+                    base = {'account_id': account, **({'api_key_file': 'unused.key'} if key else {})}
                     self.assertTrue(loads(adapter, **base))
                     self.assertEqual(' '.join(name for name in valid if loads(adapter, **{**base, name: valid[name]})), may)
-                    self.assertEqual(loads(adapter, account_id=uid(1)), not key)
+                    self.assertEqual(loads(adapter, account_id=account), not key)
                     self.assertEqual(loads(adapter, **{**base, 'account_id': 'reader'}), handle)
+            # A fingerprint is 64 hexadecimal digits in small letters, as SwarmMemo writes it.
+            for other in (uid(1), ACCOUNT['swarmmemo'].upper(), ACCOUNT['swarmmemo'][1:]):
+                self.assertFalse(loads('swarmmemo', account_id=other), other)
             # A source that names no adapter is a board by its own name. Under any other name it is no source.
             path.write_text(json.dumps({'database': 'mail.sqlite3', 'sources': {'alias': {'account_id': uid(1)}}}))
             with self.assertRaisesRegex(config.MailError, '^invalid_config$'): config.load(path)

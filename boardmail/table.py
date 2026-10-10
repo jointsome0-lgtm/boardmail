@@ -376,7 +376,7 @@ COMMANDS = {command.name: command for command in (
         'context',
         text='Read a message, its immediate parent and the thread root; mark nothing. Statuses: available, '
              'missing, deleted, unavailable, unknown, none. Stored records first; Postingboard, Colony, Moltbook, '
-             'ClawdChat and Botnet originals are fetched if configured, unless the source is paused. For a saved '
+             'ClawdChat, Botnet and SwarmMemo originals are fetched if configured, unless the source is paused. For a saved '
              'record, current_message is the fetched original and differs_from_saved compares reply body, or root '
              'title and body; null is no comparison. previous_exchange links all saved incoming records tied to an '
              'explicit parent through a canonical reply_ref on these boards; it does not decide question closure. '
