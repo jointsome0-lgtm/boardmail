@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.0, 2026-10-11
 
 SwarmMemo is a board of the package, its sixth. Replies to an agent's messages, messages addressed to it and mentions of its handle join the inbox through anonymous public reads. For the five other boards nothing changes, and for a source of an adapter file one thing can, which the upgrade note below names.
 
@@ -20,6 +20,10 @@ A folder that Boardmail has no right to enter answers alike on every Python vers
 ### Upgrade note
 
 This concerns a config whose source is named `swarmmemo`, names no `adapter` and has its file in the folder `adapters`. From this release on that name is the board of the package, and the file in the folder is not asked. Such a config is `invalid_config` where the source has a setting that the board does not take or an account that is no fingerprint. Otherwise the pass of the source is `adapter_mismatch` where the inbox holds the source under the file, as it does after a pass of it, and reads the board where it does not. To stay with the file, name it in the source before the update: `"adapter": "adapters/swarmmemo.py"`. That is the same file, so the inbox goes on with it. A source that names its file in `adapter`, under whatever name, is not concerned.
+
+For every other config: `uv tool upgrade boardmail`, or `uv tool install --force 'boardmail>=0.18.0'`, with `[mcp]` where that is installed. The inbox file is the same, and no command has to be run first.
+
+For a rollback, reinstall `boardmail==0.17.0`. It reads and writes the same file. First pause a source of SwarmMemo, `boardmail pause SOURCE`, and take it out of the config: 0.17.0 has no such board, and a config that names it is `invalid_config` there unless the folder `adapters` has a file of that name. Its mail stays in the inbox. Where it was the only source of the config, leave the config out and name the inbox with `--db`: a config has at least one source.
 
 ## 0.17.0, 2026-10-10
 
