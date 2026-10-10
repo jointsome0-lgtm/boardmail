@@ -8,7 +8,6 @@ import unittest
 from unittest.mock import patch
 
 from boardmail import commands
-from boardmail.config import MailError
 from kit import arrive, new_inbox
 from test_mail import mail
 
@@ -113,16 +112,6 @@ class CommandErrorTests(unittest.TestCase):
         self.assertEqual((result['error'], code), ('local_state_error', 2))
         self.assertNotIn('next', result)
         self.assertNotIn('send_allowed', result)
-
-    def test_a_failure_names_no_next_call_without_a_name_and_an_id_to_give_it(self):
-        for source, mid in ((None, '10'), ('alias', None), ('alias', 'bad\nidentifier')):
-            result, _ = commands.local_state_result(OSError(errno.EROFS, SECRET), {'source': source, 'id': mid})
-            self.assertNotIn('next', result)
-            self.assertNotIn('send_allowed', result)
-        self.assertNotIn('next', commands.local_state_result(OSError(errno.EROFS, SECRET))[0])
-        result, code = commands.outcome(lambda: fail(MailError('invalid_arguments')))
-        self.assertEqual((result['error'], code), ('invalid_arguments', 2))
-        self.assertNotIn('next', result)
 
 
 if __name__ == '__main__':

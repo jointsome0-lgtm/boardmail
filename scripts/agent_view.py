@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """What an agent reads before its first call, as text, and how much of it and of its results there is.
 
-    python scripts/agent_view.py            the size report
-    python scripts/agent_view.py --update   write the stored view again
+    python scripts/agent_view.py          the size report
+    python scripts/agent_view.py --view   the view itself
 
-The stored view is two files. tests/test_agent_view.py fails when either one
-differs from what Boardmail supplies now, so a pull request that changes what
-an agent reads shows that change as a difference in these files.
-
-    tests/agent_view_cli.txt   the command line
-    tests/agent_view_mcp.txt   the MCP server; reading it needs the optional extra
+Nothing stores the view. To see what a change does to what an agent reads,
+print the view before the change and after it and compare the two texts. The
+view has two parts: the command line, and the MCP server, which needs the
+optional extra.
 
 What the view holds
 -------------------
@@ -36,8 +34,7 @@ library starts to fill in does not. The server version is written as "the
 Boardmail version" while it is that, so a release does not change the view.
 
 Boardmail has no MCP prompts and no resources. Adding one changes the
-capabilities, which fails the test, and this script then has to learn to
-write them down.
+capabilities, and this script then has to learn to write them down.
 
 The arguments of boardmail-mcp are not in the view. An operator starts that
 command, not an agent, and its parser is built inside its main function.
@@ -64,19 +61,19 @@ and anything else left out has no value.
 In the MCP part the keys of a tool are the names of the protocol:
 inputSchema, annotations.
 
-Each file starts with its size. Sizes count characters, and JSON is counted
+Each part starts with its size. Sizes count characters, and JSON is counted
 compact. Help text is the summaries, descriptions, usage lines, help
 strings, epilogs and section titles that the parser was given; names of
 commands and arguments are not in it. The tool catalog as JSON is everything the view
 holds for the tools, as one text. The size report prints the same numbers,
 and the length of the help that argparse prints on this Python at 80
-columns. That last number is not stored: it differs a little between Python
-versions.
+columns. That last number is not in the view: it differs a little between
+Python versions.
 
 What the size report says of results
 ------------------------------------
 
-The stored view ends where the first call begins. What an agent reads after that is results, and the size report
+The view ends where the first call begins. What an agent reads after that is results, and the size report
 counts those that tests/story_inbox.txt and tests/story_reply.txt hold: the two stories store the result of
 every command that they run, on invented boards. A page is a result of check, list or wait that holds messages.
 For the pages, for the messages on them, for the brief context of those messages, for the rows that a page has
@@ -96,9 +93,8 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
-STORED = {'cli': ROOT / 'tests/agent_view_cli.txt', 'mcp': ROOT / 'tests/agent_view_mcp.txt'}
 STORIES = (ROOT / 'tests/story_inbox.txt', ROOT / 'tests/story_reply.txt')
-COMMAND = 'python scripts/agent_view.py --update'
+COMMAND = 'python scripts/agent_view.py --view'
 EXTRA = "The MCP part needs the optional extra. From the source checkout, run: python -m pip install '.[mcp]'"
 TITLES = {'cli': 'What an agent reads from the boardmail command line before its first call.',
           'mcp': 'What an agent reads from the Boardmail MCP server before its first call.'}
@@ -177,7 +173,7 @@ def lines(head, value, indent=''):
 
 
 def written(part, tree):
-    """One part of the view as the text of its file."""
+    """One part of the view as text."""
     rows = [f'# {TITLES[part]}', f'# Written by {COMMAND}. The top of that script says how to read this.']
     for key, value in tree.items():
         rows += ['', *lines(label(key) + ':', value)]
@@ -489,18 +485,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description='Print how much an agent reads before its first call and in the results of the stored '
                     'stories. The top of this file says what is counted.')
-    parser.add_argument('--update', action='store_true',
-                        help='Write the view to tests/agent_view_cli.txt and tests/agent_view_mcp.txt')
+    parser.add_argument('--view', action='store_true', help='Print the view itself instead of its size')
     args = parser.parse_args(argv)
     trees = {'cli': cli_tree(), 'mcp': None if mcp_missing() else mcp_tree()}
-    print(report(trees['cli']['size'], trees['mcp'] and trees['mcp']['size'], results_size()))
-    if args.update:
-        for part, tree in trees.items():
-            if tree is not None:
-                STORED[part].write_text(written(part, tree), encoding='utf-8', newline='\n')
-        if trees['mcp'] is None:
-            print(f'{STORED["mcp"].name} is not written. {EXTRA}', file=sys.stderr)
-            return 1
+    if not args.view:
+        print(report(trees['cli']['size'], trees['mcp'] and trees['mcp']['size'], results_size()))
+        return 0
+    print('\n'.join(written(part, tree) for part, tree in trees.items() if tree is not None), end='')
+    if trees['mcp'] is None:
+        print(f'The MCP part is not printed. {EXTRA}', file=sys.stderr)
+        return 1
     return 0
 
 

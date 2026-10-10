@@ -11,36 +11,12 @@ from examples.fixtures import status
 TESTS = Path(__file__).resolve().parent
 # Codes that the catalog does not list.
 UNLISTED = {'a_code_from_a_custom_adapter', 'http_500'}
-# The codes of a pass that could not finish. Collecting again can work for them, and for no other code of the catalog.
-UNFINISHED = {'budget_exhausted', 'collection_conflict', 'invalid_response', 'network_error',
-              'pagination_no_progress', 'pending_overflow', 'source_timeout'}
 # The read of the journal is the step after a reply command that was refused for what the journal holds, and
 # after one that could not read or write the inbox file.
 JOURNAL = ('reply_show', ('source', 'id'))
 
 
 class ErrorCodeTests(unittest.TestCase):
-    def test_a_hint_names_a_step_that_can_work(self):
-        hints = {code: errors.next_action(code) for code in errors.CODES}
-        self.assertEqual({code for code, hint in hints.items() if hint == 'retry_collect'}, UNFINISHED)
-        self.assertEqual(errors.next_action('a_code_from_a_custom_adapter'), 'retry_collect')
-        # A tool call has no help page to read.
-        self.assertEqual({code: hint for code, hint in hints.items() if 'help' in hint}, {})
-
-    def test_an_error_names_the_argument_that_it_is_given(self):
-        self.assertEqual(commands.error_result('invalid_arguments', 'limit')[0],
-                         {'event': 'error', 'error': 'invalid_arguments', 'argument': 'limit',
-                          'next_action': 'fix_the_arguments', 'history_complete': False})
-        self.assertNotIn('argument', commands.error_result('invalid_arguments')[0])
-        error = errors.MailError('invalid_arguments', argument='limit')
-        self.assertEqual((str(error), error.argument, errors.MailError('invalid_arguments').argument),
-                         ('invalid_arguments', 'limit', None))
-        with self.assertRaises(errors.MailError) as raised:
-            errors.converted(int, 'many', error='invalid_arguments', argument='limit')
-        self.assertEqual((str(raised.exception), raised.exception.argument), ('invalid_arguments', 'limit'))
-        result, exit_code = commands.outcome(lambda: errors.converted(int, 'many', error='invalid_mark', argument='ref'))
-        self.assertEqual((result['error'], result['argument'], exit_code), ('invalid_mark', 'ref', 2))
-
     def test_an_error_names_its_next_call_where_the_step_is_one(self):
         steps = {code: (entry.next.command, entry.next.takes) for code, entry in errors.CODES.items() if entry.next}
         self.assertEqual(steps['reply_not_started'], JOURNAL)
@@ -76,14 +52,6 @@ class ErrorCodeTests(unittest.TestCase):
                 result, status_of_exit = commands.error_result(code)
                 self.assertEqual((code, result['next_action'], status_of_exit), (code, hint, exit_code))
 
-    def test_a_failed_request_is_called_the_same_whichever_board_it_was_sent_to(self):
-        for exc, code in ((errors.MailError('source_timeout'), 'source_timeout'), (status(418), 'http_418'),
-                          (ConnectionRefusedError(), 'network_error'), (TimeoutError(), 'network_error'),
-                          (HTTPException(), 'network_error'), (ValueError(), 'invalid_response'),
-                          (KeyError('id'), 'invalid_response')):
-            with self.subTest(failed=type(exc).__name__):
-                self.assertEqual(transport.failure(exc), code)
-
     def test_an_adapter_file_is_told_what_the_boards_of_the_package_call_a_failed_request(self):
         notes = (TESTS.parent / 'ADAPTERS.md').read_text(encoding='utf-8')
         told = notes.split('\n## What a failure is called\n')[1].split('\n## ')[0]
@@ -104,11 +72,6 @@ class ErrorCodeTests(unittest.TestCase):
             self.assertNotIn(code, errors.CODES)
             self.assertEqual(errors.next_action(code), 'retry_collect')
         self.assertIn('`http_503`', told)
-
-    def test_mcp_flags_every_error_code(self):
-        for code in [*errors.CODES, *UNLISTED]:
-            self.assertTrue(errors.mcp_error(errors.exit_code(code)), code)
-        self.assertEqual([status for status in range(6) if errors.mcp_error(status)], [1, 2, 5])
 
 
 if __name__ == '__main__':

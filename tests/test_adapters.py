@@ -397,12 +397,13 @@ class AdapterTests(unittest.TestCase):
             'unknown_kind': lambda b: Batch(messages=[{**b.messages[0], 'kind': 'notification'}], state=b.state),
             'unknown_addressing': lambda b: Batch(messages=[{**b.messages[0], 'addressing': 'inferred'}], state=b.state),
             'invalid_cached_original': lambda b: Batch(messages=b.messages, state=b.state, originals=[{**mail(20), 'created_at': None}]),
+            'cached_original_url_credentials': lambda b: Batch(messages=b.messages, state=b.state, originals=[{**mail(20), 'url': 'https://user:pass@example.invalid/item'}]),
         }
         for name, malformed in cases.items():
             with self.subTest(contract=name):
                 batch = malformed(Batch(messages=[mail(11)], state={'cursor': 'next'}))
                 # Preserve invalid originals/container fields; otherwise exercise cache atomicity too.
-                if isinstance(batch, Batch) and name != 'invalid_cached_original':
+                if isinstance(batch, Batch) and 'cached_original' not in name:
                     batch.originals = [{**mail(20), 'body': 'replacement'}, mail(21)]
                 result = collect_all(self.store, {'custom': {**cfg, 'gives': lambda: batch}})
                 self.assertEqual(result['errors'][0]['error'], 'invalid_adapter_result')

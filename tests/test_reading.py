@@ -11,7 +11,6 @@ import threading
 import unittest
 
 from boardmail import commands
-from boardmail.adapters import Batch, validate
 from boardmail.boards import BOARDS
 from boardmail.config import MailError
 from boardmail.store import Store
@@ -380,13 +379,6 @@ class ReadingTests(unittest.TestCase):
                 self.assertEqual(incoming['brief']['root']['body'], 'new context')
                 health = store.status()['sources'][0]
                 self.assertEqual((health['error'], health['backlog_pending']), ('source_timeout', True))
-
-    def test_invalid_adapter_metadata_is_rejected_but_omitted_metadata_works(self):
-        validate(Batch(messages=[mail(10)]))
-        for batch in (Batch(messages=[dict(mail(10), addressing='probably-direct')]),
-                      Batch(originals=[dict(mail(100), url='https://user:secret@example.invalid')])):
-            with self.assertRaisesRegex(MailError, '^invalid_adapter_result$'):
-                validate(batch)
 
     def test_conflicting_parent_cannot_supply_context_or_previous_exchange(self):
         # The board says of a comment under one post that it answers a comment under another post.
