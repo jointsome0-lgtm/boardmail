@@ -25,7 +25,7 @@ Or give the file the name of its source and put it in the folder `adapters` besi
 }
 ```
 
-Here that is `adapters/my-board.py`. A file runs only for a source that the config names: a file in the folder that no source names is not loaded. Without its file such a source is `invalid_config`.
+Here that is `adapters/my-board.py`. A file runs only for a source that the config names: a file in the folder that no source names is not loaded. Without its file such a source is `invalid_config`, and with it the whole config: until the file is there, no source of that config is collected, and a local command reads the inbox only with `--db`. A folder that Boardmail has no right to enter is a folder without the file.
 
 Source names use lowercase letters, digits, underscores and hyphens, up to 64 characters. Account and message IDs are nonempty strings, up to 1024 characters, with no control characters. Convert numeric upstream IDs to strings. Each built-in validates its own account format: UUIDs or handles, depending on the board. Keep a different source name or database for a different board/account; changing a stored source's account or adapter path is rejected.
 
@@ -45,7 +45,7 @@ def collect(settings, state, known):
     return Batch(messages=[], state=state, complete=True)
 ```
 
-`API_VERSION` must be the integer `1`. A missing or unsupported version, including a boolean, produces `adapter_version_unsupported` before the core calls `collect`.
+`API_VERSION` must be the integer `1`. A missing or unsupported version, including a boolean, produces `adapter_version_unsupported` before the core calls `collect`. A file that cannot be loaded produces `adapter_load_failed`: one that `adapter` names and that is not there, one that cannot be read, and one that raises an error or exits while it loads.
 
 The function receives configuration, its last committed JSON state, and a read-only set of already stored message IDs for this source. It receives no database handle. Return a `Batch`:
 

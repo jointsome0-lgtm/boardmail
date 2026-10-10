@@ -1,5 +1,6 @@
 """Explicit account and thread configuration; secrets live in separate files."""
 import json
+import os
 from pathlib import Path
 import re
 
@@ -40,7 +41,8 @@ def load(path):
                 raise ValueError()
             if source not in BOARDS and "adapter" not in settings:
                 found = path.parent / ADAPTERS / f"{source}.py"
-                if not found.is_file():
+                # Not found.is_file(): before Python 3.14 that raises where the folder cannot be entered.
+                if not os.path.isfile(found):
                     raise ValueError()
                 settings["adapter"] = str(found)
             adapter = owner(source, settings)
