@@ -12,6 +12,7 @@ from boardmail.config import load
 from kit import mark, new_inbox
 import test_botnet
 import test_clawdchat
+import test_swarmmemo
 
 KEY = 'example.key'
 
@@ -29,9 +30,17 @@ def clawdchat():
     return board
 
 
+def swarmmemo():
+    board = test_swarmmemo.Board()
+    board.post(1, by=test_swarmmemo.ME)
+    board.post(10, 'replies', reply_to=1)
+    return board
+
+
 # For each board: the settings of its source in a config, and what gives the invented board for one pass.
 INVENTED = {'botnet': ({'account_id': test_botnet.OWNER, 'api_key_file': KEY}, botnet),
-            'clawdchat': ({'account_id': test_clawdchat.uid(1), 'api_key_file': KEY}, clawdchat)}
+            'clawdchat': ({'account_id': test_clawdchat.uid(1), 'api_key_file': KEY}, clawdchat),
+            'swarmmemo': ({'account_id': test_swarmmemo.ME}, swarmmemo)}
 
 
 class PackagedAdapterTests(unittest.TestCase):

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+SwarmMemo is a board of the package, its sixth. Replies to an agent's messages, messages addressed to it and mentions of its handle join the inbox through anonymous public reads. For the five other boards nothing changes, and for a source of an adapter file one thing can, which the upgrade note below names.
+
+- A source `swarmmemo`, or one that names `swarmmemo` as its `adapter`, reads the public updates of one agent from a saved cursor. Its `account_id` is the fingerprint of the agent, 64 lowercase hexadecimal digits. It takes no other setting and has no key file: no request carries a credential, and nothing is signed or published.
+- A message arrives with the root of its thread and with the message that it answers. `context` and `expand` read the board, and `mark replied --ref` takes `https://swarmmemo.com/e/REPLY_ID`.
+- Activity of the agent's rooms that is no reply, no addressed message and no mention is not collected. The board takes no subscription, `subscriptions_unsupported`, and has no native `reply verify`, `reply_verification_unsupported`: use `reply confirm`.
+- The [guide of the board](docs/swarmmemo.md) has its limits, what a pass does where the board fails, and what was checked against the board itself.
+
 A folder that Boardmail has no right to enter answers alike on every Python version. Two answers depended on the version, because Python 3.14 looks at a file in such a folder in another way than 3.11, 3.12 and 3.13 do.
 
 - An inbox file in such a folder is `local_state_error` with the reason `permission_denied`. On Python 3.14 a command that reads the inbox answered `database_missing` and named `init` as the next step, though the file was there, and `init` then answered `local_state_error`. A missing inbox file is `database_missing` as before.
@@ -9,6 +16,10 @@ A folder that Boardmail has no right to enter answers alike on every Python vers
 - A folder `adapters` of that kind is a folder without the file: a source that has its file there is `invalid_config`, as with a missing file. On Python 3.11, 3.12 and 3.13 the answer was `local_state_error` with the next step `inspect_database_do_not_delete`, which sent the operator to an inbox file that had no fault.
 - `ADAPTERS.md` says that a missing folder file makes the whole config `invalid_config`, and names `adapter_load_failed`, the code of a file that cannot be loaded. No behavior changes with either.
 - The upgrade note of 0.17.0 below says one thing more exactly, and no behavior changes with it. A source that is not collected any more turns `stale` where its last pass was ok. Where that pass failed, the source stays `error`.
+
+### Upgrade note
+
+This concerns a config whose source is named `swarmmemo`, names no `adapter` and has its file in the folder `adapters`. From this release on that name is the board of the package, and the file in the folder is not asked. Such a config is `invalid_config` where the source has a setting that the board does not take or an account that is no fingerprint. Otherwise the pass of the source is `adapter_mismatch` where the inbox holds the source under the file, as it does after a pass of it, and reads the board where it does not. To stay with the file, name it in the source before the update: `"adapter": "adapters/swarmmemo.py"`. That is the same file, so the inbox goes on with it. A source that names its file in `adapter`, under whatever name, is not concerned.
 
 ## 0.17.0, 2026-10-10
 

@@ -6,11 +6,11 @@ For the first run, use the [README](../README.md). For a consumer loop, use the 
 
 The default config is `~/.config/boardmail/config.json`. Select another with `boardmail --config PATH COMMAND`. `--db PATH` overrides its database. Local reads need no config when `--db` is supplied; an explicit `--config` also enables remote `context` and `expand` unless `--local` is given.
 
-Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A key file holds one key, on every board that has one: up to 4,096 characters, each printable ASCII and none a space. White space around the key, such as spaces, tabs and line breaks, is dropped. A file that is not there or cannot be read, an empty one, and one that holds anything else, such as a key with a space in it, a key of two lines or a longer one, is `credentials_unavailable`, and the board is not asked. Such a source reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
+Paths in config resolve from its directory and support `~`. Keep API keys outside the checkout. A key file holds one key, on every board that has one: up to 4,096 characters, each printable ASCII and none a space. White space around the key, such as spaces, tabs and line breaks, is dropped. A file that is not there or cannot be read, an empty one, and one that holds anything else, such as a key with a space in it, a key of two lines or a longer one, is `credentials_unavailable`, and the board is not asked. Such a source reports its own error while other sources continue. Before collection, Postingboard, Colony, Moltbook, ClawdChat and Botnet compare the authenticated profile ID with `account_id`. A mismatch returns `account_mismatch` without collecting messages or advancing progress. Restore the matching key/account pair. SwarmMemo has no key file and no such check: its reads are anonymous, and `account_id` names the agent whose mail is read. A changed account under an existing source name is also rejected; use a new source name or database for a different account.
 
 Unknown settings for built-in adapters return `invalid_config`, including settings supported only by another adapter. For example, Moltbook accepts `mention_aliases`, but has no `threads` setting, which Postingboard has. Custom adapters keep their own options.
 
-Built-ins other than Botnet accept optional `mention_aliases`: nonblank strings up to 100 characters, stripped and deduplicated. Collectors match explicit `@aliases` and names from the existing verified profile where available. Postingboard also retains its existing literal alias/search discovery. Aliases are source configuration, distinct from consumer reading preferences.
+Built-ins other than Botnet and SwarmMemo accept optional `mention_aliases`: nonblank strings up to 100 characters, stripped and deduplicated. Collectors match explicit `@aliases` and names from the existing verified profile where available. Postingboard also retains its existing literal alias/search discovery. Aliases are source configuration, distinct from consumer reading preferences.
 
 `init` creates a new database and refuses any existing file. With explicit `--config`, it validates the config before creating the database and seeds the configured source, account and adapter identities, including when `--db` overrides the configured path. Missing or invalid explicit config fails without creating a database. `boardmail --db PATH init` without `--config` creates an empty inbox without loading config. Initialization reads no credential files and makes no provider requests.
 
@@ -66,7 +66,7 @@ boardmail subscriptions --source SOURCE
 boardmail unsubscribe SOURCE THREAD
 ```
 
-`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook and ClawdChat support subscriptions. Botnet and custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
+`SOURCE` is a source name from status or config, including an alias backed by a built-in adapter. `THREAD` is its root UUID, normalized on input. Postingboard, Colony, Moltbook and ClawdChat support subscriptions. Botnet, SwarmMemo and custom adapters return `subscriptions_unsupported`. Unknown sources return `source_not_found`; an invalid root returns `invalid_thread_id`. Neither error changes the selections.
 
 With `--db` alone, the source's adapter must already be recorded in the database. Otherwise the command returns `subscription_config_required` without changes; rerun as `boardmail --db PATH --config CONFIG subscribe SOURCE THREAD` (or `unsubscribe`). This can occur after pausing a newly configured source before its first collection. The config supplies the adapter identity without a remote request.
 
@@ -161,11 +161,13 @@ For a saved publication intention, use [`reply prepare`, `reply begin`, `reply s
 
 `context SOURCE ID` returns `root`, immediate `parent` and `target`. `show` remains an offline, single-message read. Context retrieval changes no saved text or marks.
 
-With config, active Postingboard, Colony, Moltbook, ClawdChat and Botnet sources fetch current originals. `--local`, a paused source, or `--db` without explicit `--config` keeps the read local. Current remote relationships take precedence over stored relationships. Colony, Moltbook, ClawdChat and Botnet use anonymous originals, including your own comments that the collector excludes. These public lookups need no readable API-key file.
+With config, active Postingboard, Colony, Moltbook, ClawdChat, Botnet and SwarmMemo sources fetch current originals. `--local`, a paused source, or `--db` without explicit `--config` keeps the read local. Current remote relationships take precedence over stored relationships. Colony, Moltbook, ClawdChat, Botnet and SwarmMemo use anonymous originals, including your own comments that the collector excludes. These public lookups need no readable API-key file.
 
 Moltbook exposes comments through their thread. A stored comment supplies that thread ID; its lookup scans up to 100 comment pages within the shared 45-second context budget. Originals encountered during that command are reused for its parent and root lookups. Later commands fetch again. An unfinished search returns `unavailable`, not `missing`. An unstored comment whose thread cannot be established returns `unknown` with `thread_unknown`. An unstored root can be fetched directly.
 
 Botnet preserves opaque message IDs and uses a topic UUID as the context root. The topic is a grouping, not an implied reply parent; null-parent openers return `parent.status: none`. See [Botnet coverage](botnet.md).
+
+SwarmMemo message IDs are 32 hexadecimal digits. The context root is the root message of the thread, which the board names for any message of it. See [SwarmMemo coverage](swarmmemo.md).
 
 Each element has `id`, `status`, `origin`, `error`, `message`, `current_message` and `differs_from_saved`. Saved elements can also have `remote_status`.
 
@@ -204,6 +206,7 @@ Unknown reasons are `no_parent_identity`, `parent_not_recorded_by_board`, `paren
 | Moltbook | `https://www.moltbook.com/post/POST_UUID#comment-COMMENT_UUID` | `https://www.moltbook.com/post/POST_UUID` |
 | ClawdChat | `https://clawdchat.cn/api/v1/comments/COMMENT_UUID` | `https://clawdchat.cn/api/v1/posts/POST_UUID` |
 | Botnet | `https://botnet.com/topics/TOPIC_UUID#message-MESSAGE_ID` | `https://botnet.com/topics/TOPIC_UUID` |
+| SwarmMemo | `https://swarmmemo.com/e/MESSAGE_ID` | `https://swarmmemo.com/e/ROOT_ID` |
 
 Alternate schemes, hosts and trailing slashes do not match. A previously recorded thread-only link cannot identify a comment and remains unmatched. Moltbook's fragment supplies an exact local identity; jumping to that comment in its web UI has not been verified. Configured aliases keep separate records. No `reply_ref` URL is fetched.
 
@@ -300,7 +303,7 @@ An error is one JSON object: `event: "error"`, `error` with a fixed code, and `n
 
 The other codes have a hint of their own, such as `run_init` for `database_missing`. `boardmail/errors.py` lists every code with its hint and its exit code.
 
-A request to a board that failed has one code, whichever of the five boards it was sent to:
+A request to a board that failed has one code, whichever of the six boards it was sent to:
 
 | What happened | The code |
 | --- | --- |
@@ -312,7 +315,7 @@ A request to a board that failed has one code, whichever of the five boards it w
 | The answer has a status that is no success | `http_` and the status, as `http_503` |
 | The answer is a redirect that names where to ask instead | `redirect_refused` |
 
-No redirect is followed. One that names no place, or a place that a request cannot go to, has the code of its status. A status that is no success and a redirect have their code whenever they come, also after the time of the request: the board has answered, and `http_429` or `http_401` says more than that it was late. On ClawdChat and Botnet only the identity check that opens a pass names `source_timeout` or `budget_exhausted` as the error of the source: a later part of the pass whose time is over ends without one, and `complete: false` says that work remains. The [guide of each board](../README.md#install-and-configure) has its limits, and `tests/board_requests.txt` has what each board gives case by case.
+No redirect is followed. One that names no place, or a place that a request cannot go to, has the code of its status. A status that is no success and a redirect have their code whenever they come, also after the time of the request: the board has answered, and `http_429` or `http_401` says more than that it was late. On ClawdChat and Botnet only the identity check that opens a pass names `source_timeout` or `budget_exhausted` as the error of the source, and on SwarmMemo only the first read of a pass: a later part of the pass whose time is over ends without one, and `complete: false` says that work remains. The [guide of each board](../README.md#install-and-configure) has its limits, and `tests/board_requests.txt` has what each board gives case by case.
 
 Where the next step is one call, the error names it in `next` as well, as a [route](#routes):
 

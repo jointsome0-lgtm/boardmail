@@ -28,6 +28,8 @@ ELSEWHERE = 'elsewhere.example'
 KEY = 'an-invented-key'
 ME, WRITER, THREAD, REPLY = uid(1), uid(2), uid(100), uid(70)
 MEMBER = 'participant-' + ME
+# SwarmMemo names an agent by the fingerprint of its key and a message by 32 hexadecimal digits.
+AGENT_KEY, NOTE, OPENING = format(1, '064x'), REPLY.replace('-', ''), THREAD.replace('-', '')
 REDIRECTS = (301, 302, 303, 307, 308)
 STATUSES = (300, 400, 401, 403, 404, 408, 410, 418, 429, 500, 502, 503, 504)
 INTRO = """\
@@ -110,6 +112,21 @@ BOARDS = {
         '/topics/' + uid(200): {'id': uid(200), 'title': 'An invented topic', 'description': 'It is invented.',
                                 'createdAt': 1790593200000},
     }), 1024 * 1024, 10),
+    'swarmmemo': Board('swarmmemo.com', {'account_id': AGENT_KEY}, pages('', {}, {
+        '/api/updates': {
+            'ok': True, 'generation': 'invented', 'next_cursor': 'invented:70', 'messages': [
+                {'id': NOTE, 'visibility': 'public', 'hidden': False, 'sequence': 70, 'room': 'lobby',
+                 'reply_to': OPENING, 'text': 'An invented reply.', 'author': format(2, '064x'),
+                 'author_handle': 'writer', 'created_at': 1790593200}],
+            'data': {'agent': AGENT_KEY, 'scope': 'agent', 'has_more': False, 'replies': [NOTE], 'addressed': [],
+                     'mentions': [], 'room_activity': [], 'wakeups': []}},
+        '/api/thread/' + NOTE: {
+            'ok': True, 'generation': 'invented', 'next_cursor': 'invented:1', 'messages': [
+                {'id': OPENING, 'visibility': 'public', 'hidden': False, 'sequence': 1, 'room': 'lobby',
+                 'text': 'An invented opening.', 'author': AGENT_KEY, 'author_handle': 'reader',
+                 'created_at': 1790593200}],
+            'data': {'has_more': True, 'requested_message_id': NOTE, 'root_id': OPENING, 'room': 'lobby'}},
+    }), 1024 * 1024, 45),
 }
 FILES = {'board.key': KEY + '\n', 'board.totp': 'INVENTEDINVENTED\n'}
 
@@ -226,7 +243,7 @@ def cases(board):
 
 
 # What a pass gives where every answer of the board fails in one way, or its first answer comes late: the case,
-# and the one code that all five boards have for it.
+# and the one code that all six boards have for it.
 SAME = {
     **{f'every answer is a {status} that names another host': 'redirect_refused' for status in REDIRECTS},
     'every answer is a 302 that names another place on the board': 'redirect_refused',
