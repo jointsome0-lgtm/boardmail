@@ -69,6 +69,47 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual((code, result['error'], result['next_action']),
                          (2, 'invalid_config', 'check_config_and_credentials'))
 
+    def test_a_source_stays_with_the_adapter_file_that_the_inbox_knows_it_by(self):
+        examples = Path(__file__).resolve().parents[1]/'examples'
+        shutil.copyfile(examples/'custom_feed.json', self.root/'custom_feed.json')
+        folder = self.root/'adapters'; folder.mkdir()
+        for file in (self.root/'first.py', folder/'moved.py', folder/'named.py'):
+            shutil.copyfile(examples/'custom_board.py', file)
+        config = self.root/'config.json'
+        about = {'account_id': 'agent', 'feed_file': 'custom_feed.json', 'batch_size': 1}
+
+        def command(name, sources, **adapters):
+            """A command with a config of these sources, each with the adapter that is named for it here, or with
+            none."""
+            config.write_text(json.dumps({'database': 'kept.sqlite3', 'sources': {
+                source: about | ({'adapter': adapters[source]} if source in adapters else {}) for source in sources}}))
+            return self.cli('--config', str(config), name)
+
+        def collect(**adapters):
+            """One pass over both sources, and the mail of the inbox after it."""
+            code, result = command('collect', ('moved', 'named'), **adapters)
+            page = self.cli('--config', str(config), 'list', '--scope', 'all', '--context', 'none')[1]
+            return (code, result['added'],
+                    [(error['source'], error['error'], error['next_action']) for error in result['errors']],
+                    {row['source']: (row['status'], row['error']) for row in result['sources']},
+                    sorted((message['source'], message['id']) for message in page['messages']))
+
+        # The inbox takes the file of a source from the config at init: here the file that the folder has for the
+        # source, by its name. A source that comes later gets its file at its first pass: here a file outside the
+        # folder. The export has two messages, and a pass reads one.
+        self.assertEqual(command('init', ('named',), named='adapters/named.py')[0], 0)
+        sound = {'moved': ('ok', None), 'named': ('ok', None)}
+        self.assertEqual(collect(moved='first.py', named='adapters/named.py'),
+                         (0, 2, [], sound, [('moved', '1'), ('named', '1')]))
+        # Without the names each source has the file of the folder. For one that is another file than the inbox
+        # knows it by: it gets no mail, and its health does not turn into an error. For the other it is the same
+        # file, and it goes on.
+        refused = [('moved', 'adapter_mismatch', 'restore_source_identity_or_use_a_new_source')]
+        self.assertEqual(collect(), (1, 1, refused, sound, [('moved', '1'), ('named', '1'), ('named', '2')]))
+        # With its file back the source goes on where it was: the second message, and not the first again.
+        self.assertEqual(collect(moved='first.py'),
+                         (0, 1, [], sound, [('moved', '1'), ('moved', '2'), ('named', '1'), ('named', '2')]))
+
     def test_separately_supplied_adapter_and_copyable_consumer_loop(self):
         examples = Path(__file__).resolve().parents[1]/'examples'
         for name in ('custom_board.py', 'custom_feed.json', 'custom_config.json'):
