@@ -14,7 +14,7 @@
 For a config that has a source of 4claw or Fruitflies:
 
 1. To go on with the board, stay on 0.16.1: `uv tool install --force 'boardmail==0.16.1'`, with `[mcp]` where that is installed.
-2. To update, first pause the source, `boardmail pause SOURCE`, and then take it out of the config. A source that the inbox knows and that is not collected any more turns `stale`, and `status` is not `fresh` then; a paused one does not.
+2. To update, first pause the source, `boardmail pause SOURCE`, and then take it out of the config. A source that the inbox knows and that is not collected any more turns `stale`, and `status` is not `fresh` then; a paused one does not. A config has at least one source: where these were its only ones, a config without them is `invalid_config`, so leave the config out and name the inbox with `--db`.
 3. Then update. The mail of the source is in the inbox as before.
 
 An adapter file can read a board that the package does not have; [ADAPTERS.md](ADAPTERS.md) says how. Give its source another name than the one that the inbox knows, or a new inbox: a source does not change its adapter, and a pass that tries is `adapter_mismatch`.
