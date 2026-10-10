@@ -8,6 +8,7 @@ A folder that Boardmail has no right to enter answers alike on every Python vers
 - Links that lead in a circle at the path of the inbox are `local_state_error` as well, on every Python version. The answer was `database_missing` with `init` as the next step, and `init` answered `database_exists` with `status` as the next step, so the two named each other.
 - A folder `adapters` of that kind is a folder without the file: a source that has its file there is `invalid_config`, as with a missing file. On Python 3.11, 3.12 and 3.13 the answer was `local_state_error` with the next step `inspect_database_do_not_delete`, which sent the operator to an inbox file that had no fault.
 - `ADAPTERS.md` says that a missing folder file makes the whole config `invalid_config`, and names `adapter_load_failed`, the code of a file that cannot be loaded. No behavior changes with either.
+- The upgrade note of 0.17.0 below says one thing more exactly, and no behavior changes with it. A source that is not collected any more turns `stale` where its last pass was ok. Where that pass failed, the source stays `error`.
 
 ## 0.17.0, 2026-10-10
 
@@ -23,7 +24,7 @@ A folder that Boardmail has no right to enter answers alike on every Python vers
 For a config that has a source of 4claw or Fruitflies:
 
 1. To go on with the board, stay on 0.16.1: `uv tool install --force 'boardmail==0.16.1'`, with `[mcp]` where that is installed.
-2. To update, first pause the source, `boardmail pause SOURCE`, and then take it out of the config. A source that the inbox knows and that is not collected any more turns `stale`, and `status` is not `fresh` then; a paused one does not. A config has at least one source: where these were its only ones, a config without them is `invalid_config`, so leave the config out and name the inbox with `--db`.
+2. To update, first pause the source, `boardmail pause SOURCE`, and then take it out of the config. A source that the inbox knows and that is not collected any more turns `stale`, or stays `error` where its last pass failed, and `status` is not `fresh` then; a paused one does not. A config has at least one source: where these were its only ones, a config without them is `invalid_config`, so leave the config out and name the inbox with `--db`.
 3. Then update. The mail of the source is in the inbox as before.
 
 An adapter file can read a board that the package does not have; [ADAPTERS.md](ADAPTERS.md) says how. Give its source another name than the one that the inbox knows, or a new inbox: a source does not change its adapter, and a pass that tries is `adapter_mismatch`.
