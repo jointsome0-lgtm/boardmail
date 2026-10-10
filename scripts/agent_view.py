@@ -401,14 +401,6 @@ def mcp_tree(server=None):
     return tree
 
 
-def cli_view():
-    return written('cli', cli_tree())
-
-
-def mcp_view():
-    return written('mcp', mcp_tree())
-
-
 # The results.
 
 def told(story):

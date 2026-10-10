@@ -151,6 +151,10 @@ class ExpandTests(unittest.TestCase):
         fourth = result['items'][3]
         self.assertEqual((fourth['target']['error'], fourth['parent']), ('budget_exhausted', {'id': uid(600), 'status': 'same_as_root'}))
         self.assertEqual(self.paths(), ['/v1/posts/' + uid(n) for n in (600, 602, 601)])
+        # A request is given what is left of the 45 seconds and no more: 43 are gone before the third.
+        allowed = [asked.left for asked in self.fixture.asked[-3:]]
+        self.assertEqual(allowed[0], 45)
+        self.assertTrue(0 < allowed[2] <= 2, allowed)
         self.fixture.get = get
         self.fixture.fail = True
         self.fixture.calls.clear()
