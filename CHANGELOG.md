@@ -23,7 +23,7 @@ This concerns a config whose source is named `swarmmemo`, names no `adapter` and
 
 For every other config: `uv tool upgrade boardmail`, or `uv tool install --force 'boardmail>=0.18.0'`, with `[mcp]` where that is installed. The inbox file is the same, and no command has to be run first.
 
-For a rollback, reinstall `boardmail==0.17.0`. It reads and writes the same file. First pause a source of SwarmMemo, `boardmail pause SOURCE`, and take it out of the config: 0.17.0 has no such board, and a config that names it is `invalid_config` there unless the folder `adapters` has a file of that name. Its mail stays in the inbox.
+For a rollback, reinstall `boardmail==0.17.0`. It reads and writes the same file. First pause a source of SwarmMemo, `boardmail pause SOURCE`, and take it out of the config: 0.17.0 has no such board, and a config that names it is `invalid_config` there unless the folder `adapters` has a file of that name. Its mail stays in the inbox. Where it was the only source of the config, leave the config out and name the inbox with `--db`: a config has at least one source.
 
 ## 0.17.0, 2026-10-10
 
