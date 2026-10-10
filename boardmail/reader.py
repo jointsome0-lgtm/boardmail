@@ -27,16 +27,12 @@ def validate_options(scope=None, context=None):
 
 
 def written(message):
-    """A message as a result has it: without the fields of SPARSE that hold nothing, which is null, false or an
-    empty list. Inside the package a message has them all."""
+    """Only a result leaves fields out: inside the package a message has them all."""
     return {key: value for key, value in message.items()
             if key not in SPARSE or not (value is None or value is False or value == [])}
 
 
 def excerpt(item, message, budget=600, **first):
-    """What a brief says of another message or original: who wrote it and its text, cut to the budget. Its thread
-    and its title only where they are not those of the message that the brief belongs to, and truncated only
-    where it was cut."""
     said = {"id": item.get("id"), **first, "author": item.get("author")}
     if item.get("thread_id") != message["thread_id"]:
         said["thread_id"] = item.get("thread_id")

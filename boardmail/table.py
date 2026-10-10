@@ -1,32 +1,19 @@
 """The command table: each command once, with what the command line and the MCP server say about it and what is
 checked about its arguments.
 
-boardmail/cli.py builds its parser from this table and boardmail/mcp.py builds its tools from it. A command, an
-argument or a text is added or changed here, and both entry points follow. To run a command, commands.execute
-has checked() look at what the entry point was given and hands the result to the one function that
+boardmail/cli.py builds its parser from this table and boardmail/mcp.py builds its tools from it, so a command, an
+argument or a text is added or changed here and both entry points follow. To run a command, commands.execute has
+checked() look at what the entry point was given and hands the result to the one function that
 boardmail/commands.py marks for the command. So a new command is an entry here and that function.
 
-checked() is the check that both entry points share. It refuses an argument that the command does not have, a
-number outside its bounds, a word that is no choice, a flag that is none and a call that breaks a rule, and it
-gives an argument that is left out its default. About a string it checks what check says and nothing else. A
-tool's schema says more about a string and refuses first. The command line does not, and some commands look at
-a string again when they run: the reply journal, the tags and the marks do. tests/argument_errors_cli.txt and
-tests/argument_errors_mcp.txt store what each wrong argument is answered.
+About a string checked() asks what check says and nothing else. A tool's schema says more about a string and
+refuses first. The command line does not, and some commands look at a string again when they run: the reply
+journal, the tags and the marks do.
 
-An error names the argument whose value was refused, by the name that this table has for it. Where several are
-wrong it is the first of them in the order of order(). It names none where a call has a word that is no argument
-of the command, or breaks a rule between two arguments.
-
-A command has one text, and an argument has one or none: text. Both entry points show it, the command line on
-the help page of the command and the MCP server as the description of its tool and in the schema of the tool.
-The first sentence of the text of a command is its line in the list of commands. A text names a command or an
-argument in braces, by the name that this table has for it, and shown() writes the name for each of the two
-readers: as it is typed on the command line, and as it is called for a tool. The table has no place for a text
-that only one of the two would read.
-
-Where the entry points differ in more than a text, an entry says so: typed, file, tool_kind, tool_first, GROUPS
-and BEFORE. The command line lists the commands in the order of this table, and the MCP server lists the tools
-by name.
+A command has one text, and an argument has one or none. The table has no place for a text that only one of the
+two entry points would show. Where they differ in more than a text, an entry says so: typed, file, tool_kind,
+tool_first, GROUPS and BEFORE. The command line lists the commands in the order of this table, and the MCP server
+lists the tools by name.
 """
 import math
 import re
@@ -180,9 +167,8 @@ def shown(text, command, typed):
 
 
 def told(command, argument=None, *, typed):
-    """What a reader is told about a command, or about one of its arguments: the reader of the command line where
-    typed, and the reader of a tool otherwise. None where an argument has no text. An argument of BEFORE belongs
-    to no command, and command is None for it."""
+    """The text of a command, or of one of its arguments, as shown() writes it. None where an argument has no text.
+    An argument of BEFORE belongs to no command, and command is None for it."""
     text = (command if argument is None else argument).text
     return None if text is None else shown(text, command, typed)
 

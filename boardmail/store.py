@@ -18,7 +18,7 @@ class Store:
         self.path = Path(path).expanduser()
 
     def _open(self, write, create=False):
-        """A connection to the file. Only init opens a file whose version nothing has checked."""
+        """Only init opens a file whose version nothing has checked."""
         uri = self.path.resolve().as_uri() + ("?mode=rw" if write else "?mode=ro")
         db = sqlite3.connect(str(self.path) if create else uri, uri=not create, timeout=5)
         db.row_factory = sqlite3.Row
@@ -100,7 +100,6 @@ class Store:
             (source,) if source is not None else ())]
 
     def subscriptions(self, source=None):
-        """Read local selections."""
         with self.connect() as db:
             return self.selections(db, source)
 
@@ -308,7 +307,6 @@ class Store:
         return message
 
     def replied_with(self, source, reply_ref, *, exclude_id):
-        """All local records linked to one exact published reply, within this source."""
         with self.connect() as db:
             return [self.record(row, db) for row in db.execute(
                 "SELECT * FROM messages WHERE source=? AND reply_ref=? AND id<>? ORDER BY arrival_seq",

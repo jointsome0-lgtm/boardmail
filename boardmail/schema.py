@@ -65,7 +65,6 @@ def version(db):
 
 
 def check_version(db):
-    """Refuse a file whose version this release does not know."""
     if version(db) not in (1, VERSION):
         raise MailError("unsupported_database")
 
@@ -75,14 +74,12 @@ def columns(db, table):
 
 
 def lacks(db):
-    """Whether the file is short of a part that a new inbox has."""
     there = {row[0] for row in db.execute("SELECT name FROM sqlite_master")}
     return (version(db) != VERSION or not PARTS <= there
             or any(not added.keys() <= columns(db, table) for table, added in LATER_COLUMNS.items()))
 
 
 def create(db):
-    """A new inbox: every part."""
     db.execute("""CREATE TABLE messages (
                 arrival_seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 source TEXT NOT NULL, id TEXT NOT NULL, thread_id TEXT NOT NULL,
@@ -102,7 +99,6 @@ def create(db):
 
 
 def later(db):
-    """Each table of LATER that the file does not have."""
     for statements in LATER.values():
         for statement in statements:
             db.execute(statement)

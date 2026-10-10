@@ -20,7 +20,6 @@ ORIGINAL_FIELDS = ("id", "thread_id", "parent_id", "author", "title", "body", "u
 
 
 def resolve(*, direct=False, mention=False, thread=False):
-    """Combine evidence; a direct target outranks thread membership."""
     if direct:
         return "direct+mention" if mention else "direct"
     if mention:
@@ -29,10 +28,7 @@ def resolve(*, direct=False, mention=False, thread=False):
 
 
 def aliases(profile, configured=()):
-    """Names the board itself verified for this account plus configured ones.
-
-    Leading ``@`` is dropped so every alias matches as an explicit ``@alias``.
-    """
+    """Leading ``@`` is dropped so every alias matches as an explicit ``@alias``."""
     found = []
     if isinstance(profile, dict):
         for key in PROFILE_KEYS:
@@ -63,11 +59,8 @@ def mentions(pattern, *texts):
 
 
 def cache_original(batch, item):
-    """Retain one fully fetched public original; bounded and deduplicated per batch.
-
-    Callers pass complete originals only: never notification previews,
-    truncated summaries, deleted or hidden material.
-    """
+    """Callers pass complete originals only: never notification previews, truncated summaries,
+    deleted or hidden material."""
     items = batch.originals
     if len(items) >= MAX_ORIGINALS or any(o["id"] == item["id"] for o in items):
         return False

@@ -23,16 +23,12 @@ MAX_SERVED = 200            # Parents a retained page may queue before it is con
 KINDS = {"comment": "reply_to_post", "reply": "reply_to_comment",
          "mention_post": "mention", "mention_comment": "mention"}
 UNAVAILABLE_ORIGINALS = ("http_403", "http_404", "http_410", "original_deleted", "thread_deleted", "original_unavailable")
-# The time of a phase is over: it has none left to ask, or an answer came after it. Both end the phase alike.
 OVER = ("budget_exhausted", "source_timeout")
-# What the transport is told of the board.
 transport.BOARDS["clawdchat"] = transport.Board(
     accept="application/json", protocol=None, cap=1024 * 1024, silence=4)
 
 
 class Client:
-    """The requests of one pass or one command. fetch asks the board: the transport, or an invented board in its
-    place."""
     def __init__(self, settings, *, fetch=transport.fetch):
         try:
             self.owner = uuid(settings["account_id"])
@@ -204,14 +200,12 @@ def lookup(client, mid, root=None):
 
 
 def reply(client, mid, thread, check):
-    """Replies.read of the board: the comment, and the post that it sits under is checked like the comment."""
     _, _, original, context = _fetch(client, {"id": mid, "post": thread, "is_post": False, "kind": "reply_to_comment"})
     check(context)
     return public_comment(original)
 
 
 def reference(thread, parent):
-    """Canonical identity for a local join, never a URL to fetch."""
     return ORIGIN + "/api/v1/" + ("posts/" if parent == thread else "comments/") + uuid(parent)
 
 
@@ -221,8 +215,6 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     State retains references only, and whether the board has answered that the
     original is gone. Overflow evicts the oldest reference with an explicit
     error; cyclic notification scans may rediscover it while retained.
-
-    fetch asks the board: the transport, or an invented board in its place.
     """
     batch = Batch(state={"offset": 0, "pending": []})
     pending = {}
@@ -575,8 +567,6 @@ def _scan(client, root, progress, batch, seen, mention):
 
 
 def _subscribed(client, selected, batch, seen, mention):
-    """Subscribed roots in rotation. A root cut short keeps its own position; when it
-    had already read something this pass the next pass starts at the following root."""
     entry = batch.state["subscriptions"]
     resume = None
     for root in subscriptions.rotation(entry, selected):

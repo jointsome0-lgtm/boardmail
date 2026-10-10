@@ -20,14 +20,10 @@ class Parser(argparse.ArgumentParser):
 
 
 def number(kind):
-    """What makes the number of a kind from a word of the command line, or None for a kind that is no number."""
     return {'integer': int, 'number': float}.get(kind['type'])
 
 
 def add(holder, argument, said, strict=True):
-    """Give a parser, or a group of its options, one argument of the command table. said is what its help page
-    says about it. A parser that is not strict takes the argument whatever its word is, and takes a line that
-    leaves out an option."""
     kind, positional = argument.kind, not argument.typed.startswith('-')
     flag, _, word = ('', '', argument.typed) if positional else argument.typed.partition(' ')
     given = {'help': said}
@@ -77,7 +73,6 @@ def parser(strict=True):
 
 
 def named(args):
-    """The command of a command line that a parser took."""
     name = args.command
     if name in table.GROUPS:
         name += '_' + getattr(args, name + '_action')
@@ -109,7 +104,6 @@ def refused(argv):
 
 
 def taken(argv):
-    """What the parser makes of a command line. Where it takes none, the error names the argument if it is one."""
     try:
         return parser().parse_args(argv)
     except MailError:

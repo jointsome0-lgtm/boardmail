@@ -96,13 +96,10 @@ def moltbook_lookup(client, mid, root=None, *, originals=None):
 
 
 def collect(settings, state, known, *, fetch=transport.fetch):
-    """One pass over Moltbook. fetch asks the board: the transport, or an invented board in its place."""
     return adapter_notifications.collect(Client, NAME, settings, state, known, fetch)
 
 
 def moltbook_reply(client, mid, thread, check):
-    """Replies.read of Moltbook: the comment out of the comment tree of its thread, and the root of that thread
-    is checked like the comment."""
     originals = {}
     status, error, _ = moltbook_lookup(client, mid, thread, originals=originals)
     if status != "available":

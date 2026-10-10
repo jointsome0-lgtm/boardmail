@@ -9,7 +9,6 @@ from . import addressing, transport
 from .adapters import Batch, Board, Originals, Replies
 from .errors import MailError, uuid
 
-# What the transport is told of such a board, but for the header in which one of them names its protocol.
 SHARED = dict(accept='application/json', cap=16 * 1024 * 1024, silence=10)
 PAGE_SIZE = 100
 MAX_PAGES = 100
@@ -21,8 +20,6 @@ REQUEST_SECONDS = 10
 
 
 class Client:
-    """The client of one such board. fetch asks the board: the transport, or an invented board in its place.
-    The board says where it is, what stands before every path and how long it wants between two requests."""
     host = None
     prefix = ""
     pause = 0
@@ -99,9 +96,6 @@ def failure(batch, exc):
 
 
 def collect(connect, settings, state, known, profile, mail, account=None):
-    """One pass over such a board. connect() gives its client, profile is the path of the account that the key
-    belongs to, account() takes the account out of what that path gives, and mail(client, known, batch, mention)
-    reads the mail."""
     batch = Batch(state=state)
     known = set(known)  # The pass adds what it finds to a set of its own.
     try:
@@ -126,8 +120,6 @@ def collect(connect, settings, state, known, profile, mail, account=None):
 
 def declare(name, client, collect, coverage, find, replies, reference, *fields, configure=None,
             parents_since_discovery=False, **asked):
-    """What such a board declares. It has an API key and a UUID for an account. find reads an original of the
-    board, and asked says how Originals calls it. replies is what Replies holds of the board besides its client."""
     return Board(name=name, coverage=coverage, collect=collect, account=uuid, configure=configure,
                  fields=frozenset(("api_key_file", "mention_aliases", *fields)), required=frozenset(("api_key_file",)),
                  since_v1=True, originals=Originals(client, find, **asked), replies=Replies(client=client, **replies),

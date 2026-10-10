@@ -150,12 +150,10 @@ def colony_lookup(client, mid, root=None):
 
 
 def collect(settings, state, known, *, fetch=transport.fetch):
-    """One pass over Colony. fetch asks the board: the transport, or an invented board in its place."""
     return adapter_notifications.collect(Client, NAME, settings, state, known, fetch)
 
 
 def colony_reply(client, mid, thread, check):
-    """Replies.read of Colony."""
     return public_comment(client.get("/comments/" + mid), body="body")
 
 

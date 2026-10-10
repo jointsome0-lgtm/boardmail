@@ -157,8 +157,6 @@ def identifier(value):
 
 
 def converted(convert, *values, error=None, otherwise=None, argument=None):
-    """convert(*values). Where convert does not take them, the error code is raised if there is one, and
-    otherwise is the answer if there is none. argument is the argument that the values are of, for the error."""
     try:
         return convert(*values)
     except (ValueError, TypeError, AttributeError):

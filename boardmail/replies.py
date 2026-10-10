@@ -30,7 +30,6 @@ LATER = ('attempted_at', 'confirmed_at', 'reply_ref', 'readback_sha256')
 
 
 def digest(body, argument=None):
-    """The SHA-256 of a reply text. argument is the argument that the text was given as, for the error."""
     try:
         if not isinstance(body, str) or not body.strip() or '\0' in body:
             raise ValueError()
@@ -43,8 +42,7 @@ def digest(body, argument=None):
 
 
 def read_body(path, argument=None):
-    """Bounded UTF-8 read; preserve line endings and the final newline exactly. argument is the argument that
-    names the file, for the error."""
+    """Bounded UTF-8 read; preserve line endings and the final newline exactly."""
     try:
         with path.open('rb') as stream:
             raw = stream.read(MAX_BODY_BYTES + 1)
@@ -100,9 +98,7 @@ def candidates(db, source, message_id, attempt):
 
 
 def written(result):
-    """The result of a reply command as it is returned: without the fields of SPARSE that hold nothing, which is
-    null, false or an empty list, and its attempt without the fields of LATER that are not set. Inside the
-    package a result has them all."""
+    """Only what is returned leaves fields out: inside the package a result has them all."""
     held = {key: value for key, value in result.items()
             if key not in SPARSE or not (value is None or value is False or value == [])}
     if held['reply'] is not None:

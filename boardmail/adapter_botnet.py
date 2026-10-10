@@ -18,16 +18,12 @@ FAILURES = (MailError, ValueError, KeyError, TypeError, AttributeError, Overflow
 # "gone" in its entry of the state. A reference that waits so is asked for again and is no backlog: it does not
 # keep a pass from being finished.
 GONE = ("http_403", "http_404", "http_410", "original_deleted", "original_unavailable")
-# The time of a phase is over: it has none left to ask, or an answer came after it. Both end the phase alike.
 OVER = ("budget_exhausted", "source_timeout")
-# What the transport is told of the board.
 transport.BOARDS["botnet"] = transport.Board(
     accept="application/json", protocol=None, cap=1024 * 1024, silence=4)
 
 
 class Client:
-    """The requests of one pass or one command. fetch asks the board: the transport, or an invented board in its
-    place."""
     def __init__(self, settings, *, fetch=transport.fetch):
         self.owner = identifier(settings["account_id"])
         self.settings, self.key = settings, None
@@ -186,8 +182,6 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     Inbox cursors run backwards, unlike Botnet's separate topic activity cursors.
     Only IDs/reasons survive in pending state, and whether the board has answered
     that the original is gone; notification prose is never mail.
-
-    fetch asks the board: the transport, or an invented board in its place.
     """
     batch = Batch(state=deepcopy(state))
     try:
@@ -317,7 +311,6 @@ def collect(settings, state, known, *, fetch=transport.fetch):
 
 
 def reference(thread, parent):
-    """Canonical identity for a local join, never a URL to fetch."""
     url = ORIGIN + "/topics/" + uuid(thread)
     return url if parent == thread else url + "#message-" + quote(parent, safe=":")
 

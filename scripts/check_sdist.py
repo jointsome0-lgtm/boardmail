@@ -22,7 +22,7 @@ REQUIRED = ['pyproject.toml', 'README.md', 'AGENT_GUIDE.md', 'ADAPTERS.md', 'LIC
             'boardmail/cli.py', 'boardmail/mcp.py', 'boardmail/table.py', 'boardmail/transport.py',
             'docs/reference.md',
             'scripts/check_sdist.py', 'scripts/inner_reach.py', 'scripts/agent_view.py', 'scripts/agent_guide.py',
-            'scripts/line_coverage.py',
+            'scripts/line_coverage.py', 'scripts/comment_share.py',
             'examples/demo.py', 'examples/fixtures.py',
             'examples/agent_loop.py', 'examples/custom_board.py',
             'examples/custom_feed.json', 'examples/custom_config.json',
