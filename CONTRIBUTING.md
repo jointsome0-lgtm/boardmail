@@ -18,7 +18,7 @@ The rules that no single file of the repository can state. What a module, a test
 
 A test holds what a command, a pass over a board or an adapter file gives. It does not read the source of the package for where a statement, an import or a name stands, repeat a table of the package line by line, compare a value with what the same code makes of it, or test a helper of the tests.
 
-A new test never reaches inside the package: it replaces no name of the package and uses no write path of the Store. `python scripts/inner_reach.py` counts the tests that do. The top of the script has the rule, and says what to do when tests move out or a counted test is renamed.
+A new test never reaches inside the package: it replaces no name of the package and uses no write path of the Store. `python scripts/inner_reach.py` counts the tests that do, and the top of the script has the rule. After tests move out, run `python scripts/inner_reach.py --update` and review the difference. When a counted test is renamed or moved, edit its line in `tests/inner_reach.txt` by hand.
 
 A test changes an inbox the way an operator does:
 
@@ -77,7 +77,7 @@ No module but `boardmail/boards.py` imports the module of a board. What boards s
 
 ## The inbox file
 
-`boardmail/schema.py` holds every statement that gives the file a table, a column or an index, and every question about what the file has. A new table or column goes there for both kinds of file: a new inbox, and a file that does not have it yet. The step that gives an older file its parts runs when a command opens the file, so a command finds every part there, and no code outside that step asks whether a part is there or has a branch for a version-1 file. A part that an older release could not read or write around needs a new version number, and that is a decision for an issue.
+`boardmail/schema.py` holds every statement that gives the file a table, a column or an index, and every question about what the file has. A new table or column goes there for both kinds of file: a new inbox, and a file that does not have it yet. The step that gives an older file its parts runs when a command opens the file, and `Store.connect` of `boardmail/store.py` says in which transaction. So a command finds every part there, and no code outside that step asks whether a part is there or has a branch for a version-1 file. A part that an older release could not read or write around needs a new version number, and that is a decision for an issue.
 
 ## Imports between modules
 
