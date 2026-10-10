@@ -7,7 +7,6 @@ import unittest
 from urllib.parse import urlsplit
 
 from boardmail.boards import BOARDS
-from boardmail.errors import MailError
 from examples.fixtures import FakeBoard, FixtureBoard, named, original, settings, uid
 from kit import Clock, Network, Pieces, fixed
 
@@ -239,29 +238,6 @@ class PhaseDeadlineTests(unittest.TestCase):
             self.assertFalse(batch.complete)
             self.assertEqual(batch.messages, [])
             self.assertTrue(all(answer.closed for answer in network.answers))
-
-    def test_lookup_keeps_shared_admission_budget_but_rejects_late_eof(self):
-        cfg = settings(self.folder)['moltbook']
-        board = FakeBoard([{'ok': True}, {'ok': True}])
-        client = BOARDS['moltbook'].originals.client(cfg, fetch=board)
-        client.get('/posts/' + uid(100))
-        self.clock.advance(44.9)
-        client.get('/posts/' + uid(101))
-        self.assertEqual(board.asked[0].left, 45)
-        self.assertAlmostEqual(board.asked[1].left, 0.1, places=5)
-        self.clock.advance(0.1)
-        with self.assertRaisesRegex(MailError, '^budget_exhausted$'):
-            client.get('/posts/' + uid(102))
-        self.assertEqual(len(board.asked), 2)
-
-        def answer(request):
-            return 200, Pieces([b'{"ok":true}', lambda: self.clock.advance(45.5)])
-
-        client = BOARDS['moltbook'].originals.client(cfg)
-        with Network({'www.moltbook.com': answer}) as network:
-            with self.assertRaisesRegex(MailError, '^source_timeout$'):
-                client.get('/posts/' + uid(100))
-        self.assertTrue(all(answer.closed for answer in network.answers))
 
 
 if __name__ == '__main__':

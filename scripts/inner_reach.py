@@ -88,9 +88,7 @@ worked out while the test runs, a name brought in by a star import, source
 handed to exec or eval without an import of its own, a test-side file that is
 run or loaded by its path. It misses a package container changed in place by
 a method call or through another name, as in providers.HOSTS.update(...) or
-hosts = providers.HOSTS; hosts["x"] = y. The files under
-tests/fixtures/inner_reach hold an example for each case of the rule and for
-some of these limits, and tests/test_inner_reach.py checks them.
+hosts = providers.HOSTS; hosts["x"] = y.
 """
 import argparse
 import ast

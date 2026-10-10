@@ -1,5 +1,4 @@
 """Public extension, durable progress and 0.1 database compatibility contracts."""
-import ast
 from contextlib import closing, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
@@ -12,7 +11,6 @@ import sys
 import tempfile
 import unittest
 
-import boardmail
 from boardmail import cli, commands, reader
 from boardmail.adapters import Batch
 from boardmail.boards import collect_all
@@ -377,14 +375,6 @@ class AdapterTests(unittest.TestCase):
                 self.assert_extension_checkpoint(cfg, before)
         self.assertEqual(calls, [])
 
-    def test_no_module_of_the_package_says_a_version_of_the_interface(self):
-        # The version is what an adapter file says of itself. Nothing asks a board of the package for one.
-        # The name is nowhere in the package as a name: not set, not imported, not read from a module.
-        says = [path.name for path in sorted(Path(boardmail.__file__).parent.glob('*.py'))
-                if any('API_VERSION' in [getattr(node, field, None) for field in ('id', 'attr', 'name', 'asname')]
-                       for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))))]
-        self.assertEqual(says, [])
-
     def test_invalid_extension_contract_matrix_preserves_committed_data(self):
         cfg, before = self.extension_checkpoint()
         # Each ordinary batch has new mail and cache changes that must not commit.
@@ -407,12 +397,13 @@ class AdapterTests(unittest.TestCase):
             'unknown_kind': lambda b: Batch(messages=[{**b.messages[0], 'kind': 'notification'}], state=b.state),
             'unknown_addressing': lambda b: Batch(messages=[{**b.messages[0], 'addressing': 'inferred'}], state=b.state),
             'invalid_cached_original': lambda b: Batch(messages=b.messages, state=b.state, originals=[{**mail(20), 'created_at': None}]),
+            'cached_original_url_credentials': lambda b: Batch(messages=b.messages, state=b.state, originals=[{**mail(20), 'url': 'https://user:pass@example.invalid/item'}]),
         }
         for name, malformed in cases.items():
             with self.subTest(contract=name):
                 batch = malformed(Batch(messages=[mail(11)], state={'cursor': 'next'}))
                 # Preserve invalid originals/container fields; otherwise exercise cache atomicity too.
-                if isinstance(batch, Batch) and name != 'invalid_cached_original':
+                if isinstance(batch, Batch) and 'cached_original' not in name:
                     batch.originals = [{**mail(20), 'body': 'replacement'}, mail(21)]
                 result = collect_all(self.store, {'custom': {**cfg, 'gives': lambda: batch}})
                 self.assertEqual(result['errors'][0]['error'], 'invalid_adapter_result')

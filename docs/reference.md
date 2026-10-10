@@ -298,7 +298,7 @@ An error is one JSON object: `event: "error"`, `error` with a fixed code, and `n
 | `give_ref_only_with_action_replied` | `invalid_mark` | Only the mark `replied` takes a `ref`. |
 | `supply_the_url_of_the_published_reply_as_ref` | `reply_ref_required` | `ref` is the `http` or `https` address of the reply, at most 1,024 characters. |
 
-The other codes have a hint of their own, such as `run_init` for `database_missing`. `tests/error_codes.txt` lists every code with its hint and its exit code.
+The other codes have a hint of their own, such as `run_init` for `database_missing`. `boardmail/errors.py` lists every code with its hint and its exit code.
 
 A request to a board that failed has one code, whichever of the five boards it was sent to:
 

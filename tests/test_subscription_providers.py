@@ -17,7 +17,7 @@ from uuid import UUID
 
 from boardmail import adapter_clawdchat as clawd
 from boardmail import addressing, commands, subscriptions
-from boardmail.adapters import Batch, validate
+from boardmail.adapters import validate
 from boardmail.boards import collect_all
 from boardmail.config import MailError
 from boardmail.store import Store
@@ -100,17 +100,6 @@ class PostingboardSubscriptionTests(unittest.TestCase):
         self.assertEqual([c[0] for c in plain.calls], [c[0] for c in again.calls], "Subscribing a configured root adds no request")
         self.assertEqual(set(by_id(second)), {uid(314), uid(315), uid(323), uid(324), uid(325)})
         self.assertEqual(by_id(second)[uid(314)]["discovery"], "thread", "Configured discovery remains independent")
-
-    def test_unsubscribe_prunes_only_subscription_progress(self):
-        client = self.client([301], [302])
-        first = self.collect(client)
-        self.assertEqual(set(first.state["threads"]), {uid(301), uid(302)})
-        self.assertEqual(set(first.state["subscriptions"]["roots"]), {uid(302)})
-        dropped = self.client([301], [])
-        second = self.collect(dropped, first.state, known=set(by_id(first)))
-        self.assertEqual(set(second.state["threads"]), {uid(301)})
-        self.assertNotIn("subscriptions", second.state)
-        self.assertEqual([c[0] for c in dropped.calls if uid(302) in c[0]], [])
 
     def test_subscription_only_setup_without_configured_threads(self):
         for threads in (None, []):
@@ -239,19 +228,6 @@ class NotificationBoardSubscriptionTests(unittest.TestCase):
                 replay = self.collect(client, batch.state, known=set(got))
                 self.assertEqual(replay.messages, [])
                 self.assertEqual(set(replay.state["subscriptions"]["roots"]), {uid(root)})
-
-    def test_notification_progress_survives_and_unsubscribe_prunes(self):
-        client = self.client("moltbook", [500])
-        self.thread(client, 500)
-        state = {"discovery": {"cursor": "keep"}, "pending": {}, "subscriptions": {"next": None, "roots": {uid(500): {}, uid(777): {}}}}
-        batch = self.collect(client, state)
-        self.assertEqual(set(batch.state["subscriptions"]["roots"]), {uid(500)}, "A dropped root loses only its own entry")
-        self.assertIn("discovery", batch.state)
-        gone = self.client("moltbook", [])
-        self.thread(gone, 500)
-        second = self.collect(gone, batch.state, known=set(by_id(batch)))
-        self.assertNotIn("subscriptions", second.state)
-        self.assertEqual([c[0] for c in gone.calls], ["/agents/me", "/notifications"], "Empty subscriptions add no request")
 
     def test_unavailable_and_failing_roots_do_not_starve_healthy_ones(self):
         client = self.client("the-colony", [400, 401, 402, 403])

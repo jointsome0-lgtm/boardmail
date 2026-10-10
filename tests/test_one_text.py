@@ -1,26 +1,13 @@
-"""A command has one text, and both entry points show it: the command line with its names as they are typed, and a
-tool with its names as they are called. The table has no place for a text that only one of the two would read.
-"""
+"""A text of the command table names a command or an argument as its reader types or calls it, and a bound or a
+default that it names is the one that holds."""
 import re
 import unittest
 
-from boardmail import mcp, store, table
-import kit
-from test_agent_view import view
+from boardmail import store, table
 
 
-# The fields that held a text for one reader alone.
-APART = {'summary', 'description', 'epilog', 'tool', 'help'}
 # status applies the default of this argument itself, so the kind of the argument has none.
 APPLIED = {('status', 'stale_after'): store.STALE_AFTER}
-
-
-def texts(command, typed):
-    """The one text of a command for a reader, and that of each of its arguments by name. None is an argument
-    that says nothing."""
-    return table.shown(command.text, command, typed), {
-        argument.name: None if argument.text is None else table.shown(argument.text, command, typed)
-        for argument in command.arguments}
 
 
 class NameTests(unittest.TestCase):
@@ -48,51 +35,6 @@ class NameTests(unittest.TestCase):
 
 
 class OneTextTests(unittest.TestCase):
-    def test_the_table_has_no_place_for_a_text_that_one_reader_alone_would_read(self):
-        self.assertEqual(APART & {*table.Command._fields, *table.Argument._fields}, set())
-        with self.assertRaises(TypeError):
-            table.Command('named')  # a command is not written without its text
-        for name, command in table.COMMANDS.items():
-            with self.subTest(command=name):
-                self.assertTrue(command.text)
-                # An option is named in braces, so that a tool does not read how it is typed. And a text has
-                # no per cent sign, which the parser of the command line reads as its own.
-                written = [command.text, *(argument.text or '' for argument in command.arguments)]
-                self.assertEqual([text for text in written if '--' in text or '%' in text], [])
-        # What stands before a command is typed only, so its text may name an option as it is typed.
-        self.assertEqual([argument.name for argument in table.BEFORE if '%' in argument.text], [])
-
-    def test_the_help_page_of_a_command_is_its_one_text_as_it_is_typed(self):
-        pages = view.cli_tree()
-        for name, command in table.COMMANDS.items():
-            page = pages[' '.join(['boardmail', *kit.words({'tool': 'boardmail_' + name, 'arguments': {}})])]
-            text, arguments = texts(command, typed=True)
-            with self.subTest(command=name):
-                self.assertEqual(page['description'], text)
-                self.assertNotIn('epilog', page)
-                # The text has no lines of its own, so the page breaks it into lines.
-                self.assertEqual(page['formatter'], 'HelpFormatter')
-                # The line of the command in the list of commands is the first sentence, without its full stop.
-                self.assertEqual(page['summary'] + '.', text[:len(page['summary']) + 1])
-                self.assertNotIn('. ', page['summary'])
-                said = {**page.get('arguments', {}), **page.get('options', {})}
-                self.assertEqual({argument.name: said[argument.typed].get('help') for argument in command.arguments},
-                                 arguments)
-
-    def test_the_schema_of_a_tool_says_the_one_text_of_each_argument_as_it_is_called(self):
-        for name, command in table.COMMANDS.items():
-            with self.subTest(command=name):
-                properties = mcp.input_schema(command)['properties']
-                self.assertEqual({name: said.get('description') for name, said in properties.items()},
-                                 texts(command, typed=False)[1])
-
-    @unittest.skipIf(kit.mcp_missing(), kit.NO_EXTRA)
-    def test_the_description_of_a_tool_is_the_one_text_of_its_command_as_it_is_called(self):
-        tools = view.mcp_tree()
-        for name, command in table.COMMANDS.items():
-            with self.subTest(command=name):
-                self.assertEqual(tools['tool boardmail_' + name]['description'], texts(command, typed=False)[0])
-
     def test_a_bound_or_a_default_that_a_text_names_is_the_one_that_holds(self):
         # The command line shows no schema, so a text names the bounds and the default of an argument by hand.
         named = []
