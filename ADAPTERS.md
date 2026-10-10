@@ -45,7 +45,7 @@ def collect(settings, state, known):
     return Batch(messages=[], state=state, complete=True)
 ```
 
-`API_VERSION` must be the integer `1`. A missing or unsupported version, including a boolean, produces `adapter_version_unsupported` before the core calls `collect`. A file that cannot be loaded produces `adapter_load_failed`: one that `adapter` names and that is not there, one that cannot be read, and one that raises or exits while it loads.
+`API_VERSION` must be the integer `1`. A missing or unsupported version, including a boolean, produces `adapter_version_unsupported` before the core calls `collect`. A file that cannot be loaded produces `adapter_load_failed`: one that `adapter` names and that is not there, one that cannot be read, and one that raises an error or exits while it loads.
 
 The function receives configuration, its last committed JSON state, and a read-only set of already stored message IDs for this source. It receives no database handle. Return a `Batch`:
 

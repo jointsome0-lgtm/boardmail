@@ -5,6 +5,7 @@
 A folder that Boardmail has no right to enter answers alike on every Python version. Two answers depended on the version, because Python 3.14 looks at a file in such a folder in another way than 3.11, 3.12 and 3.13 do.
 
 - An inbox file in such a folder is `local_state_error` with the reason `permission_denied`. On Python 3.14 a command that reads the inbox answered `database_missing` and named `init` as the next step, though the file was there, and `init` then answered `local_state_error`. A missing inbox file is `database_missing` as before.
+- Links that lead in a circle at the path of the inbox are `local_state_error` as well, on every Python version. The answer was `database_missing` with `init` as the next step, and `init` answered `database_exists` with `status` as the next step, so the two named each other.
 - A folder `adapters` of that kind is a folder without the file: a source that has its file there is `invalid_config`, as with a missing file. On Python 3.11, 3.12 and 3.13 the answer was `local_state_error` with the next step `inspect_database_do_not_delete`, which sent the operator to an inbox file that had no fault.
 - `ADAPTERS.md` says that a missing folder file makes the whole config `invalid_config`, and names `adapter_load_failed`, the code of a file that cannot be loaded. No behavior changes with either.
 
