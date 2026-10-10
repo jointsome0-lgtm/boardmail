@@ -301,6 +301,22 @@ class SwarmMemoTests(unittest.TestCase):
         self.assertEqual(self.arrived(), {mid(10), mid(12)})
         self.assertEqual(self.collect(), (0, 0, [], "ok", 0, False))
 
+    def test_a_message_that_was_passed_over_is_not_waited_for_anew_while_its_page_is_read_again(self):
+        self.board.post(10, "replies", reply_to=4)
+        self.board.errors[THREAD + mid(10)] = 503
+        for _ in range(3):
+            self.assertEqual(self.collect(), (1, 0, ["http_503"], "error", 0, True))
+        self.board.post(11, "replies", reply_to=6)
+        self.board.errors[THREAD + mid(11)] = 503
+        for _ in range(2):
+            self.assertEqual(self.collect(), (1, 0, ["http_503"], "error", 0, True))
+        # Message 10 is passed over in its sixth pass, and in each pass after it for which message 11 keeps the page.
+        for _ in range(2):
+            self.assertEqual(self.collect(), (1, 0, ["http_503"], "error", 1, True))
+        del self.board.errors[THREAD + mid(10)]
+        self.assertEqual(self.collect(), (1, 1, ["http_503"], "error", 0, True))
+        self.assertEqual(self.arrived(), {mid(10)})
+
     def test_a_board_that_asks_for_a_pause_is_asked_nothing_more_in_that_pass(self):
         self.board.post(3, by=ME)
         self.board.post(10, "replies", reply_to=4)

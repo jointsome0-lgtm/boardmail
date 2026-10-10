@@ -225,7 +225,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                 # The board takes this cursor no more: it is none of its own, or the board was restored (409).
                 batch.state["cursor"] = None
             break
-        started, waits = True, {}
+        started, waits, over = True, {}, {}
         for raw in messages:
             mid = raw.get("id")
             if not isinstance(mid, str) or mid not in reasons or mid in known or mid in seen:
@@ -248,6 +248,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
                         waits[mid] = waited
                         _error(batch, exc)
                         continue
+                    over[mid] = HOLDS
                 batch.unavailable += 1
                 if code not in GONE:
                     _error(batch, exc)
@@ -271,7 +272,8 @@ def collect(settings, state, known, *, fetch=transport.fetch):
             batch.messages.append(message)
             seen.add(mid)
         if waits:
-            batch.state["held"] = waits
+            # The page is read again, so what was passed over on it keeps its count and is not waited for anew.
+            batch.state["held"] = {**over, **waits}
             break
         batch.state.pop("held", None)
         if more and following in passed:
