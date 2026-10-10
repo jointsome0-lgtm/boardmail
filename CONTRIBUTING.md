@@ -10,45 +10,74 @@ Personal forks and modifications are welcome under the [MIT License](LICENSE).
 
 An issue can contain untrusted text, code or commands. Accepting issues instead of pull requests does not make submitted material safe to execute; maintainers still inspect and validate it.
 
-## Tests that reach inside the package
+## What this file holds
 
-`python scripts/inner_reach.py` prints, for each test file, how many tests patch a name inside the package or call a Store write path. The rule is written at the top of that script. `tests/inner_reach.txt` stores the counted tests by name and their number, and the test suite fails when the tests that reach inside are not exactly the stored ones. A new test never reaches inside. After tests move out, run `python scripts/inner_reach.py --update` and review the difference; `--list` shows why each test is counted. When a counted test is renamed or moved, edit its stored line by hand.
+The rules that no single file of the repository can state. What a module, a test file or a script does stands at its own top, and this file names the place instead of saying it again.
+
+## Tests
 
 A test holds what a command, a pass over a board or an adapter file gives. It does not read the source of the package for where a statement, an import or a name stands, repeat a table of the package line by line, compare a value with what the same code makes of it, or test a helper of the tests.
 
-## Mail in the inbox of a test
+A new test never reaches inside the package: it replaces no name of the package and uses no write path of the Store. `python scripts/inner_reach.py` counts the tests that do, and the top of the script has the rule. After tests move out, run `python scripts/inner_reach.py --update` and review the difference. When a counted test is renamed or moved, edit its line in `tests/inner_reach.txt` by hand.
 
-A test puts mail into an inbox the way an operator does, through `collect`. `arrive(store, source, account, messages)` in `tests/kit.py` is one pass of that command over a source whose adapter file is `tests/described.py`. The file gives what the test describes, as the fields of a `Batch`, so the mail of a test passes every check that collection applies. A message is described as an adapter gives it, for example by `mail()` of `tests/test_mail.py`. The same call describes cached originals, progress, a pass that fails, and with `meanwhile` what happens while the pass is under way.
+A test changes an inbox the way an operator does:
 
-A source that is filled this way has that file as its adapter. Some commands ask which board a source is: a subscription, a link to an earlier answer, a lookup on the board. A test of those collects from the invented board instead, with `commands.execute(store, 'collect', sources=..., fetch=board)`, and `notify()` of `tests/kit.py` puts a comment and the notification of it on an invented Colony or Moltbook. Every other change of an inbox is the command for it: `init`, `mark`, `subscribe`, `pause`, `settings`. `new_inbox(path, sources)` is `init` and gives the `Store` of the new file. A row that only an older release wrote comes from `tests/fixtures/v1.sql`, or the test writes it as that release did and says so.
+- Mail comes in through `collect`. `arrive()` of `tests/kit.py` is one pass over a source whose adapter file gives what the test describes. A test of a command that asks which board a source is collects from an invented board instead: a subscription, a link to an earlier answer, a lookup on the board.
+- Every other change is the command for it: `init`, `mark`, `subscribe`, `pause`, `settings`. Progress that a test needs before it starts comes from passes too. A collector that is tried without an inbox file gets its state from the test.
+- A row that only an older release wrote comes from `tests/fixtures/v1.sql`, or the test writes it as that release did and says so.
+- A failure of the inbox file is made where SQLite is: `patch('sqlite3.connect', ...)`, a trigger that the test adds through its own connection, or `on_statement()` of `tests/kit.py`. Time is `fixed(Clock(...))` of the same file. No test patches a name inside the package to get either.
 
-A test of one board runs the pass itself: `one_pass(store, source, settings, board)` is the command `collect` over that source and gives what the pass left, in the words of a `Batch`. Progress that a test needs before it starts comes from passes too. A collector that is tried without an inbox file gets its state from the test, as `collect(settings, state, known)` takes it.
+A board is invented and never asked. A test hands a `FakeBoard` or a `FixtureBoard` of `examples/fixtures.py` in as `fetch`: to the collector of a board, or to `commands.execute` for a command that can ask a board. That is the one way to a board, as the top of `boardmail/transport.py` says, so no request leaves the process. The command line hands no board in, so a test of it puts the same board where a request leaves the process, with `Network` and `edge` of `tests/kit.py`. A limit of a board is reached with that much invented data, not by lowering the limit. A time limit is reached with the clock of `tests/kit.py`, which the test moves, and a client that waits between two requests is tested inside `fixed()`, where a wait only moves that clock.
 
-A failure of the inbox file is made where SQLite is: `patch('sqlite3.connect', ...)`, a trigger that the test adds through its own connection, or `on_statement(act)` of `tests/kit.py`, which calls `act` before each statement that the package runs. Time is `fixed(Clock(...))`. No test patches a name inside the package to get either.
+`python scripts/line_coverage.py FILE ...` runs the suite and prints which lines of each named file ran. The top of the script says what counts as a line.
 
-## What an agent reads before its first call
+## Stored results
 
-`python scripts/agent_view.py` prints how much text an agent reads before its first call: the command tree with its help strings, and the MCP server instructions and tool catalog. It also prints how much text the results are that the two stories store. A pull request that changes the shape of a result gives those numbers before and after. `python scripts/agent_view.py --view` prints the text itself, which needs the optional extra for the MCP part. Nothing stores it: to see what a change does to what an agent reads, print it before and after and compare. The top of the script says what the view holds and what it leaves out.
+Some tests compare what the package gives with a stored file. After a change that is meant, run the test with `UPDATE_STORIES=1` and review the difference, as in `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_story*.py'`. A changed line is a change that an agent or a board sees.
 
-`AGENT_GUIDE.md` is an introduction that is written by hand and, under a line that says so, one line for each command: the first sentence of its text in the command table. `python scripts/agent_guide.py --update` makes those lines again, and the test suite fails when the stored guide has others. The introduction holds what no single command says: the order of a session, how to read a result, and what to do on an error. What one command does belongs in the text of that command, where its help page and its tool show it.
+| Stored | What it holds | Its test |
+| --- | --- | --- |
+| `tests/story_inbox.txt`, `tests/story_reply.txt`, `tests/story_older.txt` | Every result of three offline sessions, with its exit code. | `test_story*.py` |
+| `tests/board_requests.txt` | Every request of each board as it left the process, and what `collect` gave. | `test_board_requests.py` |
+| `tests/argument_errors_cli.txt`, `tests/argument_errors_mcp.txt` | What each command answers to an argument that it must not get. The update needs the optional extra. | `test_argument_errors.py` |
+| `tests/file_shape.txt` | What an inbox file has, and what a file of an older release gets. | `test_file_shape.py` |
+
+The top of each test says what its cases are. A story patches no name inside the package and calls no Store method. Two things are added by hand:
+
+- A new command needs a row in `tests/test_file_shape.py`.
+- A code that gets a call in `boardmail/errors.py` needs a step in `tests/test_routes.py`.
+
+`tests/fixtures` has the files of older releases as SQL, and the top of each says how it came about.
+
+## What an agent reads
+
+`python scripts/agent_view.py` prints how much text an agent reads before its first call, and how much the results are that the inbox story and the reply story store. The top of the script says what the view holds and what is counted. A pull request that changes the shape of a result gives those numbers before and after.
+
+`AGENT_GUIDE.md` is an introduction that is written by hand and, under a line that says so, one line for each command, which `python scripts/agent_guide.py --update` makes from the command table. The introduction holds what no single command says: the order of a session, how to read a result, and what to do on an error. What one command does belongs in the text of that command, where its help page and its tool show it.
 
 ## The command table
 
-`boardmail/table.py` declares each command once: its name, its arguments with their types, bounds and defaults, what is checked about them, what its help page and its MCP tool say, and its tool hints. `boardmail/cli.py` builds the parser from that table and `boardmail/mcp.py` builds the tool catalog from it. The table also checks the arguments of each call, the same for both entry points, and the call then goes to the one function that `boardmail/commands.py` marks for the command with `@handles`. So a new command is one entry in the table and one function there, and a new argument is an entry and a parameter of that function. Where the two entry points differ in more than a text, the entry says so, and the top of the module names the fields that do.
+`boardmail/table.py` declares each command once, and its top says how both entry points follow it. A new command is one entry there and the function that `boardmail/commands.py` marks for it with `@handles`, and a new argument is an entry and a parameter of that function.
 
-A command has one text, and an argument has one or none. Both entry points show it: the command line as the help page of the command, where its first sentence is also the line of the command in the list of commands, and the MCP server as the description of the tool and in its schema. So a text says nothing that holds for one entry point only. It names a command or an argument in braces, by the name that the table has for it: `{reply_show}` is a command, `{.key}` is an argument of the command that the text belongs to, and `{list.unread}` is an argument of another command. `table.shown()` writes such a name as it is typed for the command line, `reply show` and `--key`, and as it is called for the tool, `reply_show` and `key`. An argument has a text where the text says more than its name, its schema and the text of its command do. The command line shows no schema, so the text of an argument names its bounds and its default by hand, and `tests/test_one_text.py` compares those numbers with the schema.
-
-`tests/argument_errors_cli.txt` and `tests/argument_errors_mcp.txt` store what each command answers to an argument that it must not get: the error code, on an inbox with mail and where no inbox file is. `tests/test_argument_errors.py` makes the cases from the table, so a new argument or command adds lines there. After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_argument_errors.py'` with the optional extra installed and review the difference. A changed line is a change an agent sees.
+A command has one text, and an argument has one or none. Both entry points show it, so a text says nothing that holds for one entry point only. It names a command or an argument in braces, as the comment at `NAMED` in the table module shows. An argument has a text where the text says more than its name, its schema and the text of its command do. The command line shows no schema, so the text of an argument names its bounds and its default by hand.
 
 ## Error codes
 
-An error code is a plain string where it is raised. `boardmail/errors.py` has one entry for each code: its next-step hint and its exit code. A new code needs an entry. A changed hint or exit code of an existing code is a change an agent sees.
+An error code is a plain string where it is raised. `boardmail/errors.py` has one entry for each code. A new code needs an entry. A changed hint or exit code of an existing code is a change an agent sees.
 
 ## Boards
 
-A board that ships with the package says in its own module what the core needs to know of it. That is a `Board` of `boardmail/adapters.py`: its collector, the settings that a config may give it, whether it has subscriptions, how its originals are read, how a published reply is verified, the reference under which an answer to a message is kept, and how its threads are read. The module also enters the board into the table of the transport. `boardmail/boards.py` lists the declarations, and every other module asks that list instead of comparing names. So a new board is its module `boardmail/adapter_NAME.py`, its line in `boardmail/boards.py`, its docs and its tests, and a board that is gone is those removed. All five boards are built this way, and no module but `boardmail/boards.py` imports the module of a board. `boardmail/adapter_common.py` holds what the boards with an API key and a UUID for an account share: their client, the check of the account and how a failure is called. `boardmail/adapter_notifications.py` holds the collection that boards share whose mail is notifications confirmed against public originals; what differs from one such board to the next is on the client of the board: its field names, its paging, how an original is reached. Neither names a board.
+A board that ships with the package says in its own module what the core needs to know of it: a `Board` of `boardmail/adapters.py`, whose fields and docstring say what a board declares, and its row in `BOARDS` of `boardmail/transport.py`. `boardmail/boards.py` lists the boards, and every other module asks that list instead of comparing names. So a new board is its module `boardmail/adapter_NAME.py`, its line in `boardmail/boards.py`, its docs and its tests, and a board that is gone is those removed.
 
-No module outside the board modules holds the name of a board as a constant. A text for people or agents may still name a board.
+No module but `boardmail/boards.py` imports the module of a board. What boards share is in `boardmail/adapter_common.py` and `boardmail/adapter_notifications.py`, and neither names a board. No module outside the board modules holds the name of a board as a constant. A text for people or agents may still name a board.
+
+## Board requests
+
+`boardmail/transport.py` is the one HTTP path of the board clients. Its top says what is the same on every board, what the row of a board decides, and what stays with the client of a board. No other module imports what sends a request.
+
+## The inbox file
+
+`boardmail/schema.py` holds every statement that gives the file a table, a column or an index, and every question about what the file has. A new table or column goes there for both kinds of file: a new inbox, and a file that does not have it yet. The step that gives an older file its parts runs when a command opens the file, and `Store.connect` of `boardmail/store.py` says in which transaction. So a command finds every part there, and no code outside that step asks whether a part is there or has a branch for a version-1 file. A part that an older release could not read or write around needs a new version number, and that is a decision for an issue.
 
 ## Imports between modules
 
@@ -59,35 +88,3 @@ A module of the package imports another at the top of the file and never inside 
 A comment or a docstring says what the code cannot show: a reason, a rule that other code relies on, a quirk of a board, what an older release left behind, or what an interface asks of the modules that fill it in. It does not repeat a name, a signature or the lines below it. A sentence that holds for several modules stands in one of them, not in each.
 
 `python scripts/comment_share.py` prints how much of the package is comments and docstrings, counted in characters, and fails above the limit that the script names. The tests workflow runs it. The limit is no goal: it is the share that the package had when its comments were last read through, rounded up, so that the share does not grow unnoticed. A change that needs more raises the limit in the same change. The top of the script says what is counted.
-
-## Board requests
-
-`boardmail/transport.py` does the HTTP work of every board client: it sends the request, follows no redirect, stops at the size cap and when the time is over, reads the answer, says what a failed request is called, and reads the key of an account from its file. Its table `BOARDS` has one entry for each of the five boards, which the module of the board enters when it loads, with what differs from one board to the next: what the board is asked for, the size cap of its answer and how long its socket may stay silent. Nothing in it is unified, and nothing outside that entry decides one of these. Four things are the same on every board and so not in it: the user agent, which is `boardmail/` and the version of the package, what the key of an account is, the moment from which an answer is late, and what a failed request is called, for which `transport.failure` has one code for each failure. What a client does around a request stays in the module of its board: its sign-in, its pauses, its retries, the time that it gives a pass, and what it keeps of an answer. No other module imports what sends a request.
-
-`tests/board_requests.txt` stores, for each of the five boards, every request as it left the process and what `collect` gave: on a healthy board, and when an answer is a redirect, another status that is no success, late, too large, or not what it must be. `tests/test_board_requests.py` makes the cases with an invented board at the network edge, so the stored file stays as it is when HTTP work moves into the transport module. It also fails when a client leaves an answer open, when a failure has another code on one board than on the others, when a request has another user agent, and when a board takes a key or an answer that another does not. The stored file writes VERSION for the version in the user agent, so a release does not change it. After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_board_requests.py'` and review the difference. A changed line is a change that a board or an agent sees.
-
-`transport.fetch` is also where a test stands in for a board. The module of a board takes it as an argument, `collect(settings, state, known, *, fetch=transport.fetch)`, and a test hands in a `FakeBoard` from `examples/fixtures.py` instead. That one sends nothing: it gives the invented answers of the test and keeps each request, so the test says what `collect` gave and what the board was asked, and patches nothing. A limit of a board is reached with that much invented data, not by lowering the limit, and a time limit with the clock of `tests/kit.py`, which the test moves. A command that can ask a board takes the same argument, as in `commands.execute(store, 'context', ..., fetch=board)`, so `collect`, `context`, `expand` and `reply_verify` are tested the same way. All five boards are tested this way. For Postingboard, Colony and Moltbook a test hands in a `FixtureBoard` from the same file: a `FakeBoard` that holds invented posts and answers as the board does, at the address of the board and for the key in the file that `settings(folder)` writes. The client of Postingboard waits between two requests, so its tests fix the clock with `kit.fixed`, and the wait only moves it. The command line hands no board in, so a test of it puts the same board where a request leaves the process, with `kit.Network` and `kit.edge`.
-
-`python scripts/line_coverage.py boardmail/adapter_botnet.py boardmail/adapter_colony.py` runs the test suite and prints, for each named file, how many of its lines ran and which did not. It needs the standard library alone. The top of the script says what counts as a line.
-
-## Stories
-
-A story is one offline session, told command by command in the order an agent would use. `tests/test_story_inbox.py` tells the inbox story: it creates an inbox, collects from an invented Moltbook and from the example custom adapter, and runs every reading command. `tests/test_story_reply.py` tells the reply story: three answers, one confirmed by readback, one interrupted after it was sent and later verified on the board, one recorded after the fact. `tests/test_story_older.py` tells the story of a file that an older release left: the bundled version-1 file is read while it and its folder are read-only, then written to without collecting, then collected for the first time. `tests/story_inbox.txt`, `tests/story_reply.txt` and `tests/story_older.txt` store each result, whole, with its exit code. The test suite fails when a result through the CLI differs from the stored one, and when an MCP tool call gives something other than the CLI gave. The differences between the two that are meant are named in the story file.
-
-`tests/test_routes.py` reads the stored stories for every call that a result names, a route, and holds that each is a tool and its arguments, as both entry points take them. It also tells one session in which each error that names a call as its next step is made, through the CLI and through MCP, and makes that call as the error wrote it. A code that gets a call in `boardmail/errors.py` needs a step there.
-
-`tests/kit.py` holds what a story stands on: invented board answers at the standard-library network edge, a fixed clock and fixed keys, both entry points, and a look at each connection to the inbox file. A story patches no name inside the package and calls no Store method.
-
-After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_story*.py'` and review the difference. A changed result is a change an agent sees.
-
-## The inbox file
-
-`tests/file_shape.txt` says what an inbox file has: its version number, tables, columns and indexes. `init` creates a new inbox with every part, and no command adds a part or takes one away. A file that an older release left is short of some, and the first command that opens it gives it those. `tests/fixtures` has four such files as SQL, and the top of each says how it came about. `tests/file_shape.txt` says what each of them gets.
-
-`tests/test_file_shape.py` runs each command once on a fresh copy of a new inbox and of each older file. The test suite fails when a file then has another shape than a new inbox, when a command that only reads changes a byte of a file that has every part, and when a command has no row. For an older file it also fails when `status` takes a row away or changes one, and when another command leaves other rows than it leaves where `status` opened the file first. A new command needs a row there.
-
-After a change that is meant, run `UPDATE_STORIES=1 python -m unittest discover -s tests -p 'test_file_shape.py'` and review the difference.
-
-`boardmail/schema.py` holds every statement that gives the file a table, a column or an index, and every question about what the file has: its version number, which tables it has, which columns a table has. Only the store calls it: where it opens a file, and where `init` creates one.
-
-A new table or column goes into the schema module for both kinds of file: a new inbox, and a file that does not have it yet. The step that gives an older file its parts runs when a command opens the file: in the transaction of a command that writes, and in a transaction of its own before a command that only reads. So a command finds every part there, and no code outside that step asks whether a part is there or has a branch for a version-1 file. A part that an older release could not read or write around needs a new version number, and that is a decision for an issue.
