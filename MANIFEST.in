@@ -3,6 +3,7 @@ include ADAPTERS.md
 include scripts/check_sdist.py
 include scripts/agent_guide.py
 include scripts/agent_view.py
+include scripts/comment_share.py
 include scripts/inner_reach.py
 include scripts/line_coverage.py
 recursive-include docs *.md

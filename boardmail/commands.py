@@ -9,15 +9,12 @@ from .config import MailError
 from .errors import exit_code, following, next_action
 
 LOCAL_FAILURES = (OSError, ValueError, sqlite3.Error, KeyError, TypeError, OverflowError)
-# The function that runs each command of the command table.
 HANDLERS = {}
 # What the reference of a board is given that it cannot make a reference from.
 NO_REFERENCE = object()
 
 
 def error_result(error, argument=None, call=None):
-    """The result of an error. argument is the argument whose value was refused, where the error has one. call
-    is what the command that failed was given: where the next step is a call, the result names it as next."""
     step = following(error, call or {})
     result = {"event": "error", "error": error, **({} if argument is None else {"argument": argument}),
               "next_action": next_action(error), **({} if step is None else {"next": step}),
@@ -63,9 +60,6 @@ def outcome(operation):
 
 
 def execute(store, name, /, *, sources=None, cancelled=None, fetch=transport.fetch, **given):
-    """Run a command of the command table with what an entry point was given for its arguments.
-
-    fetch asks a board for a command that can ask one: the transport, or an invented board in its place."""
     command = table.COMMANDS.get(name)
     if command is None:
         raise MailError("invalid_arguments")
@@ -184,7 +178,6 @@ def run_status(store, *, require_fresh, stale_after):
 
 
 def reading(store, scope, context):
-    """How check, list and wait show a page: as the inbox has saved it, unless the call says otherwise."""
     settings = store.settings()
     return {"scope": scope or settings["scope"], "context": context or settings["context"]}
 
@@ -251,8 +244,6 @@ def run_reply_list(store, *, after, limit):
 
 
 def journal(function):
-    """A reply command. Its result has a field only where the field holds something. Where the inbox file fails
-    it, the result names the read that recovers the attempt."""
     @wraps(function)
     def run(store, *, source, id, **more):
         try:
@@ -294,7 +285,6 @@ def run_reply_verify(store, *, sources, fetch, source, id, key, ref):
 
 
 def remote_settings(store, source, sources, local):
-    """Settings enabling a remote lookup, or None for a local read."""
     settings = None if local or not sources or store.is_paused(source) else sources.get(source)
     return settings if settings and boards.declared(boards.owner(source, settings)).originals else None
 
@@ -336,10 +326,7 @@ class CachedClient:
 
 
 class Lookup:
-    """Original lookups for one command through a single client and budget.
-
-    about is what the board declares of its originals. fetch asks the board: the transport, or an invented
-    board in its place. The client of the board is handed it."""
+    """Original lookups for one command through a single client and budget."""
 
     def __init__(self, about, settings, fetch=transport.fetch):
         self.about = about
@@ -347,7 +334,6 @@ class Lookup:
         self.kept = {"originals": {}} if about.keeps else {}
 
     def __call__(self, mid, root=None, stored=None):
-        """The original of a message. stored is the row that the inbox holds for it, if it holds one."""
         # Where a board exposes comments through their thread, the inbox knows it. Known roots need no comment probe.
         if root is None and stored and (self.about.root_as_thread if stored["thread_id"] == mid
                                         else self.about.comment_by_thread):
@@ -390,8 +376,7 @@ def resolve(store, source, lookup, mid, root=None):
 
 
 def parent_of(resolver, board, relations, root, authoritative):
-    """The immediate parent element implied by trusted relationships; the root itself when a reply names none.
-    board is what the board of the source declares."""
+    """The immediate parent element implied by trusted relationships; the root itself when a reply names none."""
     root_id = relations["thread_id"]
     parent_id = relations["parent_id"]
     if parent_id is None and not board.rooted:

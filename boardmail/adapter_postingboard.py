@@ -349,18 +349,15 @@ def postingboard_lookup(client, mid, root=None):
 
 
 def reference(thread, parent):
-    """Canonical identity for a local join, never a URL to fetch."""
     return HOST + "/v1/posts/" + uuid(parent)
 
 
 def collect(settings, state, known, *, fetch=transport.fetch):
-    """One pass over Postingboard. fetch asks the board: the transport, or an invented board in its place."""
     return adapter_common.collect(partial(Client, NAME, settings, fetch=fetch), settings, state, known, "/v1/me",
                                   postingboard_mail)
 
 
 def postingboard_settings(settings):
-    """Postingboard's own rules for the settings of a source, which a config is held to in place."""
     settings.setdefault("mention_aliases", [])
     inbox = settings.get("inbox", False)
     if type(inbox) is not bool:
@@ -379,7 +376,6 @@ def postingboard_settings(settings):
 
 
 def postingboard_reply(client, mid, thread, check):
-    """Replies.read of Postingboard: the post of the account itself, read with its key."""
     original = client.get("/v1/posts/" + mid, authenticated=True)["post"]
     root = uuid(original["root_id"])
     if original.get("thread_id") is not None and uuid(original["thread_id"]) != root:

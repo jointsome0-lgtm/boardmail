@@ -164,13 +164,8 @@ def notification_mail(client, known, batch, mention=None):
 
 
 def subscription_mail(client, known, batch, mention):
-    """Other-author activity in subscribed threads, after notification work.
-
-    One extra source budget covers the subscribed roots in rotation. A root cut
-    short keeps its own page position; the next pass starts at the following root
-    when it had already read something this pass, so one slow thread waits a turn
-    instead of starving the rest. An unavailable root is skipped, never blocking.
-    """
+    """Other-author activity in subscribed threads, after notification work, within one extra source budget.
+    An unavailable root is skipped, never blocking."""
     roots = subscriptions.selected(client.settings)
     entry = subscriptions.progress(batch.state, roots)
     if not roots: return
@@ -323,7 +318,6 @@ def resolve_original(client, entry, known, batch, mention=None):
 
 
 def retain_original(client, batch, original, mid, post_id, title):
-    """Keep a fully fetched public root, parent or own message for the local cache."""
     if original.get("is_deleted") or original.get("is_spam"): return
     try:
         addressing.cache_original(batch, notification_message(client, original, mid, post_id, title))
@@ -403,7 +397,6 @@ def notification_message(client, original, mid, post_id, title):
 
 
 def reference(host, pages, thread, parent):
-    """Canonical identity for a local join, never a URL to fetch."""
     url = host + pages + uuid(thread)
     return url if parent == thread else url + "#comment-" + uuid(parent)
 
@@ -415,6 +408,5 @@ def mail(client, known, batch, mention):
 
 
 def collect(client, source, settings, state, known, fetch):
-    """One pass over such a board, whose client is of the class client."""
     return adapter_common.collect(lambda: client(source, settings, fetch=fetch), settings, state, known, client.profile,
                                   mail, client.account)

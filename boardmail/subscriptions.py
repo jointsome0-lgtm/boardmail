@@ -14,7 +14,6 @@ MAX_OWNERS = 400  # Retained ownership of fetched comments per root, oldest drop
 
 
 def selected(settings):
-    """Sorted, deduplicated root UUIDs; an empty list keeps every current request."""
     roots = settings.get(STATE_KEY) or []
     try:
         if not isinstance(roots, list): raise ValueError("Invalid subscriptions")
@@ -24,7 +23,6 @@ def selected(settings):
 
 
 def progress(state, roots):
-    """Per-root progress pruned to current subscriptions, stored only when any exist."""
     entry = state.get(STATE_KEY)
     if not isinstance(entry, dict) or not isinstance(entry.get("roots"), dict):
         entry = {"next": None, "roots": {}}
@@ -48,7 +46,6 @@ def rotation(entry, roots):
 
 
 def following(roots, root):
-    """The root after ``root`` in sorted order, wrapping; the first when it is unknown."""
     ordered = sorted(roots)
     if not ordered:
         return None
@@ -58,7 +55,6 @@ def following(roots, root):
 
 
 def advance(entry, roots, resume):
-    """Remember where the next pass starts: the given root, or the first after a full pass."""
     ordered = sorted(roots)
     if not ordered:
         entry["next"] = None
@@ -75,7 +71,6 @@ def restart(roots, root, consumed):
 
 
 def owners(progress):
-    """The saved ownership map of a root, verified as ``id -> True/False/None``."""
     saved = progress.get("owners")
     if not isinstance(saved, dict):
         return {}
@@ -90,7 +85,6 @@ def owners(progress):
 
 
 def remember(owned, key, value):
-    """Record fetched ownership; the oldest entry leaves when the map is full."""
     if key in owned:
         del owned[key]
     owned[key] = value

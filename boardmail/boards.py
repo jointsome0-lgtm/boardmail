@@ -25,7 +25,6 @@ def owner(source, settings):
 
 
 def declared(adapter):
-    """What the board of this name declares, and FILE for any other adapter."""
     return BOARDS.get(adapter, FILE)
 
 
@@ -42,10 +41,6 @@ def from_file(path):
 
 
 def collect_all(store, sources, *, fetch=transport.fetch):
-    """One pass over every source that is not paused.
-
-    fetch asks a board: the transport, or an invented board in its place. Every board of the package is handed
-    it. An adapter file of an operator gets the three arguments of the interface."""
     added, errors = 0, []
     for source, settings in sources.items():
         if store.is_paused(source):
@@ -58,7 +53,6 @@ def collect_all(store, sources, *, fetch=transport.fetch):
                 # Runtime selections are independent of the MCP operator's fixed config.
                 # A pass keeps its snapshot; unsubscribe does not cancel in-flight work.
                 settings = {**settings, "subscriptions": [item["thread"] for item in store.subscriptions(source)]}
-            # A board of the package and a trusted configured file run the same way from here.
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 collect = partial(board.collect, fetch=fetch) if board else from_file(adapter)
                 try:

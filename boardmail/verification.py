@@ -9,8 +9,7 @@ from .config import MailError, uuid
 
 
 def candidate(about, ref, thread):
-    """Parse an allowlisted identity. Never send a caller URL to the HTTP client. about is what the board
-    declares of its replies."""
+    """Parse an allowlisted identity. Never send a caller URL to the HTTP client."""
     try:
         replies.reference(ref)
         url = urlsplit(ref)
@@ -47,10 +46,7 @@ def available(original, about):
 
 
 def read(about, settings, mid, thread, fetch=transport.fetch):
-    """Return the original and its observed status using fixed provider endpoints.
-
-    fetch asks the board: the transport, or an invented board in its place. The client of the board is handed
-    it. about is what the board declares of its replies, and its read is what knows the endpoints."""
+    """Return the original and its observed status using fixed provider endpoints."""
     client = about.client(settings, fetch=fetch)
     original, root, author, parent, body, basis = about.read(client, mid, thread, partial(available, about=about))
     if uuid(original['id']) != mid:

@@ -54,6 +54,12 @@ No module outside the board modules holds the name of a board as a constant. A t
 
 A module of the package imports another at the top of the file and never inside a function. It uses no name of another module that starts with an underscore. The imports form no cycle: `boardmail/errors.py` imports nothing of the package, and nothing imports `boardmail/cli.py` or `boardmail/mcp.py` but what starts the command line. When two modules need each other, the shared part moves to the one that is lower.
 
+## Comments and docstrings
+
+A comment or a docstring says what the code cannot show: a reason, a rule that other code relies on, a quirk of a board, what an older release left behind, or what an interface asks of the modules that fill it in. It does not repeat a name, a signature or the lines below it. A sentence that holds for several modules stands in one of them, not in each.
+
+`python scripts/comment_share.py` prints how much of the package is comments and docstrings, counted in characters, and fails above the limit that the script names. The tests workflow runs it. The limit is no goal: it is the share that the package had when its comments were last read through, rounded up, so that the share does not grow unnoticed. A change that needs more raises the limit in the same change. The top of the script says what is counted.
+
 ## Board requests
 
 `boardmail/transport.py` does the HTTP work of every board client: it sends the request, follows no redirect, stops at the size cap and when the time is over, reads the answer, says what a failed request is called, and reads the key of an account from its file. Its table `BOARDS` has one entry for each of the five boards, which the module of the board enters when it loads, with what differs from one board to the next: what the board is asked for, the size cap of its answer and how long its socket may stay silent. Nothing in it is unified, and nothing outside that entry decides one of these. Four things are the same on every board and so not in it: the user agent, which is `boardmail/` and the version of the package, what the key of an account is, the moment from which an answer is late, and what a failed request is called, for which `transport.failure` has one code for each failure. What a client does around a request stays in the module of its board: its sign-in, its pauses, its retries, the time that it gives a pass, and what it keeps of an answer. No other module imports what sends a request.

@@ -13,7 +13,6 @@ from .store import Store
 
 # The order in which a tool's schema writes what it says about an argument.
 WORDS = ('type', 'enum', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern', 'default', 'description')
-# What a rule of the command table is in a tool's schema.
 RULES = {
     table.ONE_OF: lambda first, second: {'oneOf': [{'required': [first]}, {'required': [second]}]},
     table.NEEDS: lambda first, second: {'dependentRequired': {first: [second]}},
@@ -22,7 +21,6 @@ RULES = {
 
 
 def input_schema(command):
-    """What the tool of a command takes, from its entry in the command table."""
     arguments = {argument.name: argument for argument in command.arguments}
     properties = {}
     for name in (*command.tool_first, *(name for name in arguments if name not in command.tool_first)):
@@ -38,7 +36,6 @@ def input_schema(command):
 
 
 def passed(command, arguments):
-    """What a command is given for the arguments that its tool was called with."""
     # An argument that is left out gets the default of the command table, which is the one of the command line.
     # Where a tool has a default of its own, the tool passes it.
     own = {argument.name: argument.tool_kind['default'] for argument in command.arguments
@@ -47,10 +44,8 @@ def passed(command, arguments):
 
 
 def refused(command, schema, arguments, fits):
-    """The argument that a call of a tool is refused for: the first in the order of the command table that is
-    required and left out, or whose value its own part of the schema does not take. None where the call has a
-    name that is no argument of the command, or breaks only a rule between two. fits says whether a value is
-    what a schema takes."""
+    """The argument that a call of a tool is refused for. None where the call has a name that is no argument of the
+    command, or breaks only a rule between two. fits says whether a value is what a schema takes."""
     properties = schema['properties']
     if not arguments.keys() <= properties.keys():
         return None
@@ -62,8 +57,6 @@ def refused(command, schema, arguments, fits):
 
 
 def create_server(store, sources=None, *, fetch=transport.fetch):
-    """The server of one inbox. fetch asks a board for a tool that can ask one: the transport, or an invented
-    board in its place."""
     import anyio
     from jsonschema import Draft202012Validator
     from mcp.server.lowlevel import Server

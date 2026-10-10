@@ -1,19 +1,14 @@
 """The one HTTP path of the board clients.
 
-A board client asks for a URL in the name of its board. fetch() sends the request, follows no redirect, stops at
-the size cap and when the time is over, and reads the answer as JSON. It gives each address of the
-host ATTEMPT seconds to take the connection. Four things are the same on every board: the user agent that a
-board is told, AGENT; the moment from which an answer is late; what a request that failed is called, which
-failure() says; and what the key of an account is, which key() reads from its file. BOARDS holds what differs
-between the boards: what a board is asked for, and how large and how slow its answer may be. The module of a
-board enters the row of its board when it loads. None of those differences is unified here, and none is decided
-outside that row.
+What is the same on every board is here: the user agent, the moment from which an answer is late, what a request
+that failed is called, and what the key of an account is. What differs between the boards is the row of a board
+in BOARDS. None of those differences is unified here, and none is decided outside that row. What a client does
+around a request stays with its board: its sign-in, its pauses, its retries, the time that it gives a pass, what
+it keeps of an answer, and what it expects an answer to hold.
 
-What a client does around a request stays with its board: its sign-in, its pauses, its retries, the time that
-it gives a pass, what it keeps of an answer, and what it expects an answer to hold.
-
-fetch() is also where a test stands in for a board. A board module that takes it as an argument is handed
-FakeBoard of examples/fixtures.py instead, which answers with invented data and sends nothing.
+fetch() is also where a test stands in for a board. Whatever takes fetch as an argument hands it on to the client
+of a board, and a test gives FakeBoard of examples/fixtures.py for it, which answers with invented data and sends
+nothing.
 """
 from http.client import HTTPException, HTTPSConnection
 import json
@@ -30,13 +25,12 @@ from .errors import MailError
 
 class Board(NamedTuple):
     """What a request to one board carries and what its answer may take."""
-    accept: str             # the Accept header
+    accept: str
     protocol: str | None    # the X-Agent-Protocol header. None: the board gets none.
     cap: int                # the most bytes of an answer that are read. One more is too large.
     silence: float          # the seconds that the socket may stay silent, and never more than the time has left
 
 
-# The User-Agent header of every request: the name and the version of the package.
 AGENT = 'boardmail/' + __version__
 # The most characters of the key of an account.
 KEY = 4096
@@ -51,16 +45,14 @@ ATTEMPT = 3
 
 
 def reach(address, timeout, source_address=None):
-    """A connection to a host as socket.create_connection() makes it, where each address of the host has ATTEMPT
-    seconds to take it, and the timeout if that is less. The socket that is reached has the timeout again, so the
-    TLS handshake and the answer may stay silent for as long as the board allows."""
+    """The socket that is reached has the timeout again, so the TLS handshake and the answer may stay silent for as
+    long as the board allows."""
     reached = socket.create_connection(address, min(ATTEMPT, timeout), source_address)
     reached.settimeout(timeout)
     return reached
 
 
 class Reached(HTTPSConnection):
-    """An HTTPS connection whose socket reach() makes."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # http.client has no public name for the time of a connection attempt. Its connect() makes the socket
@@ -69,7 +61,6 @@ class Reached(HTTPSConnection):
 
 
 class Attempts(HTTPSHandler):
-    """HTTPS over connections that reach() makes."""
     def do_open(self, http_class, req, **http_conn_args):
         return super().do_open(Reached, req, **http_conn_args)
 
@@ -94,10 +85,8 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def key(file):
-    """The key of an account as its file gives it, without the white space around it: spaces, tabs, line breaks
-    and whatever else str.strip() takes for it. A key is up to KEY characters, each printable ASCII and none a
-    space, whichever board the account is on. Where the file cannot be read, holds no such key or holds more
-    than the key, a MailError says that the credentials are not there."""
+    """The key of an account as its file gives it, without the white space around it. A key is up to KEY
+    characters, each printable ASCII and none a space, whichever board the account is on."""
     try:
         with Path(file).open() as stream:
             # What stands before the key does not count, and one character more than a key may have is enough
@@ -121,14 +110,10 @@ def fetch(board, url, *, left, headers=None, body=None):
     """The answer of a board to a request for this URL: what its JSON says, whatever type the answer gives.
 
     left is the completion window of this request, in seconds. A collection client checks admission separately;
-    its phase's remaining time need not be this window. headers are sent with the headers of the board, and none
-    of them takes the place of one of those. A body is sent as JSON, and the request is then a POST. Without one
-    it is a GET.
+    its phase's remaining time need not be this window. A body is sent as JSON, and the request is then a POST.
 
-    A request that fails raises one of FAILED: what urllib and http.client raise, a ValueError for an answer
-    that cannot be read, and a MailError for a redirect that is refused and for an answer that is too large or
-    late. Only an answer that is read can be late: a status that is no success and a redirect are raised as what
-    they are, whenever they come."""
+    A request that fails raises one of FAILED. Only an answer that is read can be late: a status that is no
+    success and a redirect are raised as what they are, whenever they come."""
     about = BOARDS[board]
     # What the board is told comes last, so a header of the client under the same name does not replace it.
     send = {**(headers or {}), 'Accept': about.accept, 'User-Agent': AGENT}
