@@ -58,7 +58,7 @@ A module of the package imports another at the top of the file and never inside 
 
 A comment or a docstring says what the code cannot show: a reason, a rule that other code relies on, a quirk of a board, what an older release left behind, or what an interface asks of the modules that fill it in. It does not repeat a name, a signature or the lines below it. A sentence that holds for several modules stands in one of them, not in each.
 
-`python scripts/comment_share.py` prints how much of the package is comments and docstrings, counted in characters, and fails above the limit that the script names. The tests workflow runs it. The limit is no goal: it is the share that the package had when its comments were last read through, so that the share does not grow unnoticed. A change that needs more raises the limit in the same change. The top of the script says what is counted.
+`python scripts/comment_share.py` prints how much of the package is comments and docstrings, counted in characters, and fails above the limit that the script names. The tests workflow runs it. The limit is no goal: it is the share that the package had when its comments were last read through, rounded up, so that the share does not grow unnoticed. A change that needs more raises the limit in the same change. The top of the script says what is counted.
 
 ## Board requests
 
