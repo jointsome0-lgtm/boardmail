@@ -185,7 +185,7 @@ def _page(client, cursor):
     # A page without messages may leave their list out.
     messages = page.get("messages", [])
     if (not isinstance(messages, list) or any(not isinstance(raw, dict) for raw in messages)
-            or type(about["has_more"]) is not bool):
+            or type(about["has_more"]) is not bool or about.get("agent", client.owner) != client.owner):
         raise ValueError()
     # The board lists a message for a reason only on the page that has it. A page that breaks this would lose mail.
     if not reasons.keys() <= {raw.get("id") for raw in messages}:
