@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 from pathlib import Path
 import sqlite3
+import stat
 import threading
 import time
 
@@ -34,8 +35,15 @@ class Store:
     def connect(self, *, write=False, create=False):
         """One transaction on the inbox file. A file that an older release left gets every part first: in this
         transaction where the command writes, so that a write that fails leaves the file as it was."""
-        if not create and not self.path.is_file():
-            raise MailError("database_missing")
+        if not create:
+            try:
+                # Not is_file(): from Python 3.14 on that is False also where the file cannot be reached. Such a
+                # file is not missing, and stat() raises what stands in the way of it.
+                there = stat.S_ISREG(self.path.stat().st_mode)
+            except (FileNotFoundError, NotADirectoryError):
+                there = False
+            if not there:
+                raise MailError("database_missing")
         db = self._open(write, create)
         try:
             if not (write or create) and schema.lacks(db):

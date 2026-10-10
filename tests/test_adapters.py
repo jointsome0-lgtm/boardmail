@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 import io
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -56,6 +57,17 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result['added'], 1)
         self.assertEqual(Store(self.root/'picked.sqlite3').show('my-board', '1')['id'], '1')
         self.assertFalse(ran.exists())
+
+    def test_an_adapters_folder_that_cannot_be_entered_is_a_fault_of_the_config_and_none_of_the_inbox(self):
+        folder = self.root/'adapters'; folder.mkdir()
+        (folder/'my-board.py').write_text('API_VERSION = 1\n')
+        config = self.root/'config.json'
+        config.write_text(json.dumps({'database': 'shut.sqlite3', 'sources': {'my-board': {'account_id': 'agent'}}}))
+        folder.chmod(0); self.addCleanup(folder.chmod, 0o700)
+        if os.access(folder, os.X_OK): self.skipTest('this account enters a folder that it has no right to')
+        code, result = self.cli('--config', str(config), 'init')
+        self.assertEqual((code, result['error'], result['next_action']),
+                         (2, 'invalid_config', 'check_config_and_credentials'))
 
     def test_separately_supplied_adapter_and_copyable_consumer_loop(self):
         examples = Path(__file__).resolve().parents[1]/'examples'

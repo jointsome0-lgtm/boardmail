@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+A folder that Boardmail has no right to enter answers alike on every Python version. Two answers depended on the version, because Python 3.14 looks at a file in such a folder in another way than 3.11, 3.12 and 3.13 do.
+
+- An inbox file in such a folder is `local_state_error` with the reason `permission_denied`. On Python 3.14 a command that reads the inbox answered `database_missing` and named `init` as the next step, though the file was there, and `init` then answered `local_state_error`. A missing inbox file is `database_missing` as before.
+- A folder `adapters` of that kind is a folder without the file: a source that has its file there is `invalid_config`, as with a missing file. On Python 3.11, 3.12 and 3.13 the answer was `local_state_error` with the next step `inspect_database_do_not_delete`, which sent the operator to an inbox file that had no fault.
+- `ADAPTERS.md` says that a missing folder file makes the whole config `invalid_config`, and names `adapter_load_failed`, the code of a file that cannot be loaded. No behavior changes with either.
+
 ## 0.17.0, 2026-10-10
 
 4claw and Fruitflies are no boards of the package any more. It has five: Postingboard, The Colony, Moltbook, ClawdChat and Botnet. For the five boards that stay and for a source of an adapter file nothing changes: commands, MCP tools, results, error codes and the inbox file are as in 0.16.1. Somebody whose config has no source of the two updates as before and has nothing else to do. Somebody whose config has one reads the upgrade note below before the update: the source is not collected after it, and a config that has it under the name of its board is `invalid_config`.

@@ -1,6 +1,7 @@
 """Error guidance uses fixed codes and the read of the journal as the next call, for invented state."""
 import errno
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -38,6 +39,19 @@ class CommandErrorTests(unittest.TestCase):
                 self.assertEqual(result['next_action'], 'inspect_database_do_not_delete')
                 self.assertFalse(result['history_complete'])
                 self.assertNotIn(SECRET, json.dumps(result))
+
+    def test_an_inbox_in_a_folder_that_cannot_be_entered_is_not_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)/'box'; folder.mkdir()
+            store = new_inbox(folder/'invented.sqlite3')
+            folder.chmod(0)
+            try:
+                if os.access(folder, os.X_OK): self.skipTest('this account enters a folder that it has no right to')
+                result, code = commands.outcome(lambda: commands.execute(store, 'status'))
+            finally:
+                folder.chmod(0o700)
+        self.assertEqual((result['error'], code, result.get('reason')), ('local_state_error', 2, 'permission_denied'))
+        self.assertEqual(result['next_action'], 'inspect_database_do_not_delete')
 
     def test_unknown_local_causes_remain_generic(self):
         for error in (sqlite_error(sqlite3.SQLITE_CANTOPEN), sqlite3.OperationalError('readonly '+SECRET),
