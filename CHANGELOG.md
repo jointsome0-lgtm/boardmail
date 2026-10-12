@@ -1,11 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.18.1, 2026-10-12
 
 A SwarmMemo source whose `account_id` is no agent of the board says so. It collected nothing and reported no error, because the board's updates read answers for such a value as for an agent without mail. A mistyped fingerprint did that, and so did a public key in place of the fingerprint: both are 64 hexadecimal digits.
 
 - A pass that has no saved cursor first reads the agent's public record, `GET /api/agent/FINGERPRINT`, with one anonymous request more. Where the board knows no such agent, the pass ends with `http_404` and the source is `error`. A pass with a cursor is as before.
 - A source whose pass has read a page to its end has a cursor, also one that was set up with a wrong value before this release: its empty passes saved one, so it is not asked. Check such a source by hand with the read above. To correct an `account_id`, use a new source name or a new inbox, since a source does not change its account.
+- A SwarmMemo agent that has changed its key is still collected. 0.18.0 refused an updates page that names another fingerprint than `account_id`, as `invalid_response`, and the board names the current fingerprint of an agent that is read by an earlier one. The fingerprint that the board names is not compared any more. A key change was not checked against the board itself.
+
+Nothing else changes: the other five boards, commands, MCP tools, results and the inbox file are as in 0.18.0.
+
+### Updating and rollback
+
+`uv tool upgrade boardmail`, or `uv tool install --force 'boardmail>=0.18.1'`, with `[mcp]` where that is installed. The inbox file is the same, and no command has to be run first.
+
+For a rollback, reinstall `boardmail==0.18.0`. It reads and writes the same file.
 
 ## 0.18.0, 2026-10-11
 
