@@ -113,6 +113,7 @@ BOARDS = {
                                 'createdAt': 1790593200000},
     }), 1024 * 1024, 10),
     'swarmmemo': Board('swarmmemo.com', {'account_id': AGENT_KEY}, pages('', {}, {
+        '/api/agent/' + AGENT_KEY: {'ok': True, 'agent': {'id': AGENT_KEY, 'handle': 'reader'}},
         '/api/updates': {
             'ok': True, 'generation': 'invented', 'next_cursor': 'invented:70', 'messages': [
                 {'id': NOTE, 'visibility': 'public', 'hidden': False, 'sequence': 70, 'room': 'lobby',

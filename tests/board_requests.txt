@@ -1336,185 +1336,190 @@ A board that has a key file has cases for what the file holds. Its board is heal
     headers 1: Accept: application/json; Accept-Encoding: identity; Connection: close; Host: swarmmemo.com; User-Agent: boardmail/VERSION
 
 -- a healthy board
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
     GET https://swarmmemo.com/api/thread/00000000000000000000000000000046?limit=1  [headers 1, silent 4 s, at 0 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- every answer is a 301 that names another host
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names another host
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 303 that names another host
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 307 that names another host
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 308 that names another host
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names another place on the board
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: redirect_refused; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names what is no URL
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names no other place
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a 302 that names a place that no request can go to
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_302; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 300
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_300; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 400
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_400; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 401
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 403
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_403; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 404
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_404; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 408
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_408; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 410
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_410; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 418
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_418; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 429
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_429; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 500
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_500; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 502
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_502; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 503
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 504
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_504; the source: status error, unavailable 0, backlog pending
 
 -- every answer has the status 401 and the code AUTH_2FA_REQUIRED, as Colony refuses a sign-in
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_401; the source: status error, unavailable 0, backlog pending
 
 -- the first answer has the status 503
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
 -- the first answer has the status 503 and comes two seconds before its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
 -- the first answer has the status 503 and comes half a second after its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: http_503; the source: status error, unavailable 0, backlog pending
 
 -- the board cannot be reached
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
 -- the socket stays silent for too long
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
 -- the socket stays silent for too long after the first request
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
 -- every answer is not HTTP
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: network_error; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second before its time budget of 45 s ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 0.5 s, at 44.5 s]
     GET https://swarmmemo.com/api/thread/00000000000000000000000000000046?limit=1  [headers 1, silent 0.5 s, at 44.5 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- the first answer comes when its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer comes half a second after its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the second half of the first answer comes half a second after its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer is whole in time and ends half a second after its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- the first answer says that it is text/plain and comes half a second after its time budget ends
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: source_timeout; the source: status error, unavailable 0, backlog pending
 
 -- every answer takes three seconds to come
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
-    GET https://swarmmemo.com/api/thread/00000000000000000000000000000046?limit=1  [headers 1, silent 4 s, at 3 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 3 s]
+    GET https://swarmmemo.com/api/thread/00000000000000000000000000000046?limit=1  [headers 1, silent 4 s, at 6 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- every answer is text that is not JSON
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer ends with a byte that is not UTF-8
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is an empty JSON list
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer is a JSON object that has only an invented field
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: invalid_response; the source: status error, unavailable 0, backlog pending
 
 -- every answer says that it is text/plain
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
     GET https://swarmmemo.com/api/thread/00000000000000000000000000000046?limit=1  [headers 1, silent 4 s, at 0 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- every answer is as long as the size cap of 1048576 bytes
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
     GET https://swarmmemo.com/api/thread/00000000000000000000000000000046?limit=1  [headers 1, silent 4 s, at 0 s]
     exit code 0, added 1, errors: none; the source: status ok, unavailable 0, backlog done
 
 -- every answer is one byte longer than the size cap
-    GET https://swarmmemo.com/api/updates?agent=0000000000000000000000000000000000000000000000000000000000000001&limit=200  [headers 1, silent 4 s, at 0 s]
+    GET https://swarmmemo.com/api/agent/0000000000000000000000000000000000000000000000000000000000000001  [headers 1, silent 4 s, at 0 s]
     exit code 1, added 0, errors: response_too_large; the source: status error, unavailable 0, backlog pending
