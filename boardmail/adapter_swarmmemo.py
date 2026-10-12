@@ -57,7 +57,6 @@ class Client:
             raise MailError("invalid_request")
         key = (path, tuple(sorted((params or {}).items())))
         if key not in self.cache:
-            # After a 429 the board is asked nothing more by this client.
             if self.limited:
                 raise MailError("http_429")
             remaining = self.deadline - time.monotonic()
@@ -185,7 +184,7 @@ def _page(client, cursor):
     # A page without messages may leave their list out.
     messages = page.get("messages", [])
     if (not isinstance(messages, list) or any(not isinstance(raw, dict) for raw in messages)
-            or type(about["has_more"]) is not bool or about.get("agent", client.owner) != client.owner):
+            or type(about["has_more"]) is not bool):
         raise ValueError()
     # The board lists a message for a reason only on the page that has it. A page that breaks this would lose mail.
     if not reasons.keys() <= {raw.get("id") for raw in messages}:
@@ -213,10 +212,10 @@ def collect(settings, state, known, *, fetch=transport.fetch):
         cursor = None
     held = {mid: passes for mid, passes in held.items() if type(passes) is int} if isinstance(held, dict) else {}
     if cursor is None:
-        # The updates read answers for a value that is no agent as for one without mail. This read is a 404 then.
+        # The updates read takes a value that is no agent for one without mail. This read is a 404 then. Its id
+        # is not compared: an agent that changed its key is named by the new one.
         try:
-            if fingerprint(client.get("/api/agent/" + client.owner)["agent"]["id"]) != client.owner:
-                raise MailError("account_mismatch")
+            fingerprint(client.get("/api/agent/" + client.owner)["agent"]["id"])
         except FAILURES as exc:
             batch.error = _error(batch, exc)
             return batch
@@ -241,7 +240,6 @@ def collect(settings, state, known, *, fetch=transport.fetch):
             listed = reasons[mid]
             try:
                 message, author = _message(raw)
-                # The board lists no message of the account itself.
                 if author == client.owner:
                     continue
                 if "replies" in listed and message["parent_id"] is None:

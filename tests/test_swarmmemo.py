@@ -257,18 +257,19 @@ class SwarmMemoTests(unittest.TestCase):
         self.board.errors[AGENT + ME] = 404
         self.assertEqual(self.collect(), (1, 0, ["http_404"], "error", 0, True))
         self.assertEqual(self.board.calls, [(AGENT + ME, {})])
-        # A record of another agent is no answer about this one, and a board that fails is no mismatch.
-        self.board.errors[AGENT + ME] = {"ok": True, "agent": {"id": WRITER}}
-        self.assertEqual(self.collect(), (1, 0, ["account_mismatch"], "error", 0, True))
+        # A board that fails says nothing of the agent.
         self.board.errors[AGENT + ME] = 503
         self.assertEqual(self.collect(), (1, 0, ["http_503"], "error", 0, True))
-        del self.board.errors[AGENT + ME], self.board.calls[:]
+        # An agent that has changed its key is read by the old fingerprint, and its record names the new one.
+        self.board.errors[AGENT + ME] = {"ok": True, "agent": {"id": WRITER}}
+        del self.board.calls[:]
         self.board.post(10, "replies", reply_to=1)
         self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
         # With a cursor the agent is known, and the board is not asked about it again.
         del self.board.calls[:]
         self.assertEqual(self.collect(), (0, 0, [], "ok", 0, False))
         self.assertEqual(self.board.calls, [updates_from(self.board.cursor(10))])
+        del self.board.errors[AGENT + ME]
 
     def test_a_board_whose_cursor_stands_still_is_not_read_in_a_circle(self):
         self.board.post(10, "replies", reply_to=1)
