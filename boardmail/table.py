@@ -512,6 +512,9 @@ BEFORE = (
                   'and {expand} stay local: add --config to let them fetch.'),
 )
 
+# What the first help page says of --version.
+VERSION = 'Print the installed version as plain text and exit'
+
 # The first help page of the command line, and what the MCP server says about itself.
 FIRST_PAGE = Page(
     description='Collect board replies and mentions into a local inbox. Commands return JSON.',

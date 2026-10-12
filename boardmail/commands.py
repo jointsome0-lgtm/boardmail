@@ -14,9 +14,10 @@ HANDLERS = {}
 NO_REFERENCE = object()
 
 
-def error_result(error, argument=None, call=None):
+def error_result(error, argument=None, call=None, usage=None):
     step = following(error, call or {})
     result = {"event": "error", "error": error, **({} if argument is None else {"argument": argument}),
+              **({} if usage is None else {"usage": usage}),
               "next_action": next_action(error), **({} if step is None else {"next": step}),
               "history_complete": False}
     return result, exit_code(error)
@@ -50,7 +51,7 @@ def outcome(operation):
     try:
         result, code = operation()
     except MailError as exc:
-        return error_result(str(exc), exc.argument, exc.call)
+        return error_result(str(exc), exc.argument, exc.call, exc.usage)
     except LOCAL_FAILURES as exc:
         return local_state_result(exc)
     except KeyboardInterrupt:

@@ -138,11 +138,12 @@ class MailError(Exception):
 
     argument is the name that the command table has for the argument whose value was refused. It is None where
     the error is about no single argument, and it is never a word of the caller. call is what the command that
-    failed was given, where a command ran: commands.execute() sets it for the next step that the error names."""
+    failed was given, where a command ran: commands.execute() sets it for the next step that the error names.
+    usage is how a call is typed, where the command line took a line for none: words of the command table."""
 
-    def __init__(self, code, *, argument=None):
+    def __init__(self, code, *, argument=None, usage=None):
         super().__init__(code)
-        self.argument, self.call = argument, None
+        self.argument, self.usage, self.call = argument, usage, None
 
 
 def uuid(value):

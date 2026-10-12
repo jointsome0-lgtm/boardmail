@@ -5,18 +5,20 @@ from pathlib import Path
 import signal
 import threading
 
-from . import commands, config, replies, table
+from . import __version__, commands, config, replies, table
 from .config import MailError
 from .store import Store
 
 
 class Parser(argparse.ArgumentParser):
+    typed = ()  # the words that lead to this parser
+
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("formatter_class", argparse.RawDescriptionHelpFormatter)
         super().__init__(*args, **kwargs)
 
     def error(self, message):
-        raise MailError("invalid_arguments")
+        raise MailError("invalid_arguments", usage=usage(*self.typed))
 
 
 def number(kind):
@@ -39,11 +41,46 @@ def add(holder, argument, said, strict=True):
         holder.add_argument(flag, dest=argument.name, required=strict and argument.required, **given)
 
 
+def words(command):
+    group, _, action = command.name.partition('_')
+    return (group, action) if group in table.GROUPS else (command.name,)
+
+
+def written(argument, whole=True):
+    flag, _, word = argument.typed.partition(' ') if argument.typed.startswith('-') else ('', '', argument.typed)
+    if 'enum' in argument.kind:
+        word = '{' + ','.join(argument.kind['enum']) + '}'
+    text = f'{flag} {word}'.strip()
+    return f'[{text}]' if whole and not argument.required else text
+
+
+def usage(*typed):
+    """How a call is typed after the words that led to a parser. The command table says it: the usage line of
+    argparse changes with the Python and the terminal. What is given by position stands first, as the docs
+    type a call."""
+    line = ['boardmail', *map(written, table.BEFORE), *typed]
+    command = table.COMMANDS.get('_'.join(typed))
+    if command is None:
+        below = dict.fromkeys(found[len(typed)] for found in map(words, table.COMMANDS.values())
+                              if found[:len(typed)] == typed)
+        return ' '.join([*line, '{' + ','.join(below) + '}', '...'])
+    arguments = {argument.name: argument for argument in command.arguments}
+    said = {name: written(argument) for name, argument in arguments.items()}
+    for rule, value, flag in command.rules:
+        if rule == table.NOT_BOTH and not arguments[value].required:
+            said[value] = f'[{written(arguments[value], False)} | {written(arguments[flag], False)}]'
+            del said[flag]
+    order = sorted(said, key=lambda name: arguments[name].typed.startswith('-'))
+    return ' '.join([*line, *(said[name] for name in order)])
+
+
 def parser(strict=True):
     """The parser of the command line. One that is not strict has no help page and takes a line whatever the
     values of its arguments are and whichever options it leaves out: see refused()."""
     p = Parser(prog="boardmail", description=table.FIRST_PAGE.description, epilog=table.FIRST_PAGE.epilog,
                add_help=strict)
+    if strict:
+        p.add_argument('--version', action='version', version=__version__, help=table.VERSION)
     for argument in table.BEFORE:
         add(p, argument, table.told(None, argument, typed=True), strict)
     sub = p.add_subparsers(dest="command",required=True)
@@ -56,6 +93,7 @@ def parser(strict=True):
                 page = table.GROUPS[group]
                 s = sub.add_parser(group, help=page.summary, description=page.description, epilog=page.epilog,
                                    add_help=strict)
+                s.typed = (group,)
                 groups[group] = s.add_subparsers(dest=group + '_action', required=True)
             holder, word = groups[group], word.removeprefix(group + '_')
         page = table.page(command)
@@ -63,6 +101,7 @@ def parser(strict=True):
         # as the terminal. The first page and the page of a group are shown in the lines that they are written in.
         s = holder.add_parser(word, help=page.summary, description=page.description, add_help=strict,
                               formatter_class=argparse.HelpFormatter)
+        s.typed = words(command)
         either = {}
         for rule, *names in command.rules:
             if strict and rule == table.NOT_BOTH:
@@ -105,9 +144,13 @@ def refused(argv):
 
 def taken(argv):
     try:
-        return parser().parse_args(argv)
-    except MailError:
-        raise MailError("invalid_arguments", argument=refused(argv)) from None
+        args, rest = parser().parse_known_args(argv)
+        if rest:
+            # parse_args() would refuse them on the first page, whatever the command is.
+            raise MailError("invalid_arguments", usage=usage(*words(named(args))))
+        return args
+    except MailError as exc:
+        raise MailError("invalid_arguments", argument=refused(argv), usage=exc.usage) from None
 
 
 def run(args):

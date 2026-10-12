@@ -334,6 +334,16 @@ Where the value of one argument was refused for what it is, the error names the 
 
 The field is absent where the call has a word that is no argument of the command, and where it breaks a rule between two arguments, such as `--thread` without `--source`. It is absent as well where an error says that something is not there or does not match, as `source_not_found`, `message_not_found` and `reply_key_mismatch` do: the code says what was looked for. The command line leaves it out as well where the line does not show the argument: for one by position that is left out, because the words after it take its place, for an option that stands without its value, and for an option that is given twice. The name is always one of the command's own. An error repeats no value and no word of the call but the source and the id that `next` passes on, and those only where a tool takes them: a source of 1 to 64 characters and an id of 1 to 1,024, without control characters.
 
+Where the command line cannot read a line as a call, the error has `usage` as well, which is how the call is typed:
+
+```json
+{"event": "error", "error": "invalid_arguments", "argument": "key", "usage": "boardmail [--config PATH] [--db PATH] reply begin SOURCE ID --key KEY", "next_action": "fix_the_arguments", "history_complete": false}
+```
+
+Such a line has no command or a word that is none, leaves out an argument, has a word too many or an option without its value, gives a word where a number or one of the choices belongs, or has both of two options that the usage joins with a bar. The usage is that of the last word that was read as a command. After a command it is the arguments of that command, after `tag` or `reply` alone the commands of the group, and otherwise every command. What is given by position stands first and the options after it. Brackets hold what a call may leave out, braces hold the choices, and a bar stands between two options of which a call takes one. `--config` and `--db` stand where they are typed, before the command. The line has the names of the command table and no word of the caller. It leaves out `-h` and `--version`, and `boardmail COMMAND --help` says what each argument means. `tests/usage.txt` has the usage of every command.
+
+The field is absent where the line is a call and the command refuses it, as for a number out of its range or for `--thread` without `--source`. A tool call has no `usage`: the schema of the tool says what it takes.
+
 ## Exit codes
 
 | Code | Meaning |
