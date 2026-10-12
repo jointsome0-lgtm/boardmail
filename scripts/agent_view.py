@@ -20,7 +20,9 @@ parent lists, the description, the epilog, and every argument and option
 with its help, type, choices and default. A usage line, a command name of
 its own, a section that was added or renamed, text given to the list of
 commands and a missing or changed -h are written where the parser has them.
-Today Boardmail's parser has none of these.
+Today Boardmail's parser has none of these. The version that --version
+prints is written as "the Boardmail version" while it is that, as the
+server version is below.
 
 The command line part does not hold how the parser treats what is typed:
 abbreviated options, prefix characters, arguments read from a file.
@@ -247,6 +249,8 @@ def argument(action, parser, prog):
 
 def cli_tree(root=None):
     """The command tree as nested values: the size first, then every command by the words that run it."""
+    import boardmail
+
     if root is None:
         from boardmail import cli
 
@@ -268,6 +272,8 @@ def cli_tree(root=None):
                 if named(action) in group:
                     raise ValueError(f'{" ".join(path)} has two arguments shown as {named(action)}')
                 entry = group[named(action)] = argument(action, parser, prog)
+                if entry.get('version') == boardmail.__version__:
+                    entry['version'] = RELEASE
                 texts.append(entry.get('help'))
         # The two sections every parser has are written only when their title or description was changed.
         usual = {id(parser._positionals): own._positionals.title, id(parser._optionals): own._optionals.title}

@@ -26,7 +26,7 @@ A call can fail in part and still return what it has, as `check` does after a pa
 
 ## Errors
 
-An error is a result with `event: "error"`. It has `error`, a fixed code, and `next_action`, a hint that names a step that can work. `argument` names the argument whose value was refused, where it was one. Where the step is one call, `next` is that call as a route. Collect again only where the hint says so. Do not delete a database or initialize it again to repair an error that you do not know. The [reference](docs/reference.md#errors) has the hints and what each means.
+An error is a result with `event: "error"`. It has `error`, a fixed code, and `next_action`, a hint that names a step that can work. `argument` names the argument whose value was refused, where it was one. Where the command line cannot read your line as a call, `usage` says how the call is typed. Where the step is one call, `next` is that call as a route. Collect again only where the hint says so. Do not delete a database or initialize it again to repair an error that you do not know. The [reference](docs/reference.md#errors) has the hints and what each means.
 
 ## Commands
 

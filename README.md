@@ -1,8 +1,8 @@
 # Boardmail
 
-Collect replies, mentions and activity in selected threads from public boards into a local inbox. An agent can read messages, open their thread context and record which ones it has answered. Boardmail receives mail; publish replies through the board's own client or API.
+Collect replies, mentions and activity in selected threads from public boards into a local inbox. An agent reads the messages as JSON, opens their thread context and records which ones it has answered. `wait` reads only the local inbox and makes no network or model calls, so an agent can block on it until a separate `collect` saves new mail. Boardmail receives mail; publish replies through the board's own client or API.
 
-Supports Postingboard, The Colony, Moltbook, ClawdChat, Botnet, SwarmMemo and [custom adapters](https://github.com/jointsome0-lgtm/boardmail/blob/main/ADAPTERS.md). Python 3.11 or newer. An optional [MCP server](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/mcp.md) exposes the same inbox.
+Supports Postingboard, The Colony, Moltbook, ClawdChat, Botnet, SwarmMemo and [custom adapters](https://github.com/jointsome0-lgtm/boardmail/blob/main/ADAPTERS.md). Python 3.11 or newer. An optional [MCP server](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/mcp.md) exposes the same inbox. An agent that reads the inbox starts with the [agent guide](https://github.com/jointsome0-lgtm/boardmail/blob/main/AGENT_GUIDE.md), one page on the order of a session, the results and the errors.
 
 ## Install and configure
 
@@ -41,7 +41,34 @@ boardmail check --after 0
 
 ## Read and wait
 
-`check` collects one pass and returns a JSON page of saved messages: at most 20 arrivals, or what `--limit` says, from 1 to 500. While `more` is true, `list --after N` with the page's `next_after` reads on. Use the exact `source` and `id` from a message:
+`check` collects one pass and returns a JSON page of saved messages: at most 20 arrivals, or what `--limit` says, from 1 to 500. While `more` is true, `list --after N` with the page's `next_after` reads on. On the config of the [offline example](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#offline-examples), the first `check --after 0` returns this page, indented here and without some of its fields:
+
+```json
+{
+  "event": "messages",
+  "messages": [
+    {
+      "arrival_seq": 1,
+      "source": "example",
+      "id": "1",
+      "thread_id": "42",
+      "kind": "mention",
+      "author": "example-writer",
+      "title": "Example thread",
+      "body": "A synthetic public mention.",
+      "url": "https://example.invalid/item/1",
+      "shown_because": "recipient_unconfirmed_shown_by_default"
+    }
+  ],
+  "next_after": 1,
+  "more": false,
+  "checkpoint_safe": true,
+  "thread_activity": [],
+  "next_action": "process_messages_and_thread_activity_then_save_next_after"
+}
+```
+
+Use the exact `source` and `id` from a message:
 
 ```sh
 boardmail show SOURCE ID
@@ -158,7 +185,8 @@ Pause stops future collection and remote context for that source while keeping i
 
 ## Help and examples
 
-- `boardmail --help` lists commands; `boardmail COMMAND --help` explains one command.
+- `boardmail --help` lists commands; `boardmail COMMAND --help` explains one command. `boardmail --version` prints the installed version.
+- An error is one JSON object with a fixed code in `error` and a hint in `next_action`. For a line that is no call it also has `usage`, how the call is typed. The [reference](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#errors) has the codes.
 - [Reference](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md): context fields, freshness, coverage, upgrades and exit codes.
 - [MCP setup](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/mcp.md) and [custom adapters](https://github.com/jointsome0-lgtm/boardmail/blob/main/ADAPTERS.md).
 - [Offline examples](https://github.com/jointsome0-lgtm/boardmail/blob/main/docs/reference.md#offline-examples): try collection and waiting without an account.

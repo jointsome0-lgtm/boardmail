@@ -1,0 +1,35 @@
+How a call is typed, as the command line says it in the usage of an error, where its parser takes a line for no
+call. Made by tests/test_usage.py.
+
+The first line answers a word that is no command. Each line after it answers a group with a word that is no
+command of the group, and then a command with an option that it does not have.
+
+boardmail [--config PATH] [--db PATH] {init,collect,settings,subscribe,unsubscribe,subscriptions,tags,tag,pause,resume,status,check,list,wait,show,mark,context,expand,reply} ...
+boardmail [--config PATH] [--db PATH] tag {add,remove,show} ...
+boardmail [--config PATH] [--db PATH] reply {list,prepare,begin,show,confirm,verify} ...
+boardmail [--config PATH] [--db PATH] init
+boardmail [--config PATH] [--db PATH] collect
+boardmail [--config PATH] [--db PATH] settings [--scope {addressed,all}] [--context {brief,none}] [--reset]
+boardmail [--config PATH] [--db PATH] subscribe SOURCE THREAD
+boardmail [--config PATH] [--db PATH] unsubscribe SOURCE THREAD
+boardmail [--config PATH] [--db PATH] subscriptions [--source SOURCE]
+boardmail [--config PATH] [--db PATH] tags
+boardmail [--config PATH] [--db PATH] tag add TAG SOURCE [THREAD] [--message ID]
+boardmail [--config PATH] [--db PATH] tag remove TAG SOURCE [THREAD] [--message ID]
+boardmail [--config PATH] [--db PATH] tag show TAG
+boardmail [--config PATH] [--db PATH] pause SOURCE
+boardmail [--config PATH] [--db PATH] resume SOURCE
+boardmail [--config PATH] [--db PATH] status [--require-fresh] [--stale-after SECONDS]
+boardmail [--config PATH] [--db PATH] check [--after N] [--limit N] [--scope {addressed,all}] [--context {brief,none}]
+boardmail [--config PATH] [--db PATH] list [--after N] [--limit N] [--scope {addressed,all}] [--context {brief,none}] [--unread] [--through N] [--source SOURCE] [--thread ID] [--tag TAG | --untagged]
+boardmail [--config PATH] [--db PATH] wait [--after N] [--limit N] [--scope {addressed,all}] [--context {brief,none}] [--timeout SECONDS]
+boardmail [--config PATH] [--db PATH] show SOURCE ID
+boardmail [--config PATH] [--db PATH] mark {read,unread,needs-reply,clear-reply,replied} SOURCE ID [--ref URL]
+boardmail [--config PATH] [--db PATH] context SOURCE ID [--local]
+boardmail [--config PATH] [--db PATH] expand SOURCE THREAD --through N [--after N] [--limit N] [--local]
+boardmail [--config PATH] [--db PATH] reply list [--after N] [--limit N]
+boardmail [--config PATH] [--db PATH] reply prepare SOURCE ID --body-file PATH [--replace-key KEY]
+boardmail [--config PATH] [--db PATH] reply begin SOURCE ID --key KEY
+boardmail [--config PATH] [--db PATH] reply show SOURCE ID
+boardmail [--config PATH] [--db PATH] reply confirm SOURCE ID --key KEY --ref URL --readback-file PATH
+boardmail [--config PATH] [--db PATH] reply verify SOURCE ID --key KEY --ref URL

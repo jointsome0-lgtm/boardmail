@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+The command line says how a call is typed where it cannot read a line as one, and it prints its version.
+
+- An error of the command line has `usage` where the line is no call, as with no command or a word that is none, an argument that is left out, a word too many, an option without its value, or a word where a number or one of the choices belongs. `usage` is the call as it is typed, as in `boardmail [--config PATH] [--db PATH] reply begin SOURCE ID --key KEY`. It has the names of the command table and no word of the caller. Such an error was `invalid_arguments` with the hint `fix_the_arguments` and nothing about what the command takes, so an agent had to ask for a help page before its next try. The code, the hint, the exit code 2 and `argument` are as before, and the new field stands after `argument`. The [reference](docs/reference.md#errors) says how to read the line, and `tests/usage.txt` has it for every command.
+- An error of a call that the command refuses has no `usage` and is as before, as for a number out of its range or for `--thread` without `--source`. A tool call has none either, and no MCP result changes.
+- `boardmail --version` prints the installed version as one line of plain text and exits 0. The first help page lists it.
+- The README says in its first paragraph what `wait` does not call, names the agent guide before the setup, shows a page as `check` returns it and says what an error has. No behavior changes with that.
+
+Nothing else changes: the boards, the commands and their arguments, the result of a call that works, the MCP tools and the inbox file are as in 0.18.1.
+
 ## 0.18.1, 2026-10-12
 
 A SwarmMemo source whose `account_id` is no agent of the board says so. It collected nothing and reported no error, because the board's updates read answers for such a value as for an agent without mail. A mistyped fingerprint did that, and so did a public key in place of the fingerprint: both are 64 hexadecimal digits.

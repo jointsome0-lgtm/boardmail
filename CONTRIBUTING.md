@@ -41,6 +41,7 @@ Some tests compare what the package gives with a stored file. After a change tha
 | `tests/board_requests.txt` | Every request of each board as it left the process, and what `collect` gave. | `test_board_requests.py` |
 | `tests/argument_errors_cli.txt`, `tests/argument_errors_mcp.txt` | What each command answers to an argument that it must not get. The update needs the optional extra. | `test_argument_errors.py` |
 | `tests/file_shape.txt` | What an inbox file has, and what a file of an older release gets. | `test_file_shape.py` |
+| `tests/usage.txt` | How the command line says that a call is typed, in the error of a line that is no call. | `test_usage.py` |
 
 The top of each test says what its cases are. A story patches no name inside the package and calls no Store method. Two things are added by hand:
 
