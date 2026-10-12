@@ -212,6 +212,14 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     if not isinstance(cursor, str) or not 0 < len(cursor) <= 4096:
         cursor = None
     held = {mid: passes for mid, passes in held.items() if type(passes) is int} if isinstance(held, dict) else {}
+    if cursor is None:
+        # The updates read answers for a value that is no agent as for one without mail. This read is a 404 then.
+        try:
+            if fingerprint(client.get("/api/agent/" + client.owner)["agent"]["id"]) != client.owner:
+                raise MailError("account_mismatch")
+        except FAILURES as exc:
+            batch.error = _error(batch, exc)
+            return batch
     started, seen, passed = False, set(), {cursor}
     while True:
         try:

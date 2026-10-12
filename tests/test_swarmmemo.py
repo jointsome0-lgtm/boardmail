@@ -24,6 +24,7 @@ def mid(n):
 ME, WRITER = fingerprint(1), fingerprint(2)
 E = "/e/"
 THREAD = "/api/thread/"
+AGENT = "/api/agent/"
 
 
 def updates_from(cursor=None):
@@ -91,6 +92,9 @@ class Board(FakeBoard):
             return status(instead) if type(instead) is int else instead
         if path == "/api/updates":
             return self.updates(params)
+        if path.startswith(AGENT):
+            assert not params, params
+            return {"ok": True, "agent": {"id": ME, "handle": "reader"}} if path == AGENT + ME else status(404)
         post = self.posts.get(path.rsplit("/", 1)[-1])
         if post is None:
             return status(404)
@@ -193,9 +197,10 @@ class SwarmMemoTests(unittest.TestCase):
             (first["title"], first["author"], first["body"], first["url"], first["created_at"], first["provider_seq"]),
             ("#lobby", "writer", "Public message 10", "https://swarmmemo.com/e/" + mid(10), 1790000010, 10))
         self.assertEqual((shown[15]["author"], shown[17]["title"]), ("anonymous", "@" + ME))
-        # The board was asked once for each branch, and for the one message that is neither mail nor a root.
+        # A pass without a cursor asks for the agent first. Then the board was asked once for each branch, and for
+        # the one message that is neither mail nor a root.
         self.assertEqual(self.board.calls, [
-            updates_from(), (THREAD + mid(10), {"limit": "1"}), (THREAD + mid(11), {"limit": "1"}),
+            (AGENT + ME, {}), updates_from(), (THREAD + mid(10), {"limit": "1"}), (THREAD + mid(11), {"limit": "1"}),
             (E + mid(4), {"format": "json"}), (THREAD + mid(17), {"limit": "1"})])
         # A page of mail shows the root of a thread and what a message answers without a request.
         listed, _ = commands.execute(self.store, "list")
@@ -221,14 +226,14 @@ class SwarmMemoTests(unittest.TestCase):
         for n in range(10, 130):
             self.board.post(n, *(("replies",) if n in replies else ()), reply_to=1 if n in replies else None)
         self.board.per_page = 2
-        # A pass has forty requests: 39 pages and the thread of the first answer.
+        # A pass has forty requests: the agent, 38 pages and the thread of the first answer.
         self.assertEqual(self.collect(), (0, 2, [], "ok", 0, True))
         self.assertEqual((len(self.board.asked), self.arrived()), (40, {mid(10), mid(50)}))
         del self.board.asked[:], self.board.calls[:]
         self.assertEqual(self.collect(), (0, 2, [], "ok", 0, False))
-        self.assertEqual(self.board.calls[0], updates_from(self.board.cursor(86)))
-        # 22 pages to the end, and the thread of the first answer that this pass meets.
-        self.assertEqual((len(self.board.asked), self.arrived()), (23, {mid(n) for n in replies}))
+        self.assertEqual(self.board.calls[0], updates_from(self.board.cursor(84)))
+        # 23 pages to the end, and the thread of the first answer that this pass meets.
+        self.assertEqual((len(self.board.asked), self.arrived()), (24, {mid(n) for n in replies}))
 
     def test_a_cursor_that_the_board_refuses_is_given_up_and_nothing_arrives_twice(self):
         self.board.post(10, "replies", reply_to=1)
@@ -239,13 +244,31 @@ class SwarmMemoTests(unittest.TestCase):
         self.assertEqual(self.collect(), (1, 0, ["http_409"], "error", 0, True))
         del self.board.calls[:]
         self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
-        self.assertEqual(self.board.calls[0], updates_from())
+        self.assertEqual(self.board.calls[:2], [(AGENT + ME, {}), updates_from()])
         # A cursor that the board calls none of its own.
         self.board.page_errors[self.board.cursor(11)] = 400
         self.board.post(12, "replies", reply_to=1)
         self.assertEqual(self.collect(), (1, 0, ["http_400"], "error", 0, True))
         self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
         self.assertEqual(self.arrived(), {mid(10), mid(11), mid(12)})
+
+    def test_a_value_that_is_no_agent_of_the_board_is_an_error_and_not_an_empty_inbox(self):
+        # The updates read answers for it as for an agent without mail. The record of the agent does not.
+        self.board.errors[AGENT + ME] = 404
+        self.assertEqual(self.collect(), (1, 0, ["http_404"], "error", 0, True))
+        self.assertEqual(self.board.calls, [(AGENT + ME, {})])
+        # A record of another agent is no answer about this one, and a board that fails is no mismatch.
+        self.board.errors[AGENT + ME] = {"ok": True, "agent": {"id": WRITER}}
+        self.assertEqual(self.collect(), (1, 0, ["account_mismatch"], "error", 0, True))
+        self.board.errors[AGENT + ME] = 503
+        self.assertEqual(self.collect(), (1, 0, ["http_503"], "error", 0, True))
+        del self.board.errors[AGENT + ME], self.board.calls[:]
+        self.board.post(10, "replies", reply_to=1)
+        self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
+        # With a cursor the agent is known, and the board is not asked about it again.
+        del self.board.calls[:]
+        self.assertEqual(self.collect(), (0, 0, [], "ok", 0, False))
+        self.assertEqual(self.board.calls, [updates_from(self.board.cursor(10))])
 
     def test_a_board_whose_cursor_stands_still_is_not_read_in_a_circle(self):
         self.board.post(10, "replies", reply_to=1)
@@ -255,7 +278,7 @@ class SwarmMemoTests(unittest.TestCase):
         self.board.page_errors[still] = {"ok": True, "generation": "first", "next_cursor": still, "data": {
             "has_more": True, "replies": [], "addressed": [], "mentions": [], "room_activity": []}}
         self.assertEqual(self.collect(), (1, 0, ["pagination_no_progress"], "error", 0, True))
-        self.assertEqual(len(self.board.asked), 2)
+        self.assertEqual(len(self.board.asked), 3)
         del self.board.page_errors[still]
         self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
 
@@ -282,7 +305,7 @@ class SwarmMemoTests(unittest.TestCase):
                 # The board answers again. The page is read from where the pass before began.
                 del self.board.errors[THREAD + mid(11)], self.board.calls[:]
                 self.assertEqual(self.collect(clock), (0, 4 - len(came), [], "ok", 0, False))
-                self.assertEqual(self.board.calls[0], updates_from())
+                self.assertEqual(self.board.calls[1], updates_from())
                 self.assertEqual(self.arrived(), {mid(n) for n in (10, 11, 12, 13)})
 
     def test_a_message_that_the_board_keeps_failing_about_is_passed_over_in_the_sixth_pass(self):
