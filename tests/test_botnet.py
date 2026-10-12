@@ -556,9 +556,11 @@ class PassTests(unittest.TestCase):
         self.assertEqual((asked[:3], set(asked[3:])), (["me", "inbox", "inbox"], {"topic-messages", "topics"}))
         for number in range(1, len(asked) + 1):
             with self.subTest(request=number, path=self.board.calls[number - 1][0]):
-                spent, late = (vars(adapter.collect(self.settings, self.state, frozenset(),
-                                                    fetch=failing(self.board, number, MailError(code))))
-                               for code in ("budget_exhausted", "source_timeout"))
+                # The batches are held: Python 3.13 empties the lists of one that only a cycle keeps alive.
+                kept = [adapter.collect(self.settings, self.state, frozenset(),
+                                        fetch=failing(self.board, number, MailError(code)))
+                        for code in ("budget_exhausted", "source_timeout")]
+                spent, late = (vars(batch) for batch in kept)
                 self.assertEqual((spent.pop("error"), late.pop("error")),
                                  ("budget_exhausted", "source_timeout") if number == 1 else (None, None))
                 self.assertEqual(late, spent)
