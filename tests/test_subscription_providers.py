@@ -642,8 +642,9 @@ class ClawdChatSubscriptionTests(unittest.TestCase):
                          (["agents", "comments", "notifications", "comments", "comments"], {"posts"}))
         for number in range(1, len(asked) + 1):
             with self.subTest(request=number, path=board.calls[number - 1][0]):
-                spent, late = (vars(self.collect(failing(board, number, MailError(code)), [100], state))
-                               for code in ("budget_exhausted", "source_timeout"))
+                kept = [self.collect(failing(board, number, MailError(code)), [100], state)
+                        for code in ("budget_exhausted", "source_timeout")]
+                spent, late = (vars(batch) for batch in kept)
                 self.assertEqual((spent.pop("error"), late.pop("error")),
                                  ("budget_exhausted", "source_timeout") if number == 1 else (None, None))
                 self.assertEqual(late, spent)
