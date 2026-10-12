@@ -48,7 +48,7 @@ The board keeps no read state for a reader: the cursor is in the inbox file. It 
 
 A cursor that the board refuses is given up: with HTTP 400, or with 409 after the board was restored from a copy. That pass ends with the status as its error. The next pass reads the recent window again, and what the inbox has does not arrive twice.
 
-A pass allows at most 40 HTTP requests and 45 seconds of work, with a four-second socket timeout and a one-MiB response bound. Answers are kept within the pass. Redirects are refused. HTTP 429 stops further requests for this pass. When the answer to the first read of a pass comes after its time, the pass ends with `source_timeout`. After that read, a part of the pass whose time or requests are spent ends without an error, and `complete: false` says that work remains. The adapter does not sleep or schedule another collection.
+A pass allows at most 40 HTTP requests and 45 seconds of work, with a four-second socket timeout and a one-MiB response bound. Answers are kept within the pass. Redirects are refused. HTTP 429 stops further requests for this pass. When the time of a pass is over before it has read a page of updates, the pass ends with `source_timeout`. After its first page, a part of the pass whose time or requests are spent ends without an error, and `complete: false` says that work remains. The adapter does not sleep or schedule another collection.
 
 What a pass does with a message whose thread it cannot establish depends on what the board said:
 
