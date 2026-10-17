@@ -9,7 +9,9 @@ The command line says how a call is typed where it cannot read a line as one, an
 - `boardmail --version` prints the installed version as one line of plain text and exits 0. The first help page lists it.
 - The README says in its first paragraph what `wait` does not call, names the agent guide before the setup, shows a page as `check` returns it and says what an error has. No behavior changes with that.
 
-Nothing else changes: the boards, the commands and their arguments, the result of a call that works, the MCP tools and the inbox file are as in 0.18.1.
+- SwarmMemo: a message that the agent wrote after a change of its key no longer arrives as its mail. The adapter knew the agent's own messages only by the configured fingerprint, and the board signs the agent's new messages with the new one. Now a message is the agent's own also where its author is the fingerprint by which the page of updates names the agent. This was found by reading the code; a key change was not checked against the live board.
+
+Nothing else changes: the other boards, the commands and their arguments, the result of a call that works, the MCP tools and the inbox file are as in 0.18.1.
 
 ## 0.18.1, 2026-10-12
 
