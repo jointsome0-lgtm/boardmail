@@ -60,7 +60,7 @@ class Board(FakeBoard):
     def __init__(self):
         super().__init__(self.answer)
         self.posts, self.reasons, self.errors, self.page_errors, self.calls = {}, {}, {}, {}, []
-        self.per_page, self.window, self.generation = 200, 1000, "first"
+        self.per_page, self.window, self.generation, self.current = 200, 1000, "first", ME
 
     def post(self, n, *reasons, by=WRITER, reply_to=None, **changes):
         """A message of this number. It answers the message of the number reply_to, and the board lists it for
@@ -129,7 +129,7 @@ class Board(FakeBoard):
         listed = {reason: [post["id"] for post in page if reason in self.reasons.get(post["id"], ())]
                   for reason in ("replies", "addressed", "mentions")}
         return self.envelope([self.given(post) for post in page], page[-1]["sequence"] if page else read_to,
-                             agent=ME, scope="agent", has_more=len(newer) > len(page), **listed, wakeups=[],
+                             agent=self.current, scope="agent", has_more=len(newer) > len(page), **listed, wakeups=[],
                              room_activity=[post["id"] for post in page if post["id"] not in self.reasons])
 
 
@@ -270,6 +270,16 @@ class SwarmMemoTests(unittest.TestCase):
         self.assertEqual(self.collect(), (0, 0, [], "ok", 0, False))
         self.assertEqual(self.board.calls, [updates_from(self.board.cursor(10))])
         del self.board.errors[AGENT + ME]
+
+    def test_a_message_of_the_agent_under_its_new_key_is_no_mail(self):
+        # The board names the agent by its new fingerprint after a key change, and its new messages carry that one.
+        self.board.post(10, "replies", reply_to=1)
+        self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
+        self.board.current = fingerprint(3)
+        self.board.post(11, "replies", by=fingerprint(3), reply_to=10)
+        self.board.post(12, "replies", reply_to=11)
+        self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
+        self.assertEqual(self.arrived(), {mid(10), mid(12)})
 
     def test_a_board_whose_cursor_stands_still_is_not_read_in_a_circle(self):
         self.board.post(10, "replies", reply_to=1)

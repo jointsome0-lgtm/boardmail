@@ -175,7 +175,7 @@ def _error(batch, exc):
 
 def _page(client, cursor):
     """A page of updates from a cursor: its messages, the reasons for which the board lists each that is mail,
-    the cursor after the page, and whether more is there."""
+    the cursor after the page, whether more is there, and the agent's fingerprint now."""
     page = client.get("/api/updates", {"agent": client.owner, "limit": PAGE_SIZE, **({"cursor": cursor} if cursor else {})})
     about, reasons = page["data"], {}
     for reason in REASONS:
@@ -189,7 +189,11 @@ def _page(client, cursor):
     # The board lists a message for a reason only on the page that has it. A page that breaks this would lose mail.
     if not reasons.keys() <= {raw.get("id") for raw in messages}:
         raise ValueError()
-    return messages, reasons, _cursor(page.get("next_cursor")) or cursor, about["has_more"]
+    try:
+        current = fingerprint(about.get("agent"))
+    except ValueError:
+        current = client.owner
+    return messages, reasons, _cursor(page.get("next_cursor")) or cursor, about["has_more"], current
 
 
 def collect(settings, state, known, *, fetch=transport.fetch):
@@ -222,7 +226,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
     started, seen, passed = False, set(), {cursor}
     while True:
         try:
-            messages, reasons, following, more = _page(client, cursor)
+            messages, reasons, following, more, current = _page(client, cursor)
         except FAILURES as exc:
             code = _error(batch, exc)
             if not started:
@@ -240,7 +244,7 @@ def collect(settings, state, known, *, fetch=transport.fetch):
             listed = reasons[mid]
             try:
                 message, author = _message(raw)
-                if author == client.owner:
+                if author in (client.owner, current):
                     continue
                 if "replies" in listed and message["parent_id"] is None:
                     raise ValueError()
