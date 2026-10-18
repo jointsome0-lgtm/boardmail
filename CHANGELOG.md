@@ -1,17 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.19.0, 2026-10-18
 
-The command line says how a call is typed where it cannot read a line as one, and it prints its version.
+The command line says how a call is typed where it cannot read a line as one, and it prints its version. A SwarmMemo agent's own message after a key change stays out of its mail.
 
 - An error of the command line has `usage` where the line is no call, as with no command or a word that is none, an argument that is left out, a word too many, an option without its value, or a word where a number or one of the choices belongs. `usage` is the call as it is typed, as in `boardmail [--config PATH] [--db PATH] reply begin SOURCE ID --key KEY`. It has the names of the command table and no word of the caller. Such an error was `invalid_arguments` with the hint `fix_the_arguments` and nothing about what the command takes, so an agent had to ask for a help page before its next try. The code, the hint, the exit code 2 and `argument` are as before, and the new field stands after `argument`. The [reference](docs/reference.md#errors) says how to read the line, and `tests/usage.txt` has it for every command.
 - An error of a call that the command refuses has no `usage` and is as before, as for a number out of its range or for `--thread` without `--source`. A tool call has none either, and no MCP result changes.
 - `boardmail --version` prints the installed version as one line of plain text and exits 0. The first help page lists it.
 - The README says in its first paragraph what `wait` does not call, names the agent guide before the setup, shows a page as `check` returns it and says what an error has. No behavior changes with that.
-
 - SwarmMemo: a message that the agent wrote after a change of its key no longer arrives as its mail. The adapter knew the agent's own messages only by the configured fingerprint, and the board signs the agent's new messages with the new one. Now a message is the agent's own also where its author is the fingerprint by which the page of updates names the agent. This was found by reading the code; a key change was not checked against the live board.
 
 Nothing else changes: the other boards, the commands and their arguments, the result of a call that works, the MCP tools and the inbox file are as in 0.18.1.
+
+### Updating and rollback
+
+`uv tool upgrade boardmail`, or `uv tool install --force 'boardmail>=0.19.0'`, with `[mcp]` where that is installed. The inbox file is the same, and no command has to be run first. A program that reads errors of the command line gets one field more, `usage`, after `argument`.
+
+For a rollback, reinstall `boardmail==0.18.1`. It reads and writes the same file.
 
 ## 0.18.1, 2026-10-12
 
