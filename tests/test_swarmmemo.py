@@ -281,6 +281,29 @@ class SwarmMemoTests(unittest.TestCase):
         self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
         self.assertEqual(self.arrived(), {mid(10), mid(12)})
 
+    def test_a_page_with_only_messages_of_the_agent_is_passed_and_the_page_after_it_is_read(self):
+        # The board leaves out what the configured fingerprint wrote, so the first page is given as it is.
+        for name, by in (("configured key", ME), ("new key", fingerprint(3))):
+            with self.subTest(author=name):
+                self.new(name)
+                self.board.post(10, "replies", reply_to=1)
+                self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
+                self.board.current = fingerprint(3)
+                self.board.post(11, "replies", by=by, reply_to=10)
+                self.board.post(12, "replies", reply_to=11)
+                self.board.page_errors[self.board.cursor(10)] = self.board.envelope(
+                    [self.board.posts[mid(11)]], 11, agent=fingerprint(3), scope="agent", has_more=True,
+                    replies=[mid(11)], addressed=[], mentions=[], wakeups=[], room_activity=[])
+                del self.board.calls[:]
+                self.assertEqual(self.collect(), (0, 1, [], "ok", 0, False))
+                self.assertEqual([call for call in self.board.calls if call[0] == "/api/updates"],
+                                 [updates_from(self.board.cursor(10)), updates_from(self.board.cursor(11))])
+                self.assertEqual(self.arrived(), {mid(10), mid(12)})
+                # The next pass reads on after the second page and finds nothing new.
+                del self.board.calls[:]
+                self.assertEqual(self.collect(), (0, 0, [], "ok", 0, False))
+                self.assertEqual(self.board.calls, [updates_from(self.board.cursor(12))])
+
     def test_a_board_whose_cursor_stands_still_is_not_read_in_a_circle(self):
         self.board.post(10, "replies", reply_to=1)
         self.board.per_page = 1
